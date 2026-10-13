@@ -88,6 +88,7 @@ SK_ENUMC        EQU $04
 SK_TAG          EQU $10     ; struct and enum tags (SF_ENUM)
 SK_MEMBER       EQU $20     ; struct members (one list per struct)
 SK_LABEL        EQU $30     ; goto labels (Phase 2)
+SK_MACRO        EQU $40     ; object-like macros (Phase 2: their own chain, PP_MACROS)
 NS_ORD          EQU $00
 NS_TAG          EQU $10
 NS_MEMBER       EQU $20

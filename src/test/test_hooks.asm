@@ -49,6 +49,7 @@ TEST_LEX_DUMP:
     ld   (CC_SP), sp
     call LEX_INIT
     ld   a, (TEST_LEX_MODE)
+    or   1 << LM_RAW                   ; the plain lexer: no preprocessing
     ld   (LEX_MODE), a
 .loop:
     call LEX_NEXT
@@ -124,6 +125,8 @@ TEST_LEX_COUNT:
 .guarded:
     ld   (CC_SP), sp
     call LEX_INIT
+    ld   a, 1 << LM_RAW                ; the plain lexer (the preprocessor's hook still runs)
+    ld   (LEX_MODE), a
 .loop:
     call LEX_NEXT
     ld   hl, (TEST_COUNT)

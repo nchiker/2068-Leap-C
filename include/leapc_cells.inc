@@ -21,12 +21,21 @@ LEX_LINE:       DEFS 2              ; 1-based line number of the byte at LEX_PTR
 LEX_BOLP:       DEFS 1              ; 1 << TF_BOL while the next token is the first on its line
 TOK_PTR:        DEFS 2              ; first source byte of the current token (LEX_MARK, names)
 TOK_LINE:       DEFS 2              ; line on which the current token starts
-TOK_KIND:       DEFS 1              ; current token kind (include/leapc_tokens.inc)
+PP_TOKN:        DEFS 1              ; the current token's number in a macro expansion (0: main
+                                    ; text); before TOK_FLAGS for LEX_MARK (preproc.asm)
 TOK_FLAGS:      DEFS 1              ; TF_* bits (include/leapc_tokens.inc)
+TOK_KIND:       DEFS 1              ; current token kind (include/leapc_tokens.inc)
 TOK_VAL:        DEFS 2              ; number / character constant value
 TOK_LEN:        DEFS 1              ; bytes in TOK_BUF (identifier or string literal)
 TOK_BUF:        DEFS TOK_BUF_LEN    ; identifier text or decoded string literal (no terminator)
 LEX_MODE:       DEFS 1              ; LM_* bits (include/leapc_tokens.inc)
+; ---- preprocessor (Phase 2: src/compiler/preproc.asm) ----
+PP_MAX          EQU 8               ; macros nested in one expansion
+PP_LEVEL        EQU 9               ; bytes per PP_STACK level
+PP_SP:          DEFS 2              ; the next free PP_STACK level (= PP_STACK: the main text)
+PP_STACK:       DEFS PP_LEVEL * PP_MAX ; per level: LEX_PTR, LEX_LINE, LEX_BOLP and TOK_PTR as at
+                                    ; the macro's name, then the macro (preproc.asm)
+    ASSERT LEX_LINE == LEX_PTR + 2 && LEX_BOLP == LEX_PTR + 4 && TOK_PTR == LEX_PTR + 5
 
 ; ---- compiler: declarations, symbols, constant expressions (M1.2) ----
 ; CC_COMPILE zeroes CC_CELLS_BEGIN..CC_CELLS_END before every compile.
@@ -89,6 +98,22 @@ CX_FRET:        DEFS 2              ; ... the function's return type
 CX_CALLW        EQU 3               ; (words from CX_ARGN)
 RUN_MAIN:       DEFS 2              ; main's address (0: none), set at the end of a compile
 RUN_VOID:       DEFS 1              ; nonzero: main returns void (exit status 0)
+; ---- statements (Phase 2: src/compiler/stmt.asm) ----
+; Chains are fixup chains (codegen.asm); 1 is an empty chain, 0 means "no such statement open".
+SW_CASES:       DEFS 2              ; switch: its case records [link][value][address] (global area) ...
+SW_DEFAULT:     DEFS 2              ; ... its default's address (1: none yet; 0: no switch open) ...
+BRK_CH:         DEFS 2              ; ... the break chain of the innermost loop or switch (0: none)
+CNT_CH:         DEFS 2              ; the continue chain of the innermost loop (0: none)
+FN_LABELS:      DEFS 2              ; the labels of the function being compiled (global area)
+DCL_LINE:       DEFS 2              ; the line of the declaration being parsed (its first token)
+RUN_FNLINES:    DEFS 2              ; the function -> line table: newest record [link][address][line]
+                                    ; (static data in the image; spec.md 5.9)
+PP_MACROS:      DEFS 2              ; newest macro definition (global area; 0: none;
+                                    ; src/compiler/preproc.asm)
+PM_LEN          EQU 2               ; macro record: [link][name length][name][replacement]
+PM_NAME         EQU 3
+PM_TEXT         EQU 5
+PM_SIZE         EQU 7
 CC_CELLS_END:
 
 ; ---- compiler: error exit (src/compiler/cerror.asm) ----

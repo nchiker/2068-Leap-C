@@ -1,10 +1,11 @@
-# 2068-Leap-C build (project_plan.md section 3, M1.1-M1.3).
+# 2068-Leap-C build (project_plan.md section 3 onwards: Phase 1 M1.1-M1.3, Phase 2).
 #   make / make build   production images in build/, test images (-DLEAPC_TEST) in build/test/
 #   make check          strict assembly (build), budgets, platform delta check, test-image check
 #   make budget         per-component budget table and ROM map
 #   make inventory      every HOME routine, table and gap with its referrers (docs/HOME_ROM_INVENTORY.md)
-#   make test           ZEsarUX tests on the images (boot, lexer, declarations, executable C programs,
-#                       helper and lexer measurements); needs ~/ts2068-debug, ZEsarUX 13.0
+#   make test           ZEsarUX tests on the images (boot, lexer, declarations, executable C programs:
+#                       expressions, statements, preprocessor; helper, lexer and spike-workload
+#                       measurements); needs ~/ts2068-debug, ZEsarUX 13.0
 #   make repro          two clean builds must give identical image hashes
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
 .PHONY: all build prod testimg check budget inventory test repro audit clean

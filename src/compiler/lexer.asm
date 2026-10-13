@@ -26,10 +26,12 @@
 ; LEX_INIT -- open the source for LEX_NEXT
 ; In:  PROG_AREA_START / PROG_END (the line store)
 ; Out: LEX_PTR = first text byte (LEX_EOF_BYTE if the store is empty), LEX_LINE = 1,
-;      LEX_BOLP = first token is at a line start, LEX_MODE = 0
+;      LEX_BOLP = first token is at a line start, LEX_MODE = 0, PP_SP = PP_STACK
 ; Destroys: AF, DE, HL
 ; ============================================================================
 LEX_INIT:
+    ld   hl, PP_STACK                  ; no macro expansion open (preproc.asm)
+    ld   (PP_SP), hl
     xor  a
     ld   (LEX_MODE), a
     inc  a
@@ -140,15 +142,10 @@ LEX_NEXT:
     jr   .skip
 .eol:
     ld   a, (LEX_MODE)
-    bit  LM_EOL, a
-    jr   nz, .eol_token
+    and  (1 << LM_EOL) | (1 << LM_MACRO)
+    jp   nz, PP_EOL                    ; a directive's or a macro body's end (preproc.asm)
     call LEX_NEWLINE
     jr   .skip
-.eol_token:
-    call LEX_BEGIN
-    call LEX_NEWLINE
-    ld   a, TK_EOL
-    jr   .done
 
 .token:                               ; A = (HL) = first character of a token
     call LEX_BEGIN
@@ -157,7 +154,7 @@ LEX_NEXT:
     cp   '"'
     jr   z, .string
     cp   $27                          ; '
-    jr   z, .charconst
+    jp   z, .charconst
     cp   '_'
     jr   z, .ident
     call LEX_DIGIT
@@ -208,7 +205,7 @@ LEX_NEXT:
 .done:
     ld   (LEX_PTR), hl
     ld   (TOK_KIND), a
-    ret
+    jp   PP_HOOK                       ; directives and macros (preproc.asm)
 
 ; ---- string literal ----
 .string:

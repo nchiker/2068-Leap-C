@@ -176,6 +176,9 @@ COMP_TRAMP_END:
 COMP_STMT_BEGIN:
     INCLUDE "src/compiler/stmt.asm"
 COMP_STMT_END:
+COMP_PREPROC_BEGIN:
+    INCLUDE "src/compiler/preproc.asm"
+COMP_PREPROC_END:
 
 ; ---------------------------------------------------------------- runtime
 COMP_HELPERS_BEGIN:

@@ -46,10 +46,11 @@ import decltest         # noqa: E402
 import declbench        # noqa: E402
 import exectest         # noqa: E402
 import helperbench      # noqa: E402
+import stmtbench        # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
-EXEC_DIRS = ("expr", "experr", "golden", "run")
+EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr")
 TEST_AREA = 0xE000
 TEST_DUMP_DATA = TEST_AREA + 8
 
@@ -309,8 +310,10 @@ def main():
     # ---- executable cases on the production image (M1.3)
     if "exec" in suites:
         m = Machine(os.path.join(ROOT, "build"), a.port)
+        S = None
         try:
             m.start()
+            S = m.sym
             cases = []
             for d in EXEC_DIRS:
                 cases += sorted(glob.glob(os.path.join(ROOT, "tests", d, "**", "*.c"), recursive=True))
@@ -356,6 +359,44 @@ def main():
                 if not ok:
                     failed += 1
                     print("exec: FAIL recovery after a stack overflow: " + msg)
+            if not a.only:
+                # built-in: the function -> line table (spec.md 5.9): one record per defined
+                # function, [link][address][line of the definition's first token]
+                src = ["int f(void) { return 1; }", "", "static", "int g(int x)", "{", "    return x;", "}",
+                       "int main(void) { return f() + g(1); }"]
+                r = exectest.compile_and_run(m, src)
+                recs, a_ = [], m.w16(S("RUN_FNLINES"))
+                while a_ and len(recs) < 10:
+                    recs.append((m.w16(a_ + 2), m.w16(a_ + 4)))
+                    a_ = m.w16(a_)
+                fn = {e.name: e.val for e in r.globals if e.kind == 2}
+                want = sorted([(fn["f"], 1), (fn["g"], 3), (fn["main"], 8)])
+                ok = r.ran and r.hl == 2 and sorted(recs) == want
+                msg = "" if ok else "records %r, expected %r" % (recs, want)
+                # built-in: every run starts rand() afresh (RT_RUN clears RND_STATE: srand(1)'s sequence)
+                m.restore()
+                m.write(S("RND_STATE"), b"\x34\x12")
+                r2 = exectest.compile_and_run(m, ["int main(void) { return 0; }"], restore=False)
+                ok2 = r2.ran and m.w16(S("RND_STATE")) == 0
+                for name, okk, mm in (("(built-in) the function -> line table", ok, msg),
+                                      ("(built-in) rand() starts afresh in every run", ok2,
+                                       "" if ok2 else "RND_STATE %04X" % m.w16(S("RND_STATE")))):
+                    results["exec"].append(dict(case=name, ok=okk, msg=mm, info=None))
+                    n, p_ = counts.get("run", (0, 0))
+                    counts["run"] = (n + 1, p_ + okk)
+                    if not okk:
+                        failed += 1
+                        print("exec: FAIL %s: %s" % (name, mm))
+            if "bench" in suites and not a.only:
+                results["spike"] = stmtbench.measure(m)
+                for r in results["spike"]:
+                    failed += not r["ok"]
+                    if "bytes" not in r:
+                        print("spike: FAIL %s" % r)
+                        continue
+                    print("spike: %-20s %s %3d B (spike %3d) %7d T (spike %7d)" % (
+                        r["name"], "PASS" if r["ok"] else "FAIL", r["bytes"], r["spike_bytes"], r["tstates"],
+                        r["spike_tstates"]))
             for g, (n, p) in sorted(counts.items()):
                 print("exec %-8s %d/%d cases pass" % (g + ":", p, n))
             if lines:

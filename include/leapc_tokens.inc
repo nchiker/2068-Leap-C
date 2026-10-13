@@ -19,7 +19,7 @@ TK_EOF          EQU $00
 TK_IDENT        EQU $01     ; TOK_BUF/TOK_LEN = name (first 31 characters)
 TK_NUM          EQU $02     ; TOK_VAL = value; TF_UNSIGNED, TF_CHARCONST
 TK_STR          EQU $03     ; TOK_BUF/TOK_LEN = decoded bytes (no terminator)
-TK_EOL          EQU $04     ; only when LEX_MODE has LM_EOL (preprocessor directives)
+TK_EOL          EQU $04     ; only when LEX_MODE has LM_EOL (preprocessor directive lines)
 
 ; punctuators with no longer form (order = LEX_PUNCT_CHARS)
 TK_LPAREN       EQU $10     ; (
@@ -118,6 +118,8 @@ TF_CHARCONST    EQU 2       ; TK_NUM: written as a character constant
 
 ; LEX_MODE bits
 LM_EOL          EQU 0       ; return TK_EOL at each line end (preprocessor directive lines)
+LM_MACRO        EQU 1       ; the lexer reads a macro body (src/compiler/preproc.asm)
+LM_RAW          EQU 2       ; no preprocessing: the plain token stream (the lexer tests)
 
 IDENT_SIG_LEN   EQU 31      ; significant identifier characters (spec.md section 4.1)
 

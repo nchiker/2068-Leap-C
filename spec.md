@@ -1,10 +1,12 @@
 # 2068-Leap-C — Specification
 
-**Version 0.3, 2026-10-13** (v0.1, 2026-10-12: initial; v0.2, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.4, 2026-10-13** (v0.1, 2026-10-12: initial; v0.2, v0.3, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
 **Changes in v0.3 (Phase 2, owner decisions O1/O2 of 2026-10-13):** the retained 16-bit math is cut to what C uses (§2.1, platform delta D3). Multiply and divide are the helper core's own routines (§5.3). `rand()`/`srand()` are a C generator (§7).
+
+**Changes in v0.4 (Phase 2, as built):** the preprocessor's rules and limits (§4.8, §4.10), the `SWITCH` tables (§5.3), and the function → line table's format (§5.9).
 
 **What is fixed and what is tuned:**
 
@@ -335,7 +337,13 @@ All C89 operators except those on unsupported types:
 
 - `#define NAME replacement-tokens` (object-like) and `#undef NAME`.
 - `#include <leap.h>` / `#include "leap.h"` are accepted. The platform declarations are always built in (§7), so the directive is a no-op.
-- Other directives (function-like macros, `#if` family, `#error`, `#line`, `#pragma` apart from `#pragma hires`) give "not supported".
+- Other directives (function-like macros, `#if` family, `#error`, `#line`, `#pragma` apart from `#pragma hires`) give "not supported". So does `#include` of any other header.
+- **As built (v0.4):**
+  - A directive is a `#` that is the first token on its line; `#` alone is ignored.
+  - A macro's replacement is the rest of its line. It is checked for lexical errors at the `#define` and expanded where the macro is used. Its tokens carry the line of the use.
+  - A macro's name inside its own expansion, directly or through other macros, stays an identifier (C89 6.8.3.4).
+  - Defining a macro that is already defined is `ALREADY DEFINED`, also for an identical replacement (C89 allows that one; deviation). `#undef` it first.
+  - Macro names are identifiers; a keyword cannot be one.
 
 ### 4.9 Floating point (optional, later)
 
@@ -355,7 +363,9 @@ Floating point is **not** part of Release 1 code generation, but it is **not rem
 | Nesting depth (blocks, expressions) | bounded by the compiler's stack guard; at least 32 levels guaranteed |
 | Function parameters | 16 |
 | Local frame size | 255 bytes (8-bit frame offsets; larger locals → "frame too large"; use `static` or the heap) |
-| `switch` cases | memory-bound |
+| `switch` cases | memory-bound (6 B of compile workspace per case) |
+| Macro expansions nested in one another | 8 ("nesting too deep") |
+| Tokens produced by one macro expansion, nested ones included | 255 ("nesting too deep") |
 | String literal length | one line, 126 characters (adjacent literals concatenate) |
 
 ---
@@ -408,7 +418,7 @@ Measured in the code-shape spike unless marked:
 | `CMPULT` | inline | unsigned `or a; sbc hl,de` (3 B) |
 | Shifts by a variable count (`SHL`, `SHR`, `SAR`) | CALL | |
 | `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU` | CALL | the helper core's register-only shift-and-add multiply and restoring divide (v0.3; they replace the V2 math). The compiler's constant arithmetic uses the same routines |
-| `SWITCH` | CALL + inline table | sparse table; dense jump table where denser |
+| `SWITCH` | CALL + inline table address | `call RT_SWITCH / dw table`. The table is static data, made after the switch's body. Sparse: `[n][default]` then `[value][address]` pairs. Dense, when smaller (highest − lowest ≤ 2n − 3): `[range \| $8000][default][lowest]` then one address per value |
 | `CALLHL` | CALL | indirect function call |
 | `LDL`/`STL` (size set only) | RST `$30` + byte | local word load/store, as measured in the spike |
 
@@ -479,7 +489,7 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 | 4 | invalid library argument (where checked) |
 | 5 | BREAK |
 
-The shell shows `RUNTIME ERROR n` with the source line of the failing function's call site where available. The line mapping comes from a function → line table the compiler emits (about 4 B per function).
+The shell shows `RUNTIME ERROR n` with the source line of the failing function's call site where available. The line mapping comes from a function → line table the compiler emits: one record per function definition in the image's static data, `[link][address][line where the definition starts]`, newest first, from `RUN_FNLINES` (as built in Phase 2: 6 B per function).
 
 No bounds or NULL checks are generated; this is C.
 

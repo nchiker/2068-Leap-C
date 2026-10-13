@@ -71,7 +71,7 @@ ranges = [["COMP_STMT_BEGIN", "COMP_STMT_END"]]
 id = "preproc"
 title = "Compiler: preprocessor (object-like #define)"
 budget = 300
-ranges = []
+ranges = [["COMP_PREPROC_BEGIN", "COMP_PREPROC_END"]]
 
 [[home.component]]
 id = "helpers"
@@ -290,3 +290,83 @@ platform's 351 B (L9) less the helper core's 14 B (L10) leave 337 B, of which 26
 statements budget to its spec.md 2.2 value of 1,400 B and 68 B go to the HOME reserve (512 -> 580
 B). The compiler components keep their own shrink savings (S1-S5: decl 21, expr 18, codegen 17,
 stmt 3, symtab 1 B) as headroom for Phase 2 (preprocessor marks in decl, statements)."""
+
+[[ledger]]
+id = "L12"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "helpers"
+delta = 58
+reason = """The SWITCH helper (spec.md 5.3): RT_SWITCH, 58 B, dispatches through the sparse
+([n][default] [value][address]...) or dense ([range|$8000][default][lowest] [address]...) table
+that the statement compiler puts in the image's static data. L4 had kept these bytes in the helper
+core; L10 used them for the C arithmetic, so they come from the reserve."""
+
+[[ledger]]
+id = "L13"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "preproc"
+delta = 141
+reason = """The preprocessor measures 441 B after two compaction passes (first build 514 B): the
+token hook with macro expansion (8 levels, the self-reference rule, the expansion count for
+rewinding; 125 B), the line-end hook (the end-of-line token moved from the lexer, the return from
+an expansion; 55 B), the directives (dispatch through name records, #define with the function-like
+check, #undef, #include <leap.h>/"leap.h", line end; 177 B), the macro search (39 B) and the
+directive names (45 B). The macro-aware mark and rewind (decl.asm LEX_MARK/LEX_RESTORE, +49 B) fit
+the declarations' budget. Feasibility estimate 0.2-0.4 KB. From the reserve with the returns of
+L14-L17."""
+
+[[ledger]]
+id = "L14"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "symtab"
+delta = -106
+reason = """L2 kept 105 B of the symbol table's budget for Phase 2's labels. Labels use the generic
+symbol routines from the statements component instead (LABEL_LOOKUP, 44 B in stmt): the symbol
+table measures 294 B and its unused 106 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L15"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "expr"
+delta = -18
+reason = """The Phase 2 shrink (S4, S5: shared tails, CX_NEXTV) left the expression compiler at
+2,623 B; Phase 2 needed no expression change. The 18 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L16"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "codegen"
+delta = -17
+reason = """The Phase 2 shrink (S1, S3, S4) left the code generator at 1,323 B; Phase 2 needed no
+code generator change. The 17 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L17"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "lexer"
+delta = -10
+reason = """The lexer measures 1,090 B with the preprocessor's two hooks (the end-of-line token
+moved to the preprocessor). No later phase changes the lexer; its 10 B return to the HOME
+reserve. HOME reserve after Phase 2: 532 B (floor 512 B)."""
+
+[[ledger]]
+id = "L18"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "exrom"
+component = "xcomp"
+delta = -5
+reason = """Constant folding calls the helper core's RT_MUL/RT_DIVS/RT_MODS/RT_DIVU (Phase 2 step 1)
+and measures 217 B with its entry jump; 5 B return to the EXROM reserve (334 -> 339 B)."""

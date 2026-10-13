@@ -57,6 +57,12 @@ E_ARGS          EQU 55      ; WRONG NUMBER OF ARGUMENTS (call of a prototyped fu
 ; statement and function
 E_UNDEFFN       EQU 70      ; UNDEFINED FUNCTION (called or used, never defined; line of first use)
 E_NOMAIN        EQU 71      ; NO MAIN FUNCTION (RUN)
+E_BREAK         EQU 72      ; BREAK OUTSIDE LOOP OR SWITCH
+E_CONTINUE      EQU 73      ; CONTINUE OUTSIDE LOOP
+E_CASE          EQU 74      ; CASE OUTSIDE SWITCH (case or default)
+E_DUPCASE       EQU 75      ; DUPLICATE CASE (a case value twice, or a second default)
+E_UNDEFLABEL    EQU 76      ; UNDEFINED LABEL (goto to a label the function does not define;
+                            ;   line of the first goto)
 
 ; limit
 E_NESTING       EQU 90      ; NESTING TOO DEEP (compiler stack guard; more than 15 `*`)

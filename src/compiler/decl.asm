@@ -133,18 +133,29 @@ CELLS_LOAD:
     jr   CELLS_RETURN
 
 ; ============================================================================
-; LEX_MARK -- remember the current token (6 bytes pushed under the return address)
-; LEX_RESTORE -- pop such a mark: the next LEX_NEXT scans the marked token again
+; LEX_MARK -- remember the current token (6 bytes pushed under the return address): its position
+; in the main text, or for a token of a macro expansion the macro's name and the token's number
+; (preproc.asm PP_HOOK)
+; LEX_RESTORE -- pop such a mark: the next LEX_NEXT scans the marked token again (an expansion is
+; made again up to the token)
 ; In:  LEX_RESTORE: the mark directly under its return address
 ; Destroys: LEX_MARK: BC, DE. LEX_RESTORE: AF, BC, DE (both keep HL)
 ; ============================================================================
 LEX_MARK:
     pop  de
+    ld   bc, (LEX_MODE)
+    bit  LM_MACRO, c
     ld   bc, (TOK_PTR)
+    jr   z, .text
+    ld   bc, (PP_STACK + 5)            ; (in an expansion: the outermost macro's name ...
+.text:
     push bc
     ld   bc, (TOK_LINE)
+    jr   z, .line
+    ld   bc, (PP_STACK + 2)            ; ... and its line)
+.line:
     push bc
-    ld   bc, (TOK_FLAGS - 1)           ; B = TOK_FLAGS
+    ld   bc, (PP_TOKN)                 ; C = the token's number in the expansion, B = TOK_FLAGS
     push bc
     push de
     ret
@@ -154,12 +165,32 @@ LEX_RESTORE:
     ld   a, b
     and  1 << TF_BOL
     ld   (LEX_BOLP), a
-    pop  bc
-    ld   (LEX_LINE), bc
-    pop  bc
-    ld   (LEX_PTR), bc
+    xor  a
+    ld   (PP_TOKN), a                  ; no expansion open at a mark ...
+    ld   a, (LEX_MODE)
+    and  ~(1 << LM_MACRO)
+    ld   (LEX_MODE), a
+    ex   (sp), hl
+    ld   (LEX_LINE), hl
+    pop  hl
+    ex   (sp), hl
+    ld   (LEX_PTR), hl
+    ld   hl, PP_STACK
+    ld   (PP_SP), hl
+    pop  hl
     push de
-    ret
+    ld   a, c                          ; ... the macro's name: the marked token is its C-th
+    or   a
+    ret  z                             ; (C = 0: the main text)
+.skip:
+    dec  c
+    ret  z
+    push hl
+    push bc
+    call LEX_NEXT
+    pop  bc
+    pop  hl
+    jr   .skip
 
 ; ============================================================================
 ; SKIP_GROUP -- skip tokens up to and including the bracket that closes the group
@@ -911,6 +942,8 @@ TYPE_NAME:
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 DECLARATION:
+    ld   hl, (TOK_LINE)
+    ld   (DCL_LINE), hl                ; (a function definition's line: stmt.asm FUNC_DEF)
     ld   hl, 0
     ld   (LASTP_NODE), hl
     call DECL_SPECS                    ; HL = base type, C = storage class, B = const
@@ -959,7 +992,7 @@ DECLARATION:
 ; In:  HL = type, C = storage class, B = const flag; NM; current token after the declarator
 ; Out: IX = the entry (functions: the file-scope entry); current token after the initialiser
 ; Errors: E_SYNTAX (no name), E_STORAGE, E_REDECL, E_TYPE, E_REDEF, E_INCOMPLETE, E_FRAME,
-;      E_INIT, E_NOTSUP (initialised automatic objects), and the initialiser's errors
+;      E_INIT, E_NOTSUP (initialised automatic arrays and structs), the initialiser's errors
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 DECLARE:
@@ -999,8 +1032,7 @@ DECLARE:
     ld   a, (TOK_KIND)
     cp   TK_ASSIGN
     ret  nz
-    jp   CC_E_NOTSUP                   ; automatic initialisers: scalars in Phase 2, aggregates
-                                       ; not supported (spec.md 4.7)
+    jp   DCL_AUTOINIT                  ; (stmt.asm)
 .typedef:
     ld   a, SK_TYPEDEF
     call DCL_LOCAL

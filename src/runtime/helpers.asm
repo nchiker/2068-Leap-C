@@ -140,6 +140,70 @@ RT_UDIV:
     ret
 
 ; ============================================================================
+; RT_SWITCH -- `call RT_SWITCH / dw table`: jump to the code for the value in HL (stmt.asm
+; STMT_SWITCH). Tables (static data):
+;   sparse  [n][default] then n times [value][address]
+;   dense   [range | $8000][default][lowest] then range times [address] (value - lowest)
+; The value not found (or outside the range): the default's address
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+RT_SWITCH:
+    ex   de, hl                        ; DE = the value
+    pop  hl
+    rst  $08                           ; LDI: HL = the table
+    ld   c, (hl)
+    inc  hl
+    ld   b, (hl)
+    inc  hl
+    push hl                            ; -> the default
+    inc  hl
+    inc  hl
+    bit  7, b
+    jr   nz, .dense
+.case:                                 ; BC = cases left, HL -> the next [value][address]
+    ld   a, b
+    or   c
+    jr   z, .default
+    dec  bc
+    ld   a, (hl)
+    inc  hl
+    cp   e
+    ld   a, (hl)
+    inc  hl
+    jr   nz, .next
+    cp   d
+    jr   z, .found
+.next:
+    inc  hl
+    inc  hl
+    jr   .case
+.dense:                                ; HL -> the lowest value
+    res  7, b                          ; BC = the range
+    ld   a, e
+    sub  (hl)
+    ld   e, a
+    inc  hl
+    ld   a, d
+    sbc  a, (hl)
+    ld   d, a                          ; DE = the value - the lowest
+    inc  hl
+    ex   de, hl
+    or   a
+    sbc  hl, bc
+    jr   nc, .default                  ; outside the range (unsigned)
+    add  hl, bc
+    add  hl, hl
+    add  hl, de
+.found:
+    pop  af                            ; (the default)
+    jr   .go
+.default:
+    pop  hl
+.go:
+    rst  $08                           ; LDI: the address
+    jp   (hl)
+
+; ============================================================================
 ; RT_CPL -- HL = ~HL. Destroys: AF
 ; ============================================================================
 RT_CPL:
