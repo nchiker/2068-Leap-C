@@ -28,10 +28,7 @@ DATA_ALLOC:
     ld   d, (hl)                       ; DE = low
     inc  hl
     push hl
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a                          ; HL = high
+    rst  $08                          ; LDI: HL = high
     or   a
     sbc  hl, bc
     jr   c, .next
@@ -287,10 +284,7 @@ INIT_LIST:
     ld   bc, 0
 .members:                              ; elements = members
     inc  bc
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a
+    rst  $08                          ; LDI: HL = (HL)
     or   h
     jr   nz, .members
     ld   (IL_LEFT), bc
@@ -316,19 +310,13 @@ INIT_LIST:
     push hl                            ; a member: its type, the struct's address + its offset
     ld   c, S_VAL
     add  hl, bc
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a
+    rst  $08                          ; LDI: HL = (HL)
     add  hl, de
     ex   de, hl
     pop  hl
     ld   c, S_TYPE
     add  hl, bc
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a
+    rst  $08                          ; LDI: HL = (HL)
 .init:
     call INIT
     ld   hl, (IL_LEFT)
@@ -339,10 +327,7 @@ INIT_LIST:
     or   l
     jr   nz, .advance
     ld   hl, (IL_ELEM)                 ; the next member
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a
+    rst  $08                          ; LDI: HL = (HL)
     ld   (IL_ELEM), hl
     jr   .comma
 .advance:

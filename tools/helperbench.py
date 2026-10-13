@@ -43,7 +43,104 @@ CASES = [
     ("RT_SHL by 16 (every bit out)", "ld de,$FFFF\n ld hl,16", "call RT_SHL", lambda r, mem: r["HL"] == 0),
     ("RT_CPL ~$00FF", "ld hl,$00FF", "call RT_CPL", lambda r, mem: r["HL"] == 0xFF00),
     ("MATH_NEGATE16 -(300)", "ld hl,300", "call MATH_NEGATE16", lambda r, mem: r["HL"] == (-300) & 0xFFFF),
+    ("RT_MUL 1000 * 999 (wraps)", "ld de,1000\n ld hl,999", "call RT_MUL", lambda r, mem: r["HL"] == 999000 & 0xFFFF),
+    ("RT_DIVU 65535 / 1", "ld de,65535\n ld hl,1", "call RT_DIVU", lambda r, mem: r["HL"] == 65535),
+    ("RT_DIVU 65535 / 40000 (17-bit remainder steps)", "ld de,65535\n ld hl,40000", "call RT_DIVU",
+     lambda r, mem: r["HL"] == 1 and r["DE"] == 25535),
+    ("RT_DIVS -32768 / -1 (wraps)", "ld de,-32768\n ld hl,-1", "call RT_DIVS", lambda r, mem: r["HL"] == 0x8000),
+    ("RT_DIVS 7 / 0 = 0", "ld de,7\n ld hl,0", "call RT_DIVS", lambda r, mem: r["HL"] == 0),
+    ("RT_MODS -17 % 0 = 0", "ld de,-17\n ld hl,0", "call RT_MODS", lambda r, mem: r["HL"] == 0),
+    ("LIB_RAND, state 0 (program start): srand(1)'s first value", "ld hl,0\n ld (RND_STATE),hl", "call LIB_RAND",
+     lambda r, mem: r["HL"] == rand_seq(1, 1)[0] and mem(RND_STATE, 2) != b"\0\0"),
+    ("LIB_SRAND 12345 (C convention: the argument on the stack)", "ld hl,12345\n push hl",
+     "call LIB_SRAND", lambda r, mem: mem(RND_STATE, 2) == b"\x39\x30" and r["SP"] == 0xFF00 - 2),
 ]
+
+
+# ---- table-driven checks: every pair through the helper, the results compared with a model of
+# the integer semantics (spec.md 4.4; the same rules as tools/gen_exprtests.py)
+def _s(v):
+    return v - 65536 if v & 0x8000 else v
+
+
+def _sdiv(a, b, mod):
+    if b == 0:
+        return 0
+    q, r = abs(_s(a)) // abs(_s(b)), abs(_s(a)) % abs(_s(b))
+    if mod:
+        return (-r if _s(a) < 0 else r) & 0xFFFF
+    return (-q if (_s(a) < 0) != (_s(b) < 0) else q) & 0xFFFF
+
+
+MODELS = {
+    "RT_MUL": lambda a, b: a * b & 0xFFFF,
+    "RT_DIVU": lambda a, b: a // b if b else 0,
+    "RT_MODU": lambda a, b: a % b if b else 0,
+    "RT_DIVS": lambda a, b: _sdiv(a, b, 0),
+    "RT_MODS": lambda a, b: _sdiv(a, b, 1),
+}
+EDGE = [0, 1, 2, 3, 7, 10, 127, 128, 255, 256, 1000, 32767, 32768, 32769, 40000, 65534, 65535]
+
+
+def _pairs(n, seed):
+    import random
+    rnd = random.Random(seed)
+    pairs = [(a, b) for a in EDGE for b in EDGE]
+    pairs += [(rnd.randrange(65536), rnd.randrange(65536)) for _ in range(n // 2)]
+    pairs += [(rnd.randrange(65536), rnd.randrange(1, 300)) for _ in range(n // 2)]
+    return pairs
+
+
+TABLE_CASES = [(h, _pairs(300, i)) for i, h in enumerate(MODELS)]
+def table_case(helper, pairs):
+    """The table [left][right][result] is assembled after the loop; IX ends just past it."""
+    site = ("ld ix,tdata\n ld bc,%d\n" % len(pairs) +
+            "tloop: push bc\n ld e,(ix+0)\n ld d,(ix+1)\n ld l,(ix+2)\n ld h,(ix+3)\n call %s\n"
+            " ld (ix+4),l\n ld (ix+5),h\n ld de,6\n add ix,de\n pop bc\n dec bc\n ld a,b\n or c\n"
+            " jr nz,tloop\n jp tdone\n" % helper +
+            "tdata: DW %d, %d, $5555\n" % pairs[0] + "\n".join(" DW %d, %d, $5555" % p for p in pairs[1:]) +
+            "\ntdone: nop")
+
+    def check(r, mem):
+        base = (r["IX"] - 6 * len(pairs)) & 0xFFFF
+        got = mem(base, 6 * len(pairs))
+        return all((got[6 * i + 4] | got[6 * i + 5] << 8) == MODELS[helper](a, b) for i, (a, b) in enumerate(pairs))
+    return ("%s: %d pairs against the model (edge values, random)" % (helper, len(pairs)), "nop", site, check)
+
+
+def rand_seq(seed, n):
+    """The sequence LIB_RAND gives after srand(seed): xorshift (7, 9, 8) on 16 bits, top bit cleared."""
+    x, out = seed or 1, []
+    for _ in range(n):
+        x ^= x << 7 & 0xFFFF
+        x ^= x >> 9
+        x ^= x << 8 & 0xFFFF
+        out.append(x & 0x7FFF)
+    return out
+
+
+RND_STATE = None                     # set from the ROM's symbols by measure()
+RAND_N = 64
+RAND_OUT = 0xF000
+
+
+def rand_case(seed):
+    setup = (("ld hl,%d\n push hl\n call LIB_SRAND\n pop bc\n" % seed if seed is not None else
+              "ld hl,0\n ld (RND_STATE),hl\n") +
+             "ld ix,RAND_OUT\n ld b,%d\nrloop: push bc\n call LIB_RAND\n pop bc\n ld (ix+0),l\n ld (ix+1),h\n"
+             " inc ix\n inc ix\n djnz rloop" % RAND_N)
+    want = rand_seq(seed if seed is not None else 1, RAND_N)
+
+    def check(r, mem):
+        got = mem(RAND_OUT, 2 * RAND_N)
+        return [got[2 * i] | got[2 * i + 1] << 8 for i in range(RAND_N)] == want
+    return ("LIB_RAND: %d values after %s, against the model" % (
+        RAND_N, "srand(%d)" % seed if seed is not None else "program start"), setup, "call LIB_RAND",
+        lambda r, mem: check(r, mem) and r["HL"] == rand_seq(seed if seed is not None else 1, RAND_N + 1)[-1])
+
+
+CASES += [table_case(*t) for t in TABLE_CASES]
+CASES += [rand_case(None), rand_case(1), rand_case(0), rand_case(12345), rand_case(65535)]
 
 
 def site_bytes(site):
@@ -66,13 +163,16 @@ def site_bytes(site):
 
 
 def measure(m):
+    global RND_STATE
     out = []
     S = m.S
+    RND_STATE = S["RND_STATE"]
     for name, setup, site, check in CASES:
         d = tempfile.mkdtemp(prefix="lchb-")
         syms = "\n".join("%s EQU $%04X" % (k, S[k]) for k in
                          ("RT_CALLHL", "RT_MUL", "RT_DIVS", "RT_MODS", "RT_DIVU", "RT_MODU", "RT_SHL",
-                          "RT_SHR", "RT_SAR", "RT_CPL", "MATH_NEGATE16"))
+                          "RT_SHR", "RT_SAR", "RT_CPL", "MATH_NEGATE16", "LIB_RAND", "LIB_SRAND", "RND_STATE"))
+        syms += "\nRAND_OUT EQU $%04X" % RAND_OUT
         def lines(text):                 # a line with a label starts in column 1, others are indented
             return [x.strip() if ":" in x.split(";")[0] else "    " + x.strip() for x in text.split("\n")]
         src = ["    DEVICE ZXSPECTRUM48", syms, "DATA EQU $%04X" % DATA, "    ORG $%04X" % ORG,

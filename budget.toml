@@ -83,7 +83,7 @@ ranges = [["COMP_HELPERS_BEGIN", "COMP_HELPERS_END"]]
 id = "library"
 title = "Runtime: library"
 budget = 1300
-ranges = []
+ranges = [["COMP_LIBRARY_BEGIN", "COMP_LIBRARY_END"]]
 
 [[home.component]]
 id = "rtexit"
@@ -250,3 +250,43 @@ function code, return, expression statements and end-of-compile checks, 446 B) a
 compiler and, if it needs these bytes, applies the shrink/reallocation protocol; any decision
 that would take a reserve below its floor goes back to the owner. Phase 2's language features and
 tests are not reduced to fit. HOME reserve after M1.3: 512 B (the floor)."""
+
+[[ledger]]
+id = "L9"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "platform"
+delta = -351
+reason = """Owner decisions O1/O2 (spec.md v0.3, platform delta D3): the V2 16-bit math is cut to
+MATH_NEGATE16, MATH_ABS16 and MATH_COMPARE16 (39 B). Removed, measured on the production image:
+MATH_UMUL16 22, MATH_UDIV16 74, MATH_MULTIPLY16 11, MATH_SIGN_PREP 16, MATH_APPLY_SIGN 7,
+MATH_DIVIDE16 10, MATH_MOD16 22, MATH_SGN16 21, MATH_SQRT16 81, MATH_RND16 87 (351 B). C's
+multiply and divide are now the helper core's (L10), rand()/srand() the library's (36 B, within its
+budget). The platform keeps 138 B for the Phase 3 ISR delta and the Phase 5 glyphs, as before."""
+
+[[ledger]]
+id = "L10"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "helpers"
+delta = 14
+reason = """The helper core measures 174 B after the Phase 2 shrink: its own register-only multiply
+(RT_MUL/RT_UMUL 19 B, 951 T for 123 x 45) and restoring divide (RT_DIVU/RT_UDIV 39 B, signed
+RT_DIVS/RT_MODS 34 B; 1.6-1.9 kT) replace the 24 B of wrappers over the V2 math (L9); RT_MODU
+(5 B) and the runtime error exits (13 B, rtexit) moved into page-zero padding (shrink S7); one
+`jp (hl)` serves ENTER and RT_CALLHL (S6). From the platform's L9 bytes."""
+
+[[ledger]]
+id = "L11"
+date = "2026-10-13"
+milestone = "Phase 2"
+bank = "home"
+component = "stmt"
+delta = 269
+reason = """Repays the provisional L8 from measured savings (owner instruction for Phase 2): the
+platform's 351 B (L9) less the helper core's 14 B (L10) leave 337 B, of which 269 B restore the
+statements budget to its spec.md 2.2 value of 1,400 B and 68 B go to the HOME reserve (512 -> 580
+B). The compiler components keep their own shrink savings (S1-S5: decl 21, expr 18, codegen 17,
+stmt 3, symtab 1 B) as headroom for Phase 2 (preprocessor marks in decl, statements)."""

@@ -67,10 +67,15 @@ CX_EXPR:
     cp   TK_COMMA
     ret  nz
     call CX_DISCARD
+    call CX_NEXTV
+    jr   .comma
+
+; CX_NEXTV -- step past the current token, then an assignment expression as a value (CX_RVAL)
+; Destroys: AF, BC, DE, HL, IX; NM
+CX_NEXTV:
     call LEX_NEXT
     call CX_ASSIGN
-    call CX_RVAL
-    jr   .comma
+    jp   CX_RVAL
 
 ; ============================================================================
 ; CX_ASSIGN -- an assignment expression (C89 6.3.16): `lvalue = value`, `lvalue op= value`
@@ -106,9 +111,7 @@ CX_ASSIGN:
     cp   OK_LVAL
     call z, CG_LOAD
     call CX_HOLD                       ; [left][op][lvalue]
-    call LEX_NEXT
-    call CX_ASSIGN
-    call CX_RVAL
+    call CX_NEXTV
     call CX_POPY
     pop  af
     sub  TK_ASSIGN_OFS
@@ -116,9 +119,7 @@ CX_ASSIGN:
     jr   .store
 .simple:
     call CX_HOLD                       ; [lvalue] (an address in HL is held)
-    call LEX_NEXT
-    call CX_ASSIGN
-    call CX_RVAL
+    call CX_NEXTV
 .store:
     call CX_POPY                       ; Y = the lvalue
     ld   hl, (Y_TYPE)
@@ -479,6 +480,7 @@ CX_LOGIC:
     ld   a, OK_COND
 .int:
     ld   (X_KIND), a
+CX_SET_INT:                            ; X_TYPE = int
     ld   hl, TY_INT
     ld   (X_TYPE), hl
     ret
@@ -567,7 +569,7 @@ CX_BINOP:
     ld   de, (X_VAL)
     ld   b, h
     ld   c, l
-    call MATH_UMUL16
+    call RT_UMUL
     ld   (X_VAL), hl
     jr   .ptrdo
 .scale:                                ; at run time: the integer in HL, multiplied
@@ -597,8 +599,9 @@ CX_BINOP:
     ld   a, (X_KIND)
     cp   OK_LVALC
     jp   nc, CG_DIVK
-    ld   hl, (X_VAL)
-    call MATH_DIVIDE16
+    ld   hl, (X_VAL)                   ; (exact: the difference is a multiple of the size)
+    ex   de, hl
+    call RT_DIVS
     ld   (X_VAL), hl
     ret
 .do:                                   ; HL = the operation's type, DE = the result's type
@@ -819,9 +822,7 @@ CX_UNARY:
     ld   b, TK_EQ
     call .cfold
 .int:
-    ld   hl, TY_INT
-    ld   (X_TYPE), hl
-    ret
+    jp   CX_SET_INT
 .deref:
     call CX_RVAL
     jp   CX_DEREF
@@ -1039,9 +1040,7 @@ CX_CALL:
     ld   ix, CX_ARGN
     ld   b, CX_CALLW
     call CELLS_SAVE
-    call LEX_NEXT
-    call CX_ASSIGN
-    call CX_RVAL
+    call CX_NEXTV
     ld   ix, CX_ARGN + 2 * CX_CALLW
     ld   b, CX_CALLW
     call CELLS_LOAD

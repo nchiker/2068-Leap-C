@@ -3,9 +3,11 @@
 ;
 ; Compiled code reaches these by RST (page zero, src/rom/home.asm: LDI, STI, ENTER, LEAVE, CMPLT)
 ; or by CALL. Two-operand helpers take the left operand in DE and the right one in HL (the order
-; in which the code generator evaluates them) and return the result in HL. The arithmetic is the
-; kept V2 math (kernel/math/math.asm): wraparound, division truncating toward zero, the remainder
-; with the dividend's sign, division by zero giving 0 (spec.md 4.4).
+; in which the code generator evaluates them) and return the result in HL. Multiply and divide are
+; the helper core's own register-only routines (Phase 2; they replace the V2 math, platform delta
+; D3): wraparound, division truncating toward zero, the remainder with the dividend's sign,
+; division by zero giving 0 (spec.md 4.4). The compiler's constant arithmetic uses the same
+; routines (RT_UMUL, RT_UDIV; the EXROM constant folding through the HOME exports).
 ; ============================================================================
 
 ; ============================================================================
@@ -31,6 +33,8 @@ RT_ENTER:
     add  hl, bc                        ; C: SP >= the floor
     ex   de, hl
     jp   nc, RT_ERR_STACK
+; RT_CALLHL -- call the function at HL (calls through a function pointer: `call RT_CALLHL`)
+RT_CALLHL:
     jp   (hl)
 
 ; RT_CMPLT_SAME -- the rest of RST $28 CMPLT, operands of the same sign: carry <=> DE < HL
@@ -41,36 +45,99 @@ RT_CMPLT_SAME:
     ret
 
 ; ============================================================================
-; RT_CALLHL -- call the function at HL (calls through a function pointer: `call RT_CALLHL`)
-; ============================================================================
-RT_CALLHL:
-    jp   (hl)
-
-; ============================================================================
 ; RT_MUL -- HL = DE * HL (the low 16 bits: the same for signed and unsigned)
-; RT_DIVS / RT_MODS -- HL = DE / HL, DE % HL, signed
-; RT_DIVU / RT_MODU -- the same, unsigned
-; Destroys: AF, BC, DE
+; RT_UMUL -- HL = DE * BC (the compiler's constant arithmetic)
+; Destroys: AF, BC (RT_UMUL keeps DE)
 ; ============================================================================
 RT_MUL:
     ld   b, h
     ld   c, l
-    jp   MATH_UMUL16
-RT_DIVS:
-    ex   de, hl
-    jp   MATH_DIVIDE16
-RT_MODS:
-    ex   de, hl
-    jp   MATH_MOD16
-RT_MODU:
-    call RT_DIVU
-    ex   de, hl
+RT_UMUL:
+    ld   hl, 0
+    ld   a, 16
+.bit:                                  ; the multiplier's bits from the top: HL = HL * 2 (+ DE)
+    add  hl, hl
+    rl   c
+    rl   b
+    jr   nc, .next
+    add  hl, de
+.next:
+    dec  a
+    jr   nz, .bit
     ret
+
+; ============================================================================
+; RT_DIVS / RT_MODS -- HL = DE / HL, DE % HL, signed: the quotient truncated toward zero, the
+; remainder with the dividend's sign, 0 for a divisor of 0
+; Destroys: AF, BC, DE
+; ============================================================================
+RT_DIVS:
+    ld   a, h
+    xor  d
+    and  $80                           ; bit 7: the quotient's sign; bit 0 clear: the quotient
+    jr   RT_SDIV
+RT_MODS:
+    ld   a, d
+    and  $80                           ; bit 7: the dividend's sign
+    inc  a                             ; bit 0: the remainder
+RT_SDIV:
+    push af
+    call MATH_ABS16
+    ld   b, h
+    ld   c, l                          ; BC = |divisor|
+    ex   de, hl
+    call MATH_ABS16                    ; HL = |dividend|
+    call RT_UDIV
+    pop  af
+    rra                                ; (carry was clear): C = bit 0, bit 7 -> bit 6
+    jr   nc, .sign
+    ex   de, hl                        ; the remainder
+.sign:
+    and  $40
+    ret  z
+    jp   MATH_NEGATE16
+
+; ============================================================================
+; RT_DIVU -- HL = DE / HL, unsigned (0 for a divisor of 0). Destroys: AF, BC, DE (DE = DE % HL)
+; RT_MODU (page zero, src/rom/home.asm) -- HL = DE % HL, unsigned
+; RT_UDIV -- HL = HL / BC, DE = HL % BC, unsigned; HL = DE = 0 for BC = 0 (the compiler's constant
+; arithmetic). Restoring division, 16 steps, registers only. Destroys: AF (BC kept)
+; ============================================================================
 RT_DIVU:
     ld   b, h
     ld   c, l
     ex   de, hl
-    jp   MATH_UDIV16
+RT_UDIV:
+    ld   a, b
+    or   c
+    jr   nz, .div
+    ld   h, a
+    ld   l, a
+    ld   d, a
+    ld   e, a
+    ret
+.div:
+    ld   de, 0                         ; DE = the remainder
+    ld   a, 16
+.bit:                                  ; HL = the dividend, shifting out at the top while the
+    add  hl, hl                        ; quotient shifts in at the bottom
+    ex   de, hl
+    adc  hl, hl                        ; remainder = remainder * 2 + the dividend's next bit
+    jr   c, .sub                       ; 17 bits: certainly >= the divisor
+    sbc  hl, bc                        ; (carry clear)
+    jr   nc, .one
+    add  hl, bc
+    jr   .next
+.sub:
+    or   a
+    sbc  hl, bc
+.one:
+    inc  e                             ; the quotient's bit
+.next:
+    ex   de, hl
+    dec  a
+    jr   nz, .bit
+    ret
 
 ; ============================================================================
 ; RT_CPL -- HL = ~HL. Destroys: AF

@@ -128,7 +128,7 @@ TY_SIZE0:
     call TY_SIZE0
     pop  bc
     ex   de, hl
-    jp   MATH_UMUL16                   ; HL = count * element size (TY_ARRAY checked the range)
+    jp   RT_UMUL                       ; HL = count * element size (TY_ARRAY checked the range)
 .none:
     ld   hl, 0
     ret
@@ -223,7 +223,7 @@ TY_ARRAY:
     ld   b, h
     ld   c, l
     ld   hl, $FFFF
-    call MATH_UDIV16                   ; HL = most elements that fit in 65535 bytes
+    call RT_UDIV                       ; HL = most elements that fit in 65535 bytes
     pop  bc
     or   a
     sbc  hl, bc
@@ -348,10 +348,7 @@ TY_EQUAL:
     inc  hl
     inc  hl
     inc  hl
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a
+    rst  $08                          ; LDI: HL = (HL)
     ret
 .fieldb:                               ; BC = field B of node HL (HL kept)
     push de

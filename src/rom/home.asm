@@ -76,6 +76,14 @@ RST_CMPLT:
 RST_UNASSIGNED:
     di
     halt
+; Helpers in the page-zero padding (Phase 2 shrink; nothing falls through into them). $0030-$0032
+; stay free for a three-byte RST $30 vector.
+    ORG $0033
+; RT_MODU -- HL = DE % HL, unsigned (src/runtime/helpers.asm). Destroys: AF, BC, DE
+RT_MODU:
+    call RT_DIVU
+    ex   de, hl
+    ret
 ; IM 1 interrupt: FRAMES and the keyboard scan (kernel/interrupt/interrupt.asm)
     ORG $0038
     call KBD_ISR_TICK
@@ -96,6 +104,22 @@ COLD_START:
     ei
     call BANK_PAGE_EXROM_IN
     jp   LEAPC_EXROM_SHELL
+; ============================================================================
+; RT_ERR_STACK / RT_ERR_ARG / RT_ERROR -- end the running program with runtime error 1 / 4 / A
+; (spec.md 5.9; src/runtime/rtexit.asm): unwind to RT_RUN.main's caller (RUN_SP)
+; In:  RT_ERROR: A = the error number
+; Out: does not return to its caller: RT_ERRNUM = the error, SP = RUN_SP, `ret` into RT_RUN
+; Destroys: everything except A
+; ============================================================================
+RT_ERR_STACK:
+    ld   a, RTE_STACK
+    DB   $21                           ; (`ld hl,nn` swallows the next `ld a,n`)
+RT_ERR_ARG:
+    ld   a, RTE_ARG
+RT_ERROR:
+    ld   (RT_ERRNUM), a
+    ld   sp, (RUN_SP)
+    ret
     ASSERT $ <= $0066
     ORG $0066
     retn
@@ -160,6 +184,9 @@ COMP_HELPERS_END:
 COMP_RTEXIT_BEGIN:
     INCLUDE "src/runtime/rtexit.asm"
 COMP_RTEXIT_END:
+COMP_LIBRARY_BEGIN:
+    INCLUDE "src/runtime/library.asm"
+COMP_LIBRARY_END:
 
 LEAPC_HOME_CODE_END:
     IFDEF LEAPC_TEST

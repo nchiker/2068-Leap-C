@@ -23,7 +23,7 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `kernel/memory/memory.asm` | line store, fill, shift, cold init | HOME | **delta D2** |
 | `kernel/io/io.asm` | keyboard | HOME | pristine |
 | `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font | HOME | pristine |
-| `kernel/math/math.asm` | 16-bit math | HOME | pristine |
+| `kernel/math/math.asm` | 16-bit negate, absolute value, signed compare | HOME | **delta D3** |
 | `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | pristine |
 | `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | pristine |
 | `rom/v2_ay_beep.asm` | AY beep (HOME pieces; the EXROM piece `AY_BEEP`) | both | pristine |
@@ -53,6 +53,7 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 |---|---|---|---|
 | D1 | `include/sysvars.inc` | `ORG $8000` → `ORG LEAPC_SYSVARS_BASE`. Before `PROG_AREA_START`: `LEAPC_SYSVARS_END:` and `ORG LEAPC_SRC_BASE` | Baseline memory layout (`spec.md` §3.1): system variables at `$5B00`, line store from `$7800` |
 | D2 | `kernel/memory/memory.asm` | `MEM_COLD_INIT` clears from `LEAPC_COLD_CLEAR_BASE` instead of the literal `$8000` | The same layout: the cold clear covers the relocated system variables |
+| D3 | `kernel/math/math.asm` | Deletions only: `MATH_UMUL16`, `MATH_UDIV16`, `MATH_MULTIPLY16`, `MATH_SIGN_PREP`, `MATH_APPLY_SIGN`, `MATH_DIVIDE16`, `MATH_SGN16`, `MATH_MOD16`, `MATH_SQRT16`, `MATH_RND16`, `MATH_RND_SEED` (351 B). Kept: `MATH_NEGATE16`, `MATH_ABS16`, `MATH_COMPARE16` | Owner decisions O1/O2 (Phase 2, `spec.md` v0.3). C's multiply and divide are the helper core's register-only routines (`src/runtime/helpers.asm`: about 1.4-2.3× faster). `SQRT16`, `SGN16` and `MULTIPLY16` have no Release 1 caller. `rand()`/`srand()` are the library's xorshift generator (`src/runtime/library.asm`). The system variables the removed routines used (`DIV_*`, `MATH_SIGN`, `SQRT_*`) stay defined in `sysvars.inc`, unused; `RND_STATE` is the library generator's state |
 
 ## Names the platform expects from Leap-C
 

@@ -85,9 +85,7 @@ XC_FOLD:
     sbc  hl, de
     ret
 .mul:
-    ld   b, h
-    ld   c, l
-    jp   MATH_UMUL16                   ; (the low 16 bits are the same signed or unsigned)
+    jp   RT_MUL                        ; (the low 16 bits are the same signed or unsigned)
 .and:
     ld   a, h
     and  d
@@ -125,18 +123,15 @@ XC_FOLD:
     or   h
     or   l
     jr   .bool
-.div:                                  ; A = TK_SLASH or TK_PERCENT
-    ex   de, hl                        ; HL = dividend, DE = divisor
+.div:                                  ; A = TK_SLASH or TK_PERCENT; DE = dividend, HL = divisor
     bit  0, c
     jr   nz, .udiv
     cp   TK_SLASH
-    jp   z, MATH_DIVIDE16              ; truncates toward zero
-    jp   MATH_MOD16                    ; the sign of the dividend
+    jp   z, RT_DIVS                    ; truncates toward zero (the HOME helper core)
+    jp   RT_MODS                       ; the sign of the dividend
 .udiv:
-    ld   b, d
-    ld   c, e
     push af
-    call MATH_UDIV16                   ; HL = quotient, DE = remainder
+    call RT_DIVU                       ; HL = quotient, DE = remainder
     pop  af
     cp   TK_SLASH
     ret  z

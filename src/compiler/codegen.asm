@@ -59,10 +59,7 @@ CG_UNIT:
     ld   l, c
     inc  hl
     inc  hl
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a                          ; HL = high (C is clear from the add)
+    rst  $08                          ; LDI: HL = high (C is clear from the add)
     sbc  hl, de
     jr   c, .chain
     ld   a, e
@@ -107,10 +104,7 @@ CG_UNIT:
     inc  hl
     ld   d, (hl)                       ; DE = low
     inc  hl
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a                          ; HL = high
+    rst  $08                          ; LDI: HL = high
     or   a
     sbc  hl, de
     ld   a, h
@@ -132,7 +126,7 @@ CG_UNIT:
     ld   (CG_RLIM), bc
     ld   hl, 0
     ld   (CG_TAILEND), hl              ; a droppable tail cannot span regions
-    jp   .room
+    jr   .room
 
 ; ============================================================================
 ; CG_B -- emit byte A (a later byte of the current unit). Muted: nothing
@@ -359,9 +353,7 @@ CG_LOAD:
 .op:
     call CG_OP
 .rval:
-    ld   a, OK_RVAL
-    ld   (X_KIND), a
-    ret
+    jp   CX_SET_RVAL
 
 ; CG_XBYTE / CG_YBYTE -- C if X / Y has a byte type (char, signed char). Destroys: AF, HL
 CG_YBYTE:
@@ -623,7 +615,7 @@ CG_BINOP:
     ld   a, (CX_OP)
     sub  TK_EQ
     xor  1                             ; == : Z (1), != : NZ (0)
-    jp   CG_SETCOND
+    jr   CG_SETCOND
 .genk:                                 ; ld de,k: HL = left, DE = right
     ex   de, hl
     ld   a, $11
@@ -702,10 +694,7 @@ CG_BINOP:
     ld   e, a
     ld   d, 0
     add  hl, de
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a
+    rst  $08                          ; LDI: HL = (HL)
     call CG_CALL
     jr   .rval
 .add:
@@ -721,9 +710,7 @@ CG_BINOP:
 .seq:
     call CG_SEQ
 .rval:
-    ld   a, OK_RVAL
-    ld   (X_KIND), a
-    ret
+    jp   CX_SET_RVAL
 
 ; CG_CMP -- the comparisons (CG_BINOP; B = 1: swapped): X = OK_COND. Signed < > <= >= use RST
 ; CMPLT (carry <=> DE < HL), everything else `or a / sbc hl,de` (CG_CMPTAB)

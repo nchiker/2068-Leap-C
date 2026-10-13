@@ -1,8 +1,10 @@
 # 2068-Leap-C — Specification
 
-**Version 0.2, 2026-10-13** (v0.1, 2026-10-12: initial). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.3, 2026-10-13** (v0.1, 2026-10-12: initial; v0.2, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
+
+**Changes in v0.3 (Phase 2, owner decisions O1/O2 of 2026-10-13):** the retained 16-bit math is cut to what C uses (§2.1, platform delta D3). Multiply and divide are the helper core's own routines (§5.3). `rand()`/`srand()` are a C generator (§7).
 
 **What is fixed and what is tuned:**
 
@@ -71,11 +73,11 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 | Graphics: text, attributes, scrolling, pixels, line, sprite capture/draw, font | 2,071 | HOME | kept. **Delta:** 8 glyphs `[ ] { } \| ~ ^ \` (§6.2) |
 | Memory: line store, fill, shift, cold init | 485 | HOME | kept. **Delta:** re-pointed to the Leap-C memory map (§3) |
 | Keyboard I/O | 434 | HOME | kept. **Delta:** symbol-shift map for the 8 C characters (§6.2) |
-| 16-bit math (`MATH_UMUL16`, `UDIV16`, `MULTIPLY16`, `DIVIDE16`, `MOD16`, `SQRT16`, `RND16`, `COMPARE16`) | 390 | HOME | kept unchanged; used directly by the runtime |
+| 16-bit math (`MATH_NEGATE16`, `ABS16`, `COMPARE16`) | 390 → 39 | HOME | **Delta D3 (v0.3):** multiply and divide moved to the helper core's register-only routines (§5.3); `SQRT16`, `SGN16`, `MULTIPLY16` removed (no Release 1 caller); `RND16` replaced by the library's `rand()` (§7) |
 | Interrupt (IM 1, `FRAMES`, keyboard scan) | 154 | HOME | kept. **Delta:** BREAK request for native programs (§5.8) |
 | Bank switching (`BANK_PAGE_EXROM_IN/OUT`, depth-counted) | 46 | HOME | kept unchanged |
 | AY beep (HOME part) | 58 | HOME | kept |
-| `FOLD_UPPER` (was in the BASIC compiler) | 9 | HOME | moved into the platform |
+| `FOLD_UPPER` (was in the BASIC compiler) | 9 → 0 | HOME | not built: C is case-sensitive and nothing calls it |
 | Editor engine | 737 | EXROM | kept unchanged |
 | Tape: `STORAGE_*` | 793 | EXROM | kept. **Phase 7:** block send/receive (331 B) move to HOME (§8.3) |
 | Shell: editor/screen glue, command loop, tape commands, messages, chime, entry slots | 2,754 | EXROM | adapted into the Leap-C shell; BASIC-only parts removed |
@@ -405,7 +407,7 @@ Measured in the code-shape spike unless marked:
 | `CMPLT` | RST `$28` | signed compare: carry ⇔ DE < HL |
 | `CMPULT` | inline | unsigned `or a; sbc hl,de` (3 B) |
 | Shifts by a variable count (`SHL`, `SHR`, `SAR`) | CALL | |
-| `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU` | CALL | thin wrappers over the kept ROM math routines (signed/unsigned) |
+| `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU` | CALL | the helper core's register-only shift-and-add multiply and restoring divide (v0.3; they replace the V2 math). The compiler's constant arithmetic uses the same routines |
 | `SWITCH` | CALL + inline table | sparse table; dense jump table where denser |
 | `CALLHL` | CALL | indirect function call |
 | `LDL`/`STL` (size set only) | RST `$30` + byte | local word load/store, as measured in the spike |
@@ -539,7 +541,7 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 | Keyboard | `getkey()` (wait), `inkey()` (0 if none), `gets(buf, max)` (editor-style line input) |
 | Graphics | `plot(x, y)`, `draw(x0, y0, x1, y1)`, `point(x, y)`, `attr(row, col)`, `mode(n)` (0 normal / 1 dual-screen hi-res; §3.2), `sprite_get(row, col, w, h, buf)`, `sprite_put(row, col, w, h, buf)` |
 | Sound | `beep(frames, semitone)`, `sound(reg, value)` |
-| Time and random | `frames()`, `pause(n)`, `rand()`, `srand(n)` |
+| Time and random | `frames()`, `pause(n)`, `rand()`, `srand(n)`: `rand()` returns 0-32767 (`RAND_MAX`) from a 16-bit xorshift generator (period 65,535); `srand(n)` restarts its sequence, with seeds 0 and 1 giving the same one; every run starts with the sequence of `srand(1)` |
 | Low level | `inp(port)`, `outp(port, value)`; memory is accessed with pointers |
 | Strings and memory | `strlen`, `strcpy`, `strncpy`, `strcmp`, `strcat`, `strchr`, `memcpy`, `memmove`, `memset`, `memcmp` |
 | Conversion | `atoi`, `itoa(n, buf, base)`, `abs` |

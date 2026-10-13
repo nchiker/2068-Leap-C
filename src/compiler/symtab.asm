@@ -100,8 +100,7 @@ SYM_MAKE_IN:
     push ix
     pop  hl
     ret
-CALL_HL:
-    jp   (hl)
+CALL_HL         EQU RT_CALLHL       ; `call CALL_HL` = call (hl) (src/runtime/helpers.asm)
 
 ; ============================================================================
 ; SYM_NEW -- a new symbol entry for NM in the current scope (made the head of its chain)

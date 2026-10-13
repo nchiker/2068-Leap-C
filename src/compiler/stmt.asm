@@ -203,10 +203,7 @@ CC_FINISH:
     ld   a, h
     cp   LEAPC_IMG4_BASE >> 8
     jr   c, .end
-    ld   a, (hl)
-    inc  hl
-    ld   h, (hl)
-    ld   l, a
+    rst  $08                          ; LDI: HL = (HL)
     jr   .link
 .end:
     ld   a, h

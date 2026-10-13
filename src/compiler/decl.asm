@@ -1333,9 +1333,6 @@ CC_E_REDECL:
 CC_E_REDEF:
     ld   a, E_REDEF
     DB   $21
-CC_E_UNDECL:
-    ld   a, E_UNDECL
-    DB   $21
 CC_E_TYPESPEC:
     ld   a, E_TYPESPEC
     DB   $21

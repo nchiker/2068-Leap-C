@@ -41,6 +41,9 @@ RT_RUN:
     ld   (RUN_SP), sp
     xor  a
     ld   (RT_ERRNUM), a
+    ld   h, a
+    ld   l, a
+    ld   (RND_STATE), hl               ; rand() without srand() is srand(1) (src/runtime/library.asm)
     ld   hl, (RUN_MAIN)
     call RT_CALLHL
 .back:                                 ; (main has returned: the test harness checks IX and SP here)
@@ -50,23 +53,5 @@ RT_RUN:
     ld   hl, 0
     ret
 
-; ============================================================================
-; RT_ERR_STACK -- runtime error 1, stack overflow (ENTER)
-; RT_ERR_ARG -- runtime error 4, invalid library argument
-; RT_ERROR -- end the running program with runtime error A
-; In:  A = error number (RT_ERROR); RUN_SP = the stack pointer recorded by the program start,
-;      whose top is the return address into the run entry
-; Out: does not return to its caller: RT_ERRNUM = the error, SP = RUN_SP, `ret`
-; Destroys: everything except A
-; ============================================================================
-RT_ERR_STACK:
-    ld   a, RTE_STACK
-    DB   $21                           ; (`ld hl,nn` swallows the next `ld a,n`)
-RT_ERR_ARG:
-    ld   a, RTE_ARG
-RT_ERROR:
-    ld   (RT_ERRNUM), a
-    ld   sp, (RUN_SP)
-    ret
-
+; RT_ERR_STACK, RT_ERR_ARG and RT_ERROR are in the page-zero padding (src/rom/home.asm).
 VM_ERR_RANGE    EQU RT_ERR_ARG      ; platform name (rom/v2_ay_beep.asm: BEEP semitone range)
