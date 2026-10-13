@@ -2,11 +2,12 @@
 #   make / make build   production images in build/, test images (-DLEAPC_TEST) in build/test/
 #   make check          strict assembly (build), budgets, platform delta check, test-image check
 #   make budget         per-component budget table and ROM map
+#   make inventory      every HOME routine, table and gap with its referrers (docs/HOME_ROM_INVENTORY.md)
 #   make test           ZEsarUX tests on the images (boot, lexer, declarations, executable C programs,
 #                       helper and lexer measurements); needs ~/ts2068-debug, ZEsarUX 13.0
 #   make repro          two clean builds must give identical image hashes
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
-.PHONY: all build prod testimg check budget test repro audit clean
+.PHONY: all build prod testimg check budget inventory test repro audit clean
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -38,6 +39,9 @@ check: build
 
 budget: prod
 	python3 tools/budget.py
+
+inventory: prod
+	python3 tools/rom_inventory.py
 
 test: build
 	python3 tools/run_tests.py
