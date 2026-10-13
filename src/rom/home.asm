@@ -13,6 +13,7 @@
     INCLUDE "include/leapc_cells.inc"
     INCLUDE "include/leapc_tokens.inc"
     INCLUDE "include/leapc_errors.inc"
+    INCLUDE "include/leapc_decl.inc"
     DEFINE V2_KTAB_HOME                 ; rom/v2_ay_beep.asm: assemble the HOME pieces
     DEVICE NOSLOT64K
 
@@ -84,6 +85,23 @@ COMP_LEXER_BEGIN:
     INCLUDE "src/compiler/lexer.asm"
     INCLUDE "src/compiler/cerror.asm"
 COMP_LEXER_END:
+COMP_SYMTAB_BEGIN:
+    INCLUDE "src/compiler/symtab.asm"
+COMP_SYMTAB_END:
+COMP_DECL_BEGIN:
+    INCLUDE "src/compiler/decl.asm"
+    INCLUDE "src/compiler/types.asm"
+    INCLUDE "src/compiler/init.asm"
+COMP_DECL_END:
+COMP_EXPR_BEGIN:
+    INCLUDE "src/compiler/expr.asm"
+COMP_EXPR_END:
+COMP_CODEGEN_BEGIN:
+    INCLUDE "src/compiler/fold.asm"
+COMP_CODEGEN_END:
+COMP_STMT_BEGIN:
+    INCLUDE "src/compiler/stmt.asm"
+COMP_STMT_END:
 
 ; ---------------------------------------------------------------- runtime
 COMP_RTEXIT_BEGIN:

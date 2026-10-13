@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Leap-C test runner (make test): boot tests and lexer tests in ZEsarUX.
+"""Leap-C test runner (make test): boot, lexer and declaration tests in ZEsarUX.
 
 Boot tests (production and test images): cold start reaches the shell's idle key wait with the
 baseline layout in force (spec.md 3.1) and the start screen shown.
@@ -20,7 +20,11 @@ Token syntax in expectations: a keyword or punctuator as written (`int`, `<<=`);
 
 Throughput (tests/bench/*.c): TEST_LEX_COUNT, T-states per source byte (interrupts on).
 
-Usage: run_tests.py [--port N] [--only SUBSTR] [--json OUT]"""
+Declaration tests (tests/decl/**/*.c, production image): the ROM compiles each case (CC_COMPILE);
+tools/decltest.py decodes the workspace and the static data and checks the case's expectations
+(see that file). tools/declbench.py measures the workspace per symbol.
+
+Usage: run_tests.py [--port N] [--only SUBSTR] [--suite boot,lexer,decl,bench] [--json OUT]"""
 import argparse
 import glob
 import json
@@ -33,6 +37,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import c2src            # noqa: E402
 import clex             # noqa: E402
+import decltest         # noqa: E402
+import declbench        # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
@@ -240,13 +246,17 @@ def main():
     ap.add_argument("--port", type=int, default=10760)
     ap.add_argument("--only")
     ap.add_argument("--json", default=os.path.join(ROOT, "build", "test_results.json"))
+    ap.add_argument("--suite", default="boot,lexer,decl,bench")
     a = ap.parse_args()
-    results = dict(boot={}, lexer=[], bench=[])
+    suites = a.suite.split(",")
+    results = dict(boot={}, lexer=[], bench=[], decl=[])
     failed = 0
     t_start = time.time()
 
     # ---- boot tests on both images
     for name, build in (("production", "build"), ("test", "build/test")):
+        if "boot" not in suites:
+            break
         m = Machine(os.path.join(ROOT, build), a.port)
         try:
             m.start()
@@ -260,13 +270,47 @@ def main():
         finally:
             m.stop()
 
+    # ---- declaration cases on the production image
+    if "decl" in suites:
+        m = Machine(os.path.join(ROOT, "build"), a.port)
+        try:
+            m.start()
+            cases = sorted(glob.glob(os.path.join(ROOT, "tests", "decl", "**", "*.c"), recursive=True))
+            if a.only:
+                cases = [c for c in cases if a.only in c]
+            npass = nerr = 0
+            for c in cases:
+                ok, msg, info = decltest.check_case(m, c)
+                rel = os.path.relpath(c, ROOT)
+                results["decl"].append(dict(case=rel, ok=ok, msg=msg, info=info))
+                npass += ok
+                if info and info["error"]:
+                    nerr += ok
+                if not ok:
+                    failed += 1
+                    print("decl: FAIL %s: %s" % (rel, msg))
+            print("decl: %d/%d cases pass (%d declaration cases, %d error cases)" % (
+                npass, len(cases), npass - nerr, nerr))
+            if "bench" in suites and not a.only:
+                results["decl_ws"] = declbench.measure(m)
+                for r in results["decl_ws"]:
+                    print("workspace: %-26s %5.1f B each   (%s)" % (r["what"], r["bytes_each"], r["detail"]))
+        finally:
+            m.stop()
+
     # ---- lexer cases and throughput on the test image
+    if "lexer" not in suites and "bench" not in suites:
+        cases = []
     m = Machine(os.path.join(ROOT, "build", "test"), a.port)
     try:
+        if "lexer" not in suites and "bench" not in suites:
+            raise StopIteration
         m.start()
         cases = sorted(glob.glob(os.path.join(ROOT, "tests", "lexer", "**", "*.c"), recursive=True))
         if a.only:
             cases = [c for c in cases if a.only in c]
+        if "lexer" not in suites:
+            cases = []
         npass = 0
         for c in cases:
             ok, msg, info = check_lexer_case(m, c)
@@ -276,7 +320,7 @@ def main():
             if not ok:
                 failed += 1
                 print("lexer: FAIL %s: %s" % (rel, msg))
-        if not a.only:
+        if not a.only and "lexer" in suites:
             # built-in case: a truly empty line store (no records) gives one EOF token, line 1, at a
             # line start (a .c file always has at least its expectation line)
             m.restore()
@@ -303,8 +347,11 @@ def main():
                 if not ok:
                     failed += 1
                     print("lexer: FAIL raw %s: %s" % (name, msg))
-        print("lexer: %d/%d cases pass" % (npass, len(cases)))
+        if "lexer" in suites:
+            print("lexer: %d/%d cases pass" % (npass, len(cases)))
         for b in sorted(glob.glob(os.path.join(ROOT, "tests", "bench", "*.c"))):
+            if "bench" not in suites:
+                break
             lines = c2src.lines_of(open(b, encoding="latin-1").read())
             recs = c2src.records(lines)
             # correctness of the sample first (full dump against the reference)
@@ -328,6 +375,8 @@ def main():
                       row["sample"], "PASS" if row["ok"] else "FAIL " + msg, row["lines"], text_bytes, ntok,
                       r["tstates"], row["t_per_byte"] or 0, row["t_per_token"] or 0, row["t_per_line"] or 0,
                       (row["t_per_line"] or 0) / 3528.0))
+    except StopIteration:
+        pass
     finally:
         m.stop()
     results["failed"] = failed

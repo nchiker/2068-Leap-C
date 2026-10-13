@@ -41,31 +41,31 @@ ranges = [["COMP_LEXER_BEGIN", "COMP_LEXER_END"]]
 id = "decl"
 title = "Compiler: declarations and type system"
 budget = 2000
-ranges = []
+ranges = [["COMP_DECL_BEGIN", "COMP_DECL_END"]]
 
 [[home.component]]
 id = "symtab"
 title = "Compiler: scoped symbol table"
 budget = 800
-ranges = []
+ranges = [["COMP_SYMTAB_BEGIN", "COMP_SYMTAB_END"]]
 
 [[home.component]]
 id = "expr"
 title = "Compiler: typed expressions"
 budget = 1800
-ranges = []
+ranges = [["COMP_EXPR_BEGIN", "COMP_EXPR_END"]]
 
 [[home.component]]
 id = "codegen"
 title = "Compiler: code generator (templates, fixups, constant folding)"
 budget = 1200
-ranges = []
+ranges = [["COMP_CODEGEN_BEGIN", "COMP_CODEGEN_END"]]
 
 [[home.component]]
 id = "stmt"
 title = "Compiler: statements and functions"
 budget = 1400
-ranges = []
+ranges = [["COMP_STMT_BEGIN", "COMP_STMT_END"]]
 
 [[home.component]]
 id = "preproc"
@@ -148,3 +148,29 @@ delta = 331
 reason = """STORAGE_SEND_BLOCK + STORAGE_RECEIVE_BLOCK measure 331 B and stay in the EXROM until
 Phase 7 moves them to HOME (spec.md 8.3, HOME budget tape_block 340). Transitional allocation
 from the EXROM reserve (887 -> 556). Phase 7 removes this entry when the code moves."""
+
+[[ledger]]
+id = "L2"
+date = "2026-10-13"
+milestone = "M1.2"
+bank = "home"
+component = "symtab"
+delta = -400
+reason = """The scoped symbol table measures 295 B (workspace allocator, chains, lookup, scopes). 400 B
+are returned to the HOME reserve; 105 B stay for Phase 2's label lookup."""
+
+[[ledger]]
+id = "L3"
+date = "2026-10-13"
+milestone = "M1.2"
+bank = "home"
+component = "decl"
+delta = 1000
+reason = """Declarations and types measure 2,949 B after the shrink pass (3,258 B first build; function
+bodies and blocks, 169 B, moved to the stmt component). The 2,000 B base covers the declaration
+parser and type system; M1.2 also delivers what spec.md 2.2 has no line for: initialisers with
+brace elision and the `[]` counting pass (INIT_* 400 B), static data allocation in the image
+regions and string staging (122 B), and the parser support shared by the whole compiler (mark and
+rewind, group skipping, cell save, the error exits: 215 B). 1,000 B from the reserve (with
+L2's 400 B): HOME reserve 1,484 -> 884 B, floor 512 B. Shrink candidates kept open in
+docs/milestones/M1.2.md."""

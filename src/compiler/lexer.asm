@@ -419,13 +419,15 @@ LEX_NEXT:
     jp   CC_ERROR
 
 ; ============================================================================
-; LEX_BEGIN -- a token starts: record its line and line-start flag
+; LEX_BEGIN -- a token starts at HL: record its position, line and line-start flag
 ; LEX_MARK_LINE -- record the line only (a comment starts; the line-start state is kept)
-; In:  LEX_LINE, LEX_BOLP
-; Out: TOK_LINE = LEX_LINE; LEX_BEGIN also: TOK_FLAGS = TF_BOL or 0, LEX_BOLP = 0. A kept
+; In:  HL -> the token's first byte (LEX_BEGIN); LEX_LINE, LEX_BOLP
+; Out: TOK_LINE = LEX_LINE; LEX_BEGIN also: TOK_PTR = HL, TOK_FLAGS = TF_BOL or 0, LEX_BOLP = 0.
+;      A, HL kept
 ; Destroys: DE (LEX_BEGIN: and F)
 ; ============================================================================
 LEX_BEGIN:
+    ld   (TOK_PTR), hl
     push af
     ld   a, (LEX_BOLP)
     ld   (TOK_FLAGS), a
