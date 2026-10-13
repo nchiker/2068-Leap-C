@@ -17,7 +17,7 @@ reserve_floor = 512
 id = "page0"
 title = "Page zero, cold start, trampolines"
 budget = 160
-ranges = [["COMP_PAGE0_BEGIN", "COMP_PAGE0_END"]]
+ranges = [["COMP_PAGE0_BEGIN", "COMP_PAGE0_END"], ["COMP_TRAMP_BEGIN", "COMP_TRAMP_END"]]
 
 [[home.component]]
 id = "platform"
@@ -77,7 +77,7 @@ ranges = []
 id = "helpers"
 title = "Runtime: helper core"
 budget = 500
-ranges = []
+ranges = [["COMP_HELPERS_BEGIN", "COMP_HELPERS_END"]]
 
 [[home.component]]
 id = "library"
@@ -114,7 +114,7 @@ ranges = [["STORAGE_SEND_BLOCK", "STORAGE_VERSION_WORD"]]
 id = "xshell"
 title = "Leap-C shell (entry points, editor glue, commands, messages, chime)"
 budget = 2900
-ranges = [["COMP_XSHELL_BEGIN", "COMP_XSHELL_END"]]
+ranges = [["COMP_XSHELL_BEGIN", "COMP_XCOMP_ENTRY"], ["COMP_XCOMP_ENTRY_END", "COMP_XSHELL_END"]]
 
 [[exrom.component]]
 id = "xkeywords"
@@ -127,6 +127,12 @@ id = "xdiag"
 title = "Compiler diagnostics (message texts, error reporting)"
 budget = 650
 ranges = []
+
+[[exrom.component]]
+id = "xcomp"
+title = "Compiler parts run through HOME trampolines (constant folding; ledger L5)"
+budget = 0
+ranges = [["COMP_XCOMP_ENTRY", "COMP_XCOMP_ENTRY_END"], ["COMP_XCOMP_BEGIN", "COMP_XCOMP_END"]]
 
 [[exrom.component]]
 id = "xfp"
@@ -174,3 +180,73 @@ regions and string staging (122 B), and the parser support shared by the whole c
 rewind, group skipping, cell save, the error exits: 215 B). 1,000 B from the reserve (with
 L2's 400 B): HOME reserve 1,484 -> 884 B, floor 512 B. Shrink candidates kept open in
 docs/milestones/M1.2.md."""
+
+[[ledger]]
+id = "L4"
+date = "2026-10-13"
+milestone = "M1.3"
+bank = "home"
+component = "helpers"
+delta = -340
+reason = """The helper core measures 107 B in src/runtime/helpers.asm (ENTER's stack check, the rest of
+CMPLT, CALLHL, MUL, DIVS/DIVU, MODS/MODU, SHL/SHR/SAR, CPL) plus 30 B of bodies in the page-zero RST
+slots, counted in page0 (LDI 5, STI 6, LEAVE 5, ENTER 6, CMPLT 8). 160 B stay for Phase 2's SWITCH
+helper; 340 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L5"
+date = "2026-10-13"
+milestone = "M1.3"
+bank = "exrom"
+component = "xcomp"
+delta = 222
+reason = """Shrink protocol step 2 (cold code to EXROM): constant folding (XC_FOLD and its comparison
+table, 219 B, src/compiler/fold.asm) and its EXROM entry jump (3 B) run with the EXROM paged in. It is
+pure register arithmetic that touches nothing in chunk 6 and raises no compile error (bank rule 3),
+reached through the HOME trampoline CX_FOLD (11 B, page0's trampoline budget). EXROM reserve
+556 -> 334 B, floor 256 B."""
+
+[[ledger]]
+id = "L6"
+date = "2026-10-13"
+milestone = "M1.3"
+bank = "home"
+component = "expr"
+delta = 841
+reason = """The typed expression compiler measures 2,641 B after the M1.3 shrink pass (2,718 B first
+build). The 1,800 B base assumed the M1.2 constant-expression parser (1,404 B) was most of it; M1.3
+adds code for every operator: assignment and compound assignment with lvalue holding (139 B), calls
+with right-to-left argument evaluation by re-scanning the argument list (333 B), ++/-- (92 B), ?:
+(164 B) and && || (131 B) with compile-time selection under constant conditions, implicit function
+declarations, function designators and frame operands in primary expressions (+123 B), lvalue
+checks with const enforcement (60 B). Feasibility estimate for expressions: 1.4-2.0 KB. From the
+reserve together with L4, L7 and the provisional L8."""
+
+[[ledger]]
+id = "L7"
+date = "2026-10-13"
+milestone = "M1.3"
+bank = "home"
+component = "codegen"
+delta = 140
+reason = """The code generator measures 1,340 B after constant folding moved to the EXROM (L5) and the
+shrink pass (1,692 B first build): instruction units with region chaining and the code reserve
+(130 B), operand loads and stores for every operand kind with byte extension and far frame objects
+(~300 B), binary operators with held operands, constant special cases and the helper table
+(~520 B), conditions and jumps with fixup chains (~110 B), function-address fixup chains (50 B),
+droppable value tails (46 B). From the reserve together with L4, L6 and the provisional L8."""
+
+[[ledger]]
+id = "L8"
+date = "2026-10-13"
+milestone = "M1.3"
+bank = "home"
+component = "stmt"
+delta = -269
+reason = """PROVISIONAL (owner decision 2026-10-13): after shrinking, L5 and L4, M1.3 was 269 B short of
+the HOME reserve floor. 269 B of the statements component's unused budget (954 B left after M1.3's
+function code, return, expression statements and end-of-compile checks, 446 B) are lent to M1.3
+(L6, L7). This is a temporary allocation, not a demonstrated saving: Phase 2 measures the statement
+compiler and, if it needs these bytes, applies the shrink/reallocation protocol; any decision
+that would take a reserve below its floor goes back to the owner. Phase 2's language features and
+tests are not reduced to fit. HOME reserve after M1.3: 512 B (the floor)."""

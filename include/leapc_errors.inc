@@ -50,7 +50,13 @@ E_TOOLARGE      EQU 42      ; TYPE TOO LARGE (an object of more than 65535 bytes
 E_CONSTEXPR     EQU 50      ; CONSTANT EXPRESSION REQUIRED
 E_OPERAND       EQU 51      ; BAD OPERAND TYPE (e.g. `*` of an int, `.` of a non-struct)
 E_MEMBER        EQU 52      ; NO SUCH MEMBER
-E_LVALUE        EQU 53      ; NOT AN LVALUE (`&` of a value)
+E_LVALUE        EQU 53      ; NOT AN LVALUE (`&` of a value, assignment to a value)
+E_CONST         EQU 54      ; ASSIGNMENT TO CONST (a const object assigned or incremented)
+E_ARGS          EQU 55      ; WRONG NUMBER OF ARGUMENTS (call of a prototyped function)
+
+; statement and function
+E_UNDEFFN       EQU 70      ; UNDEFINED FUNCTION (called or used, never defined; line of first use)
+E_NOMAIN        EQU 71      ; NO MAIN FUNCTION (RUN)
 
 ; limit
 E_NESTING       EQU 90      ; NESTING TOO DEEP (compiler stack guard; more than 15 `*`)

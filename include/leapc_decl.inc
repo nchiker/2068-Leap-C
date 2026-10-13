@@ -110,12 +110,20 @@ SC_STATIC       EQU 3
 SC_AUTO         EQU 4
 SC_REGISTER     EQU 5
 
-; ---- expression operands (X_KIND; src/compiler/expr.asm) ----
+; ---- expression operands (X_KIND; src/compiler/expr.asm, src/compiler/codegen.asm) ----
+; Deferred kinds (below OK_LVAL) have no code yet: they are loaded or stored when used. Resident
+; kinds have had their code emitted: the address or value is in HL (or, when the operand is held
+; for another operand's code, on the stack: CG_PEND), or a condition is in the flags.
 OK_CONST        EQU 0       ; integer constant: X_VAL (an integer constant expression)
-OK_ADDRC        EQU 1       ; constant computed from an address: X_VAL (static initialisers only)
+OK_ADDRC        EQU 1       ; constant computed from an address: X_VAL
 OK_LVALC        EQU 2       ; object at the constant address X_VAL (static storage)
-OK_LVAL         EQU 3       ; object at an address known only at run time (locals, *p)
-OK_RVAL         EQU 4       ; value known only at run time
+OK_LVALF        EQU 3       ; object in the frame at IX + X_VAL (a local or a parameter)
+OK_FUNC         EQU 4       ; the function whose file-scope entry is X_VAL (its address is a
+                            ;   constant known when the function is defined: fixup chain)
+OK_LVAL         EQU 5       ; object at HL + X_VAL (address computed at run time)
+OK_RVAL         EQU 6       ; value in HL
+OK_COND         EQU 7       ; value 1/0 as the Z80 condition X_VAL (0 NZ, 1 Z, 2 NC, 3 C) true/false
+X_FLAGS_CONST   EQU 1 << SF_CONST   ; X_FLAGS: the object is const (assignment refused)
 
 ; ---- image regions (spec.md 3.2): region order and the IMG_LIM table ----
 IMG_REGIONS     EQU 4

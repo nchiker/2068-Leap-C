@@ -56,6 +56,7 @@ DATA_ALLOC:
     pop  af
     dec  a
     jr   nz, .region
+CC_E_TOOBIG:
     ld   a, E_TOOBIG
     jp   CC_ERROR
 
@@ -143,8 +144,13 @@ INIT:
     ld   a, (CX_NOEVAL)
     or   a
     ret  nz
+    ld   a, (X_KIND)
+    cp   OK_FUNC
     ld   a, l
     ld   hl, (X_VAL)
+    push af
+    call z, CG_FLINK                   ; a function's address: perhaps its fixup chain
+    pop  af
     ex   de, hl
     ld   (hl), e
     dec  a

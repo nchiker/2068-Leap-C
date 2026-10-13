@@ -44,6 +44,10 @@ LEAPC_IMG3_END      EQU $F800
 
 LEAPC_STACK_LIMIT   EQU $F800   ; lowest stack byte
 LEAPC_STACK_TOP     EQU $FF00   ; initial SP
+; ENTER's stack check (spec.md 5.3): a frame may not take SP below this. The margin above
+; LEAPC_STACK_LIMIT covers what runs without its own check: expression temporaries, argument
+; lists, helpers and library routines, the IM 1 handler.
+LEAPC_RT_STACK_FLOOR EQU LEAPC_STACK_LIMIT + 128
 
 ; MEM_COLD_INIT (platform delta D2) clears the system variables, the Leap-C cells, display file 2
 ; and the source region: LEAPC_COLD_CLEAR_BASE .. LEAPC_SRC_TOP-1.

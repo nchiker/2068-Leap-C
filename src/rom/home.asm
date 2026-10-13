@@ -27,18 +27,51 @@ COMP_PAGE0_BEGIN:
 IO_KEY_SCAN_ROW:
     in   a, (PORT_ULA)
     ret
-; RST $08-$30 are the runtime helper vectors (LDI, STI, ENTER, LEAVE, CMPLT, reserved). The helper
-; core arrives in M1.3; until then each vector stops the machine (RST_UNASSIGNED).
+; RST $08-$30: the runtime helper vectors (spec.md 2.3, 5.3). Bodies that fit their 8-byte slot sit
+; at the vector (no `jp`); the others start there and continue in src/runtime/helpers.asm.
+; RST $08 LDI -- HL = the word at HL. Destroys: A
     ORG $0008
-    jr   RST_UNASSIGNED
+RST_LDI:
+    ld   a, (hl)
+    inc  hl
+    ld   h, (hl)
+    ld   l, a
+    ret
+; RST $10 STI -- the word at DE = HL. Out: HL kept, DE = address + 1. Destroys: -
     ORG $0010
-    jr   RST_UNASSIGNED
+RST_STI:
+    ex   de, hl
+    ld   (hl), e
+    inc  hl
+    ld   (hl), d
+    ex   de, hl
+    ret
+; RST $18 ENTER n (`rst $18 / db n`) -- function prologue: push IX; IX = SP (the saved IX);
+; SP -= n (the locals); stack check (runtime error 1). Owner decision 2026-10-13: IX points at
+; the saved IX, locals at IX-1..IX-n, arguments at IX+4... (spec.md 5.2 as amended in M1.3).
+; Destroys: AF, BC, DE, HL
     ORG $0018
-    jr   RST_UNASSIGNED
+RST_ENTER:
+    pop  hl                            ; HL -> n
+    push ix
+    jp   RT_ENTER
+; RST $20 LEAVE -- function epilogue: SP = IX; pop IX; return to the caller. HL kept
     ORG $0020
-    jr   RST_UNASSIGNED
+RST_LEAVE:
+    ld   sp, ix
+    pop  ix
+    ret
+; RST $28 CMPLT -- signed compare: carry <=> DE < HL. Destroys: AF, DE, HL
     ORG $0028
-    jr   RST_UNASSIGNED
+RST_CMPLT:
+    ld   a, h
+    xor  d
+    jp   p, RT_CMPLT_SAME              ; same signs: an unsigned compare
+    ld   a, d
+    rla                                ; signs differ: DE < HL <=> DE is negative
+    ret
+; RST $30 is reserved for the optional size template set (LDL/STL, spec.md 5.6): it stops the
+; machine until then
     ORG $0030
 RST_UNASSIGNED:
     di
@@ -97,13 +130,33 @@ COMP_EXPR_BEGIN:
     INCLUDE "src/compiler/expr.asm"
 COMP_EXPR_END:
 COMP_CODEGEN_BEGIN:
-    INCLUDE "src/compiler/fold.asm"
+    INCLUDE "src/compiler/codegen.asm"
 COMP_CODEGEN_END:
+
+; ---------------------------------------------------------------- EXROM trampolines (page0 budget)
+COMP_TRAMP_BEGIN:
+; ============================================================================
+; CX_FOLD -- the value of `left op right` for constants: the trampoline to XC_FOLD in the EXROM
+; (src/compiler/fold.asm; bank rule 3: it touches nothing in chunk 6)
+; In:  A = operator token, DE = left, HL = right, C bit 0 = 1: unsigned operation
+; Out: HL = the result
+; Destroys: AF, BC, DE
+; ============================================================================
+CX_FOLD:
+    push af
+    call BANK_PAGE_EXROM_IN
+    pop  af
+    call LEAPC_EXROM_FOLD
+    jp   BANK_PAGE_EXROM_OUT
+COMP_TRAMP_END:
 COMP_STMT_BEGIN:
     INCLUDE "src/compiler/stmt.asm"
 COMP_STMT_END:
 
 ; ---------------------------------------------------------------- runtime
+COMP_HELPERS_BEGIN:
+    INCLUDE "src/runtime/helpers.asm"
+COMP_HELPERS_END:
 COMP_RTEXIT_BEGIN:
     INCLUDE "src/runtime/rtexit.asm"
 COMP_RTEXIT_END:

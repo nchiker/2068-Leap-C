@@ -30,6 +30,7 @@ LEAPC_EXROM_END     EQU $E000
 
 ; EXROM entry points called from HOME (fixed addresses at the start of the EXROM image)
 LEAPC_EXROM_SHELL   EQU LEAPC_EXROM_BASE        ; cold entry of the shell (jp)
+LEAPC_EXROM_FOLD    EQU LEAPC_EXROM_BASE + 3    ; constant folding (jp XC_FOLD; HOME trampoline CX_FOLD)
 
 ; Tape version words the platform's STORAGE_VERSION_WORD stamps and checks (spec.md section 8.1).
 ; Leap-C has no package tapes; both names give the Leap-C word.

@@ -1,3 +1,3 @@
-// expect: error E_CONSTEXPR 3
+// expect: error E_UNDEFFN 3
 int f(void);
 int (*fp)(void) = f;

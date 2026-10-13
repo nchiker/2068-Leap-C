@@ -50,12 +50,12 @@ DS_CONST:       DEFS 1              ; ... const seen ...
 DS_MASK:        DEFS 1              ; ... type specifier bits seen
 X_KIND:         DEFS 1              ; expression operand: OK_* ...
 X_TYPE:         DEFS 2              ; ... type ...
-X_VAL:          DEFS 2              ; ... value or address
-                DEFS 1              ; (X is saved as three words)
+X_VAL:          DEFS 2              ; ... value, address, displacement or offset ...
+X_FLAGS:        DEFS 1              ; ... X_FLAGS_CONST (X is saved as three words)
 Y_KIND:         DEFS 1              ; left operand of a binary operator (same layout as X)
 Y_TYPE:         DEFS 2
 Y_VAL:          DEFS 2
-                DEFS 1
+Y_FLAGS:        DEFS 1
 CX_NOEVAL:      DEFS 1              ; > 0: operands are not evaluated (sizeof, initialiser count pass)
 CX_OP:          DEFS 1              ; CX_BINOP: the operator
 CELLS_RET:      DEFS 2              ; CELLS_SAVE / CELLS_LOAD: their return address
@@ -67,8 +67,28 @@ IL_LEFT:        DEFS 2              ; ... elements left ($FFFF - given for `[]`)
 IL_BRACED:      DEFS 2              ; ... nonzero: the list is in braces
 IL_CELLS        EQU IL_ADDR
 IL_WORDS        EQU 5
+IMG_LIM0:       DEFS 4              ; a full dummy region before region 1: the code starts here, so
+                                    ; its first unit moves to region 1 (CG_UNIT; nothing else uses it)
 IMG_LIM:        DEFS 4 * IMG_REGIONS ; per image region: [low:2][high:2]; static data grows down
 WS_GLO:         DEFS 2              ; lowest byte of the global area (grows down from LEAPC_SRC_TOP)
+; ---- code generation (M1.3: src/compiler/codegen.asm) ----
+CG_PC:          DEFS 2              ; next code byte (CC_COMPILE: IMG_LIM0) ...
+CG_RLIM:        DEFS 2              ; ... in the region whose IMG_LIM entry this points at
+CG_PEND:        DEFS 1              ; nonzero: HL holds a held operand (CG_UNIT pushes it first)
+CG_PENDSV:      DEFS 1              ; CG_PEND when the outermost muted part began (CX_MUTE)
+CG_UNS:         DEFS 1              ; CG_BINOP: 1 = unsigned operation
+CG_TAIL:        DEFS 2              ; code CX_DISCARD may drop: from CG_TAIL ...
+CG_TAILEND:     DEFS 2              ; ... to CG_TAILEND (when nothing was emitted after it)
+CG_LASTLV:      DEFS 2              ; CG_PC right after the last `rst LEAVE` (0: none since a label)
+CG_ENTN:        DEFS 2              ; the current function's ENTER operand (its frame size)
+FN_RET:         DEFS 2              ; the current function's return type
+CX_ARGN:        DEFS 1              ; CX_CALL (saved around each argument): arguments left ...
+CX_ARGT:        DEFS 1              ; ... arguments in all ...
+CX_PARAMP:      DEFS 2              ; ... next parameter type (0: no prototype) ...
+CX_FRET:        DEFS 2              ; ... the function's return type
+CX_CALLW        EQU 3               ; (words from CX_ARGN)
+RUN_MAIN:       DEFS 2              ; main's address (0: none), set at the end of a compile
+RUN_VOID:       DEFS 1              ; nonzero: main returns void (exit status 0)
 CC_CELLS_END:
 
 ; ---- compiler: error exit (src/compiler/cerror.asm) ----

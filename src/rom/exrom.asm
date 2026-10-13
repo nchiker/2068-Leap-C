@@ -10,6 +10,7 @@
     INCLUDE "include/sysvars.inc"
     INCLUDE "include/leapc_cells.inc"
     INCLUDE "include/keys.inc"
+    INCLUDE "include/leapc_tokens.inc"
     IFDEF LEAPC_TEST
     INCLUDE "build/test/home_exports.inc"
     ELSE
@@ -32,12 +33,23 @@ KTAB_CALC_EXIT_TRAMPOLINE   EQU BANK_PAGE_EXROM_OUT
     DEVICE NOSLOT64K
 
     ORG LEAPC_EXROM_BASE
-; ---------------------------------------------------------------- entry points + shell
+; ---------------------------------------------------------------- entry points (fixed addresses)
 COMP_XSHELL_BEGIN:
     ASSERT $ == LEAPC_EXROM_SHELL
     jp   SHELL_COLD
+COMP_XCOMP_ENTRY:
+    ASSERT $ == LEAPC_EXROM_FOLD
+    jp   XC_FOLD
+COMP_XCOMP_ENTRY_END:
+; ---------------------------------------------------------------- shell
     INCLUDE "src/shell/shell.asm"
 COMP_XSHELL_END:
+
+; ---------------------------------------------------------------- compiler parts run through a HOME
+; trampoline (bank rule 3: they never touch chunk 6)
+COMP_XCOMP_BEGIN:
+    INCLUDE "src/compiler/fold.asm"
+COMP_XCOMP_END:
 
 ; ---------------------------------------------------------------- retained platform (spec.md 2.1)
 COMP_XPLATFORM_BEGIN:

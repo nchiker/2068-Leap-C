@@ -17,10 +17,11 @@
 CC_STACK_FLOOR  EQU LEAPC_STACK_LIMIT + 192    ; the guard leaves room for the ISR and CC_ERROR
 
 ; ============================================================================
-; CC_COMPILE -- compile the program in the line store (M1.2: its declarations)
+; CC_COMPILE -- compile the program in the line store into the image regions
 ; In:  line store (PROG_AREA_START..PROG_END); chunk 6 paged out (the image regions are RAM)
-; Out: NC: compiled. C: error, CC_ERRNUM / CC_ERRLINE. Either way the workspace (symbols, types)
-;      and the static data stay in RAM until the next compile.
+; Out: NC: compiled; RUN_MAIN / RUN_VOID (src/compiler/stmt.asm CC_FINISH). C: error, CC_ERRNUM /
+;      CC_ERRLINE. Either way the workspace (symbols, types) and the image stay in RAM until the
+;      next compile.
 ; Destroys: AF, BC, DE, HL (IX kept)
 ; ============================================================================
 CC_COMPILE:
@@ -33,17 +34,17 @@ CC_COMPILE:
     ld   bc, CC_ERRNUM + 1 - CC_CELLS_BEGIN
     call MEM_FILL_ZERO
     ld   (CC_SP), sp
-    ld   hl, IMG_TABLE                 ; the image regions, then WS_GLO
+    ld   hl, IMG_TABLE                 ; the image regions, WS_GLO, CG_PC, CG_RLIM
     ld   de, IMG_LIM
-    ld   bc, IMG_REGIONS * 4 + 2
+    ld   bc, IMG_REGIONS * 4 + 6
     ldir
     ld   hl, (PROG_END)
     ld   (WS_LOC), hl
     call LEX_INIT
     call LEX_NEXT
 .decl:
-    or   a                             ; TK_EOF (NC)
-    ret  z
+    or   a                             ; TK_EOF
+    jp   z, CC_FINISH
     call DECLARATION
     ld   a, (TOK_KIND)
     jr   .decl
@@ -55,7 +56,9 @@ IMG_TABLE:
     DW   LEAPC_IMG3_BASE, LEAPC_IMG3_END
     DW   LEAPC_IMG4_BASE, LEAPC_IMG4_END
     DW   LEAPC_SRC_TOP                 ; WS_GLO
-    ASSERT WS_GLO == IMG_LIM + IMG_REGIONS * 4
+    DW   IMG_LIM0, IMG_LIM0            ; CG_PC, CG_RLIM: the dummy region (CG_UNIT)
+    ASSERT WS_GLO == IMG_LIM + IMG_REGIONS * 4 && IMG_LIM0 + 4 == IMG_LIM
+    ASSERT CG_PC == WS_GLO + 2 && CG_RLIM == CG_PC + 2
 
 ; ============================================================================
 ; CC_EXPECT -- the current token must be A; step past it

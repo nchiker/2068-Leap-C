@@ -1,19 +1,23 @@
 ; ============================================================================
-; src/compiler/fold.asm -- constant folding (spec.md 4.4; counted in the code generator budget)
+; src/compiler/fold.asm -- constant folding (spec.md 4.4)
 ;
 ; The arithmetic of the binary operators on 16-bit constants, as the generated code computes it at
 ; run time: two's complement wraparound, signed or unsigned division, comparisons and shifts by the
 ; operation's type, division by zero gives 0 (the kept ROM math routines; spec.md 4.4).
+;
+; EXROM-resident since M1.3 (budget ledger L5): it is pure arithmetic on registers that touches no
+; RAM in chunk 6, so it runs with the EXROM paged in, through the HOME trampoline CX_FOLD
+; (src/compiler/codegen.asm), like the diagnostics of bank rule 3.
 ; ============================================================================
 
 ; ============================================================================
-; CX_FOLD -- the value of `left op right` for constants
+; XC_FOLD -- the value of `left op right` for constants (called through CX_FOLD)
 ; In:  A = operator token (TK_PLUS .. TK_GE), DE = left, HL = right, C bit 0 = 1: unsigned
 ;      operation (division, modulus, >>, comparisons)
 ; Out: HL = the result (comparisons and && ||: 0 or 1)
 ; Destroys: AF, BC, DE
 ; ============================================================================
-CX_FOLD:
+XC_FOLD:
     ld   b, a
     cp   TK_PLUS
     jr   z, .add

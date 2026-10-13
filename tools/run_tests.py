@@ -24,7 +24,12 @@ Declaration tests (tests/decl/**/*.c, production image): the ROM compiles each c
 tools/decltest.py decodes the workspace and the static data and checks the case's expectations
 (see that file). tools/declbench.py measures the workspace per symbol.
 
-Usage: run_tests.py [--port N] [--only SUBSTR] [--suite boot,lexer,decl,bench] [--json OUT]"""
+Executable tests (tests/expr, tests/experr, tests/golden, tests/run: M1.3, production image): the
+ROM compiles each case (CC_PROGRAM) and runs it (RT_RUN); tools/exectest.py checks the exit value,
+the compile or runtime error, memory and generated code, and audits every function return (stack
+balance, IX). tools/gen_exprtests.py generates tests/expr/gen from a model of the integer semantics.
+
+Usage: run_tests.py [--port N] [--only SUBSTR] [--suite boot,lexer,decl,exec,bench] [--json OUT]"""
 import argparse
 import glob
 import json
@@ -39,9 +44,12 @@ import c2src            # noqa: E402
 import clex             # noqa: E402
 import decltest         # noqa: E402
 import declbench        # noqa: E402
+import exectest         # noqa: E402
+import helperbench      # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
+EXEC_DIRS = ("expr", "experr", "golden", "run")
 TEST_AREA = 0xE000
 TEST_DUMP_DATA = TEST_AREA + 8
 
@@ -246,10 +254,10 @@ def main():
     ap.add_argument("--port", type=int, default=10760)
     ap.add_argument("--only")
     ap.add_argument("--json", default=os.path.join(ROOT, "build", "test_results.json"))
-    ap.add_argument("--suite", default="boot,lexer,decl,bench")
+    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench")
     a = ap.parse_args()
     suites = a.suite.split(",")
-    results = dict(boot={}, lexer=[], bench=[], decl=[])
+    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[])
     failed = 0
     t_start = time.time()
 
@@ -295,6 +303,66 @@ def main():
                 results["decl_ws"] = declbench.measure(m)
                 for r in results["decl_ws"]:
                     print("workspace: %-26s %5.1f B each   (%s)" % (r["what"], r["bytes_each"], r["detail"]))
+        finally:
+            m.stop()
+
+    # ---- executable cases on the production image (M1.3)
+    if "exec" in suites:
+        m = Machine(os.path.join(ROOT, "build"), a.port)
+        try:
+            m.start()
+            cases = []
+            for d in EXEC_DIRS:
+                cases += sorted(glob.glob(os.path.join(ROOT, "tests", d, "**", "*.c"), recursive=True))
+            if a.only:
+                cases = [c for c in cases if a.only in c]
+            counts = {}
+            lines = tstates = 0
+            for c in cases:
+                ok, msg, info = exectest.check_case(m, c)
+                rel = os.path.relpath(c, ROOT)
+                results["exec"].append(dict(case=rel, ok=ok, msg=msg, info=info))
+                group = rel.split(os.sep)[1]
+                n, p = counts.get(group, (0, 0))
+                counts[group] = (n + 1, p + ok)
+                if ok and info and not info["error"]:
+                    lines += info["lines"]
+                    tstates += info["compile_t"]
+                if not ok:
+                    failed += 1
+                    print("exec: FAIL %s: %s" % (rel, msg))
+            if "bench" in suites and not a.only:
+                results["helpers"] = helperbench.measure(m)
+                for r in results["helpers"]:
+                    failed += not r["ok"]
+                    print("helper: %-58s %s %4s T %d B site %s" % (
+                        r["name"], "PASS" if r["ok"] else "FAIL", r.get("tstates"), r.get("site_bytes", 0),
+                        r["detail"]))
+            if not a.only:
+                # built-in: the machine is sane after a stack overflow -- a second program compiles
+                # and runs in the same machine state (no snapshot restore in between)
+                ov = c2src.lines_of(open(os.path.join(ROOT, "tests", "run", "stack_overflow.c")).read())
+                r1 = exectest.compile_and_run(m, ov, audit=False)
+                r2 = exectest.compile_and_run(m, ["int f(int x) { return x * 3; }", "int main(void) { return f(14); }"],
+                                              restore=False)
+                ok = (r1.ran and r1.a == 1 and r1.sp == 0xFF02 and r1.depth == 0 and r2.ran and r2.a == 0
+                      and r2.hl == 42 and not r2.audit)
+                msg = "" if ok else "overflow run a=%s sp=%04X; next run hl=%s a=%s %s" % (
+                    r1.a, r1.sp, getattr(r2, "hl", None), getattr(r2, "a", None), r2.audit)
+                results["exec"].append(dict(case="(built-in) recovery after a stack overflow", ok=ok, msg=msg,
+                                            info=None))
+                n, p = counts.get("run", (0, 0))
+                counts["run"] = (n + 1, p + ok)
+                if not ok:
+                    failed += 1
+                    print("exec: FAIL recovery after a stack overflow: " + msg)
+            for g, (n, p) in sorted(counts.items()):
+                print("exec %-8s %d/%d cases pass" % (g + ":", p, n))
+            if lines:
+                results["compile_speed"] = dict(lines=lines, tstates=tstates, t_per_line=tstates / lines,
+                                                ms_per_line=tstates / lines / 3528.0)
+                print("compile speed: %d lines in %d T = %.0f T/line (%.2f ms/line at 3.528 MHz)" % (
+                    lines, tstates, tstates / lines, tstates / lines / 3528.0))
         finally:
             m.stop()
 

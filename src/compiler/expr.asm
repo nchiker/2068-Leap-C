@@ -1,24 +1,24 @@
 ; ============================================================================
-; src/compiler/expr.asm -- expression parsing and typing (spec.md 4.3-4.4)
+; src/compiler/expr.asm -- expressions: parsing, typing and code (spec.md 4.3-4.4)
 ;
-; M1.2 part: constant expressions (array sizes, enum values, `sizeof`, static initialisers). This
-; is the core of M1.3's expression compiler: the same recursive descent, operand descriptors and
-; typing rules; M1.3 adds code emission for the operands that are not constant.
+; Recursive descent over C89's expression grammar: comma, assignment, conditional, the binary
+; operators by precedence climbing, unary, postfix, primary. The current operand is X (X_KIND,
+; X_TYPE, X_VAL, X_FLAGS; include/leapc_decl.inc OK_*). A binary operator holds its left operand
+; (CX_HOLD) while the right one is parsed and gets it back as Y (CX_POPY).
 ;
-; The current operand is X (X_KIND, X_TYPE, X_VAL; include/leapc_decl.inc OK_*). A binary operator
-; saves the left operand on the machine stack (CX_PUSHX) and gets it back as Y (CX_POPY). Typing:
-; integer promotions (char -> int), the usual arithmetic conversions (unsigned if either operand
-; is unsigned), pointer arithmetic scaled by the element size, array and function designators
-; converted to pointers when used as values (CX_RVAL). Operations on constants are folded
-; (CX_FOLD). In M1.2 a non-constant operand is accepted only where its value is not needed
-; (`sizeof`); expression forms that are never constant (calls, assignment, ++/--, comma) arrive
-; with M1.3.
+; Typing: integer promotions (char -> int), the usual arithmetic conversions (unsigned if either
+; operand is unsigned), pointer arithmetic scaled by the element size, array and function
+; designators converted to pointers when used as values (CX_RVAL). Operations on constants are
+; folded (CX_FOLD); the others emit code as they are recognised (codegen.asm). A deferred object
+; keeps its own type until it is loaded, so its load has the object's width.
+;
+; The same parser evaluates the constant expressions of declarations (M1.2): array sizes, enum
+; values, static initialisers, `sizeof`. There an operand that is not constant is an error
+; (E_CONSTEXPR) and `sizeof` emits nothing (CX_MUTE).
 ; ============================================================================
 
-CX_EXPR         EQU CX_COND            ; M1.3: the comma and assignment levels
-
 ; ============================================================================
-; CX_CONST_INT -- an integer constant expression (array sizes, enum values; M1.3: case labels)
+; CX_CONST_INT -- an integer constant expression (array sizes, enum values; Phase 2: case labels)
 ; Out: HL = the value; X = the operand (X_TYPE an integer type)
 ; Errors: E_CONSTEXPR, the expression errors
 ; Destroys: AF, BC, DE, IX; NM
@@ -37,8 +37,9 @@ CX_CONST_INT:
     ret
 
 ; ============================================================================
-; CX_CONST_INIT -- a static initialiser element: an integer or address constant
-; Out: X = the operand (OK_CONST or OK_ADDRC, converted to a value)
+; CX_CONST_INIT -- a static initialiser element: an integer or address constant, or the address
+; of a function (OK_FUNC: stored through the function's fixup chain)
+; Out: X = the operand, converted to a value
 ; Errors: E_CONSTEXPR, the expression errors
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
@@ -48,11 +49,189 @@ CX_CONST_INIT:
     ld   a, (X_KIND)
     cp   OK_LVALC
     ret  c
+    cp   OK_FUNC
+    ret  z
     jp   CC_E_CONSTEXPR
 
 ; ============================================================================
-; CX_COND -- a conditional expression (C89 6.3.15)
+; CX_EXPR -- an expression (C89 6.3.17): assignment expressions separated by commas; the value of
+; each but the last is not used
 ; Out: X = the operand
+; Errors: the operands' errors
+; Destroys: AF, BC, DE, HL, IX; NM
+; ============================================================================
+CX_EXPR:
+    call CX_ASSIGN
+.comma:
+    ld   a, (TOK_KIND)
+    cp   TK_COMMA
+    ret  nz
+    call CX_DISCARD
+    call LEX_NEXT
+    call CX_ASSIGN
+    call CX_RVAL
+    jr   .comma
+
+; ============================================================================
+; CX_ASSIGN -- an assignment expression (C89 6.3.16): `lvalue = value`, `lvalue op= value`
+; Out: X = the operand; an assignment's value in HL (OK_RVAL), with the left operand's type
+; Errors: E_LVALUE, E_CONST, E_NOTSUP (struct assignment), E_TYPE, E_OPERAND, the operands' errors
+; Destroys: AF, BC, DE, HL, IX; NM
+; ============================================================================
+CX_ASSIGN:
+    call CX_COND
+    ld   a, (TOK_KIND)
+    cp   TK_ASSIGN
+    jr   z, .assign
+    cp   TK_MULASSIGN
+    ret  c
+    cp   TK_SHRASSIGN + 1
+    ret  nc
+.assign:
+    push af
+    call CX_LVALUE
+    call CX_LVHOLD
+    pop  af
+    cp   TK_ASSIGN
+    jr   z, .simple
+    push af                            ; op=: the object's value is the left operand
+    ld   a, (X_KIND)
+    cp   OK_LVAL
+    ld   a, $E5                        ; push hl: its address, for the store
+    call z, CG_OP
+    pop  af
+    call CX_PUSHX                      ; [lvalue]
+    push af                            ; [op][lvalue]
+    ld   a, (X_KIND)
+    cp   OK_LVAL
+    call z, CG_LOAD
+    call CX_HOLD                       ; [left][op][lvalue]
+    call LEX_NEXT
+    call CX_ASSIGN
+    call CX_RVAL
+    call CX_POPY
+    pop  af
+    sub  TK_ASSIGN_OFS
+    call CX_BINOP                      ; X = the result
+    jr   .store
+.simple:
+    call CX_HOLD                       ; [lvalue] (an address in HL is held)
+    call LEX_NEXT
+    call CX_ASSIGN
+    call CX_RVAL
+.store:
+    call CX_POPY                       ; Y = the lvalue
+    ld   hl, (Y_TYPE)
+    call CX_CHECK_ASSIGN
+    ld   a, (X_KIND)
+    cp   OK_LVALC
+    ld   hl, (Y_TYPE)
+    call c, CX_CAST                    ; a constant: converted now
+    call CG_STORE
+    ld   hl, (Y_TYPE)
+    ld   (X_TYPE), hl
+    call TY_CLASS
+    call CG_TAILON                     ; the value as a byte object holds it (char: H = 0 or the
+    call CG_EXT0                       ; sign)
+    jp   CG_TAILOFF
+
+; ============================================================================
+; CX_LVALUE -- X must be a modifiable lvalue (C89 6.2.2.1): an object, not an array, a function,
+; a struct (assignment of structs is not supported) or a const object
+; Errors: E_LVALUE, E_CONST, E_NOTSUP
+; Destroys: AF, HL
+; ============================================================================
+CX_LVALUE:
+    ld   a, (X_KIND)
+    cp   OK_LVALC
+    jr   c, .bad
+    cp   OK_FUNC
+    jr   z, .bad
+    cp   OK_RVAL
+    jr   nc, .bad
+    ld   hl, (X_TYPE)
+    call TY_CLASS
+    cp   TC_STRUCT
+    jp   z, CC_E_NOTSUP
+    cp   TC_ARRAY
+    jr   nc, .bad
+    ld   a, (X_FLAGS)
+    or   a
+    ret  z
+    ld   a, E_CONST
+    jp   CC_ERROR
+.bad:
+    jp   CC_E_LVALUE
+
+; ============================================================================
+; CX_LVHOLD -- prepare the lvalue X to be held: a frame object beyond (ix+d)'s reach gets its
+; address in HL, and an address in HL gets its offset added (X: OK_LVALC, near OK_LVALF, OK_LVAL
+; with offset 0)
+; CX_HOLD -- hold X while another operand is parsed: a resident operand stays in HL (CG_PEND; a
+; condition is made 0/1 first); then X is pushed on the machine stack (CX_PUSHX)
+; Destroys: AF, BC, DE, HL (CX_HOLD: AF, DE, HL; X is under the return address)
+; ============================================================================
+CX_LVHOLD:
+    ld   a, (X_KIND)
+    cp   OK_LVALF
+    call z, CG_NEAR
+    ld   a, (X_KIND)
+    cp   OK_LVAL
+    ret  nz
+    jp   CG_LVADDR
+CX_HOLD:
+    ld   a, (X_KIND)
+    cp   OK_COND
+    jr   nz, .res
+    push bc
+    call CG_LOAD
+    pop  bc
+.res:
+    ld   a, (X_KIND)
+    cp   OK_LVAL
+    jp   c, CX_PUSHX
+    ld   a, 1
+    ld   (CG_PEND), a
+    jp   CX_PUSHX
+
+; ============================================================================
+; CX_MUTE / CX_UNMUTE -- start and end code that is parsed but not emitted (CX_NOEVAL): the held
+; operand state (CG_PEND) is restored when the outermost muted part ends
+; Destroys: AF
+; CX_MAYBE -- parse with routine HL, muted when A = 0 (an operand that is not evaluated)
+; Destroys: what the routine destroys
+; ============================================================================
+CX_MAYBE:
+    or   a
+    push af
+    call z, CX_MUTE
+    call CALL_HL
+    pop  af
+    ret  nz
+CX_UNMUTE:
+    ld   a, (CX_NOEVAL)
+    dec  a
+    ld   (CX_NOEVAL), a
+    ret  nz
+    ld   a, (CG_PENDSV)
+    ld   (CG_PEND), a
+    ret
+CX_MUTE:
+    ld   a, (CX_NOEVAL)
+    or   a
+    jr   nz, .in
+    ld   a, (CG_PEND)
+    ld   (CG_PENDSV), a
+    xor  a
+.in:
+    inc  a
+    ld   (CX_NOEVAL), a
+    ret
+
+; ============================================================================
+; CX_COND -- a conditional expression (C89 6.3.15)
+; Out: X = the operand. A run-time condition: both operands' code with jumps, the value in HL.
+;      A constant condition: only the chosen operand is evaluated
 ; Errors: E_OPERAND, E_SYNTAX, the errors of the operands
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
@@ -64,29 +243,46 @@ CX_COND:
     ret  nz
     call CX_RVAL
     call CX_SCALAR_X
-    call CX_PUSHX                      ; the condition
     call LEX_NEXT
-    call CX_EXPR
-    call CX_RVAL
-    call CX_PUSHX                      ; the second operand
+    call CX_TRUTH                      ; C: constant, A = its truth
+    jr   c, .const
+    ld   hl, 0
+    call CG_JFALSE                     ; to the third operand
+    push hl
+    call .second
+    call CG_LOAD
+    ld   a, $C3
+    ld   hl, 0
+    call CG_JP                         ; over the third operand
+    ex   (sp), hl
+    call CG_HERE                       ; the third operand
+    call CX_PUSHX
     ld   a, TK_COLON
     call CC_EXPECT
-    call CX_COND
-    call CX_RVAL                       ; X = the third operand
-    call CX_POPY                       ; Y = the second
-    pop  hl                            ; the condition: L = kind
-    pop  de                            ; D = value low
-    pop  bc                            ; C = value high
-    ld   a, d
-    or   c
-    ld   c, a
-    ld   a, l
-    cp   OK_LVALC
-    push af                            ; NC: the condition is not constant
-    jr   nc, .types
-    ld   a, c
+    call .third
+    call CG_LOAD
+    call CX_POPY
+    pop  hl
+    call CG_HERE
+    jr   .types
+.const:                                ; only the chosen operand is evaluated
+    push af
+    ld   hl, .second
+    call CX_MAYBE
+    pop  af
+    ld   (X_FLAGS), a                  ; (free in a value: the condition)
+    call CX_PUSHX
+    ld   a, TK_COLON
+    call CC_EXPECT
+    ld   a, (X_FLAGS)
+    xor  1
+    ld   hl, .third
+    call CX_MAYBE
+    call CX_POPY
+    ld   a, (Y_FLAGS)
     or   a
-    call nz, CX_SWAP                   ; true: the second operand
+    call nz, CX_SWAP                   ; X = the second operand
+    call CG_VAL                        ; (retyped below: a deferred object is loaded first)
 .types:                                ; both integers: the usual conversions; an integer (a null
     ld   hl, (Y_TYPE)                  ; pointer constant) with a pointer: the pointer's type
     call TY_CLASS
@@ -96,7 +292,7 @@ CX_COND:
     ld   e, a
     dec  a
     cp   TC_UINT
-    jr   nc, .kind
+    ret  nc
     ld   a, d
     dec  a
     cp   TC_UINT
@@ -105,9 +301,30 @@ CX_COND:
     call CX_USUAL
 .set:
     ld   (X_TYPE), hl
-.kind:
-    pop  af
-    ret  c
+    ret
+.second:
+    call CX_EXPR
+    jr   .value
+.third:
+    call CX_COND
+.value:
+    call CX_RVAL
+    jp   CX_SCALARV
+
+; CX_TRUTH -- C: X is a constant, A = 1 if it is nonzero, else 0. NC: not constant.
+; Destroys: AF, HL
+CX_TRUTH:
+    ld   a, (X_KIND)
+    cp   OK_LVALC
+    ret  nc
+    ld   hl, (X_VAL)
+    ld   a, h
+    or   l
+    scf
+    ret  z
+    ld   a, 1
+    ret
+
 CX_SET_RVAL:
     ld   a, OK_RVAL
     ld   (X_KIND), a
@@ -137,16 +354,25 @@ CX_BINARY:
     call LEX_NEXT
     pop  bc
     push bc
-    ld   a, c
-    call CX_PUSHX                      ; the left operand
-    inc  a
-    ld   b, a
+    ld   a, b
+    cp   TK_ANDAND
+    jr   z, .logic
+    cp   TK_OROR
+    jr   z, .logic
+    inc  c
+    ld   b, c
+    call CX_HOLD                       ; the left operand (BC kept)
     call CX_BINARY                     ; the right operand: higher precedence (left assoc.)
     call CX_RVAL
     call CX_POPY
     pop  bc
     ld   a, b
     call CX_BINOP
+    pop  bc
+    jr   .loop
+.logic:
+    call CX_LOGIC
+    pop  bc
     pop  bc
     jr   .loop
 
@@ -171,8 +397,96 @@ CX_PREC_TABLE:                         ; tokens TK_ASSIGN ($20) .. TK_GE ($43)
     ASSERT $ - CX_PREC_TABLE == TK_GE - TK_ASSIGN + 1
 
 ; ============================================================================
+; CX_LOGIC -- `X && right`, `X || right` (C89 6.3.13-14): the right operand only when X does not
+; decide; the value is an int, 0 or 1
+; In:  B = the operator, C = its precedence; X = the left operand (a value); current token = the
+;      right operand's first
+; Errors: E_OPERAND, the operands' errors
+; Destroys: AF, BC, DE, HL, IX; NM
+; ============================================================================
+CX_LOGIC:
+    push bc
+    call CX_SCALAR_X
+    pop  bc
+    call CX_TRUTH
+    jr   c, .const
+    push bc
+    ld   hl, 0
+    call .jump                         ; X decides: to the value it decides
+    pop  bc
+    push hl
+    push bc
+    call .right
+    pop  bc
+    pop  hl
+    push bc
+    call .jump                         ; so does the right operand
+    pop  bc
+    push hl
+    ld   hl, TPL_AND01
+    ld   a, b
+    cp   TK_ANDAND
+    jr   z, .tpl
+    ld   hl, TPL_OR10
+.tpl:
+    call CG_SEQ                        ; ld hl,x / jr / L: ld hl,!x
+    ld   hl, (CG_PC)
+    dec  hl
+    dec  hl
+    dec  hl
+    ex   de, hl
+    pop  hl
+    call CG_PATCH
+    ld   a, OK_RVAL
+    jr   .int
+.jump:                                 ; && jumps on false, || on true
+    ld   a, b
+    cp   TK_ANDAND
+    jp   z, CG_JFALSE
+    jp   CG_JTRUE
+.right:                                ; the right operand (B = operator, C = precedence)
+    inc  c
+    ld   b, c
+    call CX_BINARY
+    call CX_RVAL
+    jp   CX_SCALAR_X
+.const:                                ; a constant left operand, truth A: it decides (0 &&,
+    ld   e, a                          ; 1 ||) and the right operand is not evaluated, or the
+    ld   a, b                          ; value is the right operand's truth
+    cp   TK_OROR
+    ld   a, e
+    jr   nz, .and
+    xor  1
+.and:                                  ; A = 0: it decides
+    push de
+    push af
+    ld   hl, .right
+    call CX_MAYBE
+    pop  af
+    pop  hl                            ; L = the left operand's truth
+    or   a
+    jr   z, .value
+    call CX_TRUTH
+    jr   nc, .test
+    ld   l, a
+.value:
+    ld   h, 0
+    ld   (X_VAL), hl
+    xor  a                             ; OK_CONST
+    jr   .int
+.test:
+    call CG_TEST
+    ld   a, OK_COND
+.int:
+    ld   (X_KIND), a
+    ld   hl, TY_INT
+    ld   (X_TYPE), hl
+    ret
+
+; ============================================================================
 ; CX_BINOP -- apply binary operator A to Y (left) and X (right), both values
-; Out: X = the result: its type by C89 6.3.5-6.3.14; folded when both operands are constant
+; Out: X = the result: its type by C89 6.3.5-6.3.14; folded when both operands are constant, else
+;      code (CG_BINOP)
 ; Errors: E_OPERAND, E_INCOMPLETE (arithmetic on a pointer to an incomplete type)
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
@@ -189,10 +503,6 @@ CX_BINOP:
     jr   z, .add
     cp   TK_MINUS
     jp   z, .sub
-    cp   TK_ANDAND
-    jr   z, .logic
-    cp   TK_OROR
-    jr   z, .logic
     cp   TK_LT
     jr   z, .compare
     cp   TK_GT
@@ -213,13 +523,6 @@ CX_BINOP:
 .usual:
     call CX_USUAL                      ; HL = DE = int or unsigned
     jp   .do
-.logic:
-    ld   a, d
-    call CX_SCALAR_A
-    ld   a, e
-    call CX_SCALAR_A
-    ld   hl, TY_INT
-    jr   .intres
 .compare:
     ld   a, d
     cp   TC_PTR
@@ -247,7 +550,7 @@ CX_BINOP:
     cp   TC_PTR
     jr   nz, .arith
     push de                            ; integer + pointer: as pointer + integer
-    call CX_SWAP
+    call CX_SWAPCG
     pop  de
     ld   a, d
     ld   d, e
@@ -258,11 +561,21 @@ CX_BINOP:
     jr   z, .arith                     ; (pointer + pointer: E_OPERAND from .ints)
     call CX_INT_A
     call .esize
+    ld   a, (X_KIND)
+    cp   OK_LVALC
+    jr   nc, .scale
     ld   de, (X_VAL)
     ld   b, h
     ld   c, l
     call MATH_UMUL16
     ld   (X_VAL), hl
+    jr   .ptrdo
+.scale:                                ; at run time: the integer in HL, multiplied
+    push hl
+    call CG_LOAD
+    pop  de
+    call CG_MULK
+.ptrdo:
     ld   hl, (Y_TYPE)
     ld   d, h
     ld   e, l
@@ -283,20 +596,13 @@ CX_BINOP:
     pop  de
     ld   a, (X_KIND)
     cp   OK_LVALC
-    ret  nc
+    jp   nc, CG_DIVK
     ld   hl, (X_VAL)
     call MATH_DIVIDE16
     ld   (X_VAL), hl
     ret
 .do:                                   ; HL = the operation's type, DE = the result's type
-    ld   (X_TYPE), de
-    ld   a, (Y_KIND)
-    ld   b, a
-    ld   a, (X_KIND)
-    or   b
-    cp   OK_LVALC
-    jp   nc, CX_SET_RVAL               ; not constant (M1.3: code)
-    ld   (X_KIND), a                   ; OK_CONST, or OK_ADDRC if either was one
+    push de
     ld   de, TY_INT
     or   a
     sbc  hl, de
@@ -304,11 +610,24 @@ CX_BINOP:
     jr   z, .signed
     inc  c                             ; unsigned (and pointer) operation
 .signed:
+    ld   a, (Y_KIND)
+    ld   b, a
+    ld   a, (X_KIND)
+    or   b
+    cp   OK_LVALC
+    jr   nc, .code
+    ld   (X_KIND), a                   ; OK_CONST, or OK_ADDRC if either was one
     ld   a, (CX_OP)
     ld   de, (Y_VAL)
     ld   hl, (X_VAL)
     call CX_FOLD
     ld   (X_VAL), hl
+    jr   .type
+.code:
+    call CG_BINOP
+.type:
+    pop  de
+    ld   (X_TYPE), de
     ret
 .ints:                                 ; both operands integers
     ld   a, d
@@ -322,10 +641,16 @@ CX_BINOP:
 
 ; ============================================================================
 ; CX_INT_A / CX_SCALAR_A -- class A must be an integer / a scalar (integer or pointer)
-; CX_SCALAR_X -- X must be a scalar
+; CX_SCALAR_X -- X must be a scalar; CX_SCALARV -- X must be a scalar or void
 ; Errors: E_OPERAND
-; Destroys: AF (CX_SCALAR_X: and HL)
+; Destroys: AF (CX_SCALAR_X, CX_SCALARV: and HL)
 ; ============================================================================
+CX_SCALARV:
+    ld   hl, (X_TYPE)
+    call TY_CLASS
+    or   a
+    ret  z
+    jr   CX_SCALAR_A
 CX_SCALAR_X:
     ld   hl, (X_TYPE)
     call TY_CLASS
@@ -376,28 +701,35 @@ TY_PROMOTE:
 ; ============================================================================
 ; CX_UNARY -- a unary expression (C89 6.3.3), including casts reached through CX_PRIMARY
 ; Out: X = the operand (not converted to a value)
-; Errors: E_OPERAND, E_LVALUE, E_SYNTAX, E_INCOMPLETE, E_NESTING, the operands' errors
+; Errors: E_OPERAND, E_LVALUE, E_CONST, E_SYNTAX, E_INCOMPLETE, E_NESTING, the operands' errors
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 CX_UNARY:
     call CC_STACKCHK
     ld   a, (TOK_KIND)
+    ld   hl, .arith
     cp   TK_MINUS
-    jr   z, .arith
+    jr   z, .pre
     cp   TK_PLUS
-    jr   z, .arith
+    jr   z, .pre
     cp   TK_TILDE
-    jr   z, .arith
+    jr   z, .pre
     cp   TK_NOT
-    jr   z, .arith
+    jr   z, .pre
+    ld   hl, .deref
     cp   TK_STAR
-    jp   z, .deref
+    jr   z, .pre
+    ld   hl, .addr
     cp   TK_AMP
-    jp   z, .addr
+    jr   z, .pre
+    ld   hl, .incdec
+    cp   TK_INC
+    jr   z, .pre
+    cp   TK_DEC
+    jr   z, .pre
     cp   TK_SIZEOF
     jp   nz, CX_POSTFIX
-    ld   hl, CX_NOEVAL                 ; sizeof: the operand is not evaluated
-    inc  (hl)
+    call CX_MUTE                       ; sizeof: the operand is not evaluated
     call LEX_NEXT
     cp   TK_LPAREN
     jr   nz, .sz_unary
@@ -419,9 +751,7 @@ CX_UNARY:
 .sz_x:
     ld   hl, (X_TYPE)
 .sz:
-    ld   a, (CX_NOEVAL)
-    dec  a
-    ld   (CX_NOEVAL), a
+    call CX_UNMUTE
     call TY_SIZE
     ld   (X_VAL), hl
     ld   hl, TY_UINT                   ; size_t: unsigned int
@@ -429,10 +759,19 @@ CX_UNARY:
     xor  a
     ld   (X_KIND), a
     ret
-.arith:                                ; - + ~ !
+.pre:                                  ; a prefix operator A: its operand first, then HL
     push af
+    push hl
     call LEX_NEXT
     call CX_UNARY
+    pop  hl
+    pop  af
+    jp   (hl)
+.incdec:                               ; ++x --x
+    ld   c, 0
+    jp   CX_INCDEC
+.arith:                                ; - + ~ !
+    push af
     call CX_RVAL                       ; HL = X_TYPE
     pop  af
     cp   TK_NOT
@@ -440,6 +779,8 @@ CX_UNARY:
     push af
     call TY_CLASS
     call CX_INT_A
+    call CG_VAL                        ; a run-time operand: its value (its own width) first
+    ld   hl, (X_TYPE)
     call TY_PROMOTE
     ld   (X_TYPE), hl
     pop  af
@@ -447,36 +788,44 @@ CX_UNARY:
     ret  z
     ld   de, 0
     ld   b, TK_MINUS                   ; -x = 0 - x
+    ld   hl, MATH_NEGATE16
     cp   b
-    jr   z, .xfold
+    jr   z, .fold
     dec  de
     ld   b, TK_CARET                   ; ~x = $FFFF ^ x
-.xfold:
-    ld   hl, (X_VAL)
-.fold:                                 ; B = operator, DE = left, HL = right
+    ld   hl, RT_CPL
+.fold:                                 ; B = operator, DE = left; HL = the helper at run time
     ld   a, (X_KIND)
     cp   OK_LVALC
-    ret  nc
+    jp   nc, CG_CALL
+    ld   hl, (X_VAL)
+.cfold:                                ; B = operator, DE = left, HL = right
     ld   a, b
     call CX_FOLD
     ld   (X_VAL), hl
     ret
 .not:                                  ; !x = (x == 0), an int
     call CX_SCALAR_X
-    ld   hl, TY_INT
-    ld   (X_TYPE), hl
+    ld   a, (X_KIND)
+    cp   OK_LVALC
+    jr   c, .cnot
+    call CG_TEST                       ; at run time: the opposite condition
+    xor  1
+    call CG_SETCOND
+    jr   .int
+.cnot:
     ld   de, (X_VAL)
     ld   hl, 0
     ld   b, TK_EQ
-    jr   .fold
+    call .cfold
+.int:
+    ld   hl, TY_INT
+    ld   (X_TYPE), hl
+    ret
 .deref:
-    call LEX_NEXT
-    call CX_UNARY
     call CX_RVAL
     jp   CX_DEREF
 .addr:
-    call LEX_NEXT
-    call CX_UNARY
     ld   hl, (X_TYPE)
     call TY_CLASS
     cp   TC_FUNC
@@ -485,21 +834,76 @@ CX_UNARY:
     cp   OK_LVALC
     ld   b, OK_ADDRC
     jr   z, .addr_k
+    cp   OK_LVALF
+    call z, CG_FADDR                   ; a frame object: its address at run time
+    ld   a, (X_KIND)
     cp   OK_LVAL
     jp   nz, CC_E_LVALUE
+    call CG_LVADDR
     ld   b, OK_RVAL
 .addr_k:
     ld   a, b
     ld   (X_KIND), a
-    call TY_PTR                        ; (HL = X_TYPE)
+    ld   hl, (X_TYPE)
+    call TY_PTR
     ld   (X_TYPE), hl
     ret
 
 ; ============================================================================
-; CX_POSTFIX -- a primary expression and its postfix operators [ ] . ->
+; CX_INCDEC -- ++ / -- on the lvalue X (C89 6.3.2.4, 6.3.3.1): the object plus or minus 1, or a
+; pointer's element size, stored back
+; In:  A = TK_INC / TK_DEC, C = 1: postfix (the value is the old one), 0: prefix (the new one)
+; Out: X = OK_RVAL with the lvalue's type
+; Errors: E_LVALUE, E_CONST, E_NOTSUP, E_INCOMPLETE (a pointer to an incomplete type)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CX_INCDEC:
+    push bc
+    push af
+    call CX_LVALUE
+    call CX_LVHOLD
+    ld   a, (X_KIND)
+    cp   OK_LVAL
+    ld   a, $E5                        ; push hl: the address, for the store
+    call z, CG_OP
+    call CX_PUSHX
+    call CG_LOAD                       ; HL = the value
+    call CX_POPY                       ; Y = the lvalue
+    ld   hl, (Y_TYPE)
+    call TY_CLASS
+    cp   TC_PTR
+    ld   de, 1
+    jr   nz, .step
+    call TY_DEREF
+    call TY_SIZE
+    ex   de, hl                        ; DE = the element size
+.step:
+    pop  af
+    cp   TK_DEC
+    call z, NEG_DE
+    push de
+    call CG_ADDK
+    call CG_STORE
+    ld   hl, (Y_TYPE)
+    ld   (X_TYPE), hl
+    pop  de
+    pop  bc
+    call CG_TAILON                     ; the value: undo for postfix, extend a byte for prefix
+    dec  c
+    jr   nz, .pre
+    call NEG_DE
+    call CG_ADDK0
+    jp   CG_TAILOFF
+.pre:
+    call TY_CLASS
+    call CG_EXT0
+    jp   CG_TAILOFF
+
+; ============================================================================
+; CX_POSTFIX -- a primary expression and its postfix operators [ ] ( ) . -> ++ --
 ; CX_POSTFIX_LOOP -- the postfix operators after an operand already in X
 ; Out: X = the operand
-; Errors: E_OPERAND, E_MEMBER, E_INCOMPLETE, E_SYNTAX, the operands' errors
+; Errors: E_OPERAND, E_MEMBER, E_INCOMPLETE, E_SYNTAX, E_ARGS, the operands' errors
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 CX_POSTFIX:
@@ -510,6 +914,12 @@ CX_POSTFIX_LOOP:
     jr   z, .index
     cp   TK_DOT
     jr   z, .member
+    cp   TK_LPAREN
+    jr   z, .call
+    cp   TK_INC
+    jr   z, .post
+    cp   TK_DEC
+    jr   z, .post
     cp   TK_ARROW
     ret  nz
     call CX_RVAL                       ; p->m = (*p).m
@@ -538,13 +948,23 @@ CX_POSTFIX_LOOP:
     ld   e, (ix + S_VAL)
     ld   d, (ix + S_VAL + 1)
     ld   hl, (X_VAL)
-    add  hl, de                        ; the member's address (constant for a static struct)
+    add  hl, de                        ; the member's address, displacement or offset
     ld   (X_VAL), hl
+.next:
     call LEX_NEXT
     jr   CX_POSTFIX_LOOP
+.call:
+    call CX_CALL
+    jr   CX_POSTFIX_LOOP
+.post:
+    ld   c, 1
+    call CX_INCDEC
+    jr   .next
 .index:                                ; a[i] = *(a + i)
     call CX_RVAL
-    call CX_PUSHX
+    ld   a, (X_FLAGS)                  ; (an element of a const array is const)
+    push af
+    call CX_HOLD
     call LEX_NEXT
     call CX_EXPR
     ld   a, TK_RBRACK
@@ -554,15 +974,205 @@ CX_POSTFIX_LOOP:
     ld   a, TK_PLUS
     call CX_BINOP
     call CX_DEREF
-    jr   CX_POSTFIX_LOOP
+    pop  af
+    ld   (X_FLAGS), a
+    jp   CX_POSTFIX_LOOP
+
+; ============================================================================
+; CX_CALL -- a function call: X = the called expression; current token `(` (C89 6.3.2.2,
+; spec.md 5.2). The arguments are evaluated and pushed right to left: a first pass marks where
+; each starts (LEX_MARK), then each is parsed from its mark, last first, and the lexer skips the
+; others again to the `)`. With a prototype the number of arguments must match and each is
+; checked against its parameter's type.
+; Out: X = OK_RVAL, the function's return type; current token after `)`
+; Errors: E_OPERAND (not a function), E_ARGS, E_TYPE, E_SYNTAX, E_NESTING, the arguments' errors
+; Destroys: AF, BC, DE, HL, IX; NM
+; ============================================================================
+CX_CALL:
+    call CX_RVAL                       ; a function: its pointer
+    call TY_DEREF
+    jp   nc, CC_E_OPERAND
+    call TY_CLASS
+    cp   TC_FUNC
+    jp   nz, CC_E_OPERAND
+    call TY_FIELDS                     ; DE = return type, C = parameters, B = flags
+    ld   (CX_FRET), de
+    ld   de, TN_PARAMS
+    add  hl, de
+    bit  TFF_PROTO, b
+    jr   nz, .proto
+    ld   hl, 0                         ; no prototype: nothing to check
+.proto:
+    ld   (CX_PARAMP), hl
+    ld   a, c
+    ld   (CX_ARGT), a                  ; (the parameter count, until counted)
+    call CX_HOLD                       ; [callee]
+    xor  a
+    ld   (CX_ARGN), a
+    call LEX_NEXT
+    cp   TK_RPAREN
+    jr   z, .counted
+.arg:                                  ; [mark]...[callee]
+    call LEX_MARK
+    call CC_STACKCHK
+    ld   hl, CX_ARGN
+    inc  (hl)
+    call .skip
+    jr   z, .arg
+.counted:                              ; current token `)`
+    ld   hl, CX_ARGN
+    ld   a, (CX_PARAMP + 1)
+    or   a
+    jr   z, .nocheck
+    ld   a, (CX_ARGT)
+    cp   (hl)
+    ld   a, E_ARGS
+    jp   nz, CC_ERROR
+.nocheck:
+    ld   a, (hl)
+    ld   (CX_ARGT), a
+.eval:                                 ; the arguments, last first
+    ld   a, (CX_ARGN)
+    or   a
+    jr   z, .end
+    call LEX_RESTORE
+    ld   ix, CX_ARGN
+    ld   b, CX_CALLW
+    call CELLS_SAVE
+    call LEX_NEXT
+    call CX_ASSIGN
+    call CX_RVAL
+    ld   ix, CX_ARGN + 2 * CX_CALLW
+    ld   b, CX_CALLW
+    call CELLS_LOAD
+    ld   hl, (CX_PARAMP)
+    ld   a, h
+    or   a
+    jr   z, .default
+    ld   e, (hl)
+    inc  hl
+    ld   d, (hl)
+    inc  hl
+    ld   (CX_PARAMP), hl
+    ex   de, hl
+    call CX_CHECK_ASSIGN               ; to the parameter's type (a char parameter is read as a
+    jr   .push                         ; byte by the callee)
+.default:
+    call CX_SCALAR_X                   ; no prototype: scalars (char already promoted)
+.push:
+    call CG_LOAD
+    ld   a, $E5                        ; push hl
+    call CG_OP
+    ld   hl, CX_ARGN
+    dec  (hl)
+    jr   .eval
+.end:                                  ; after the first argument: the others again, to `)`
+    ld   a, (TOK_KIND)
+    cp   TK_COMMA
+    jr   nz, .close
+    call LEX_NEXT
+.again:
+    call .skip
+    jr   z, .again
+.close:
+    ld   a, TK_RPAREN
+    call CC_EXPECT
+    call CX_POPY                       ; Y = the callee
+    ld   a, (CX_ARGT)
+    ld   c, a                          ; C = the words to pop afterwards
+    push bc
+    ld   a, (Y_KIND)
+    cp   OK_FUNC
+    jr   nz, .ptr
+    ld   hl, (Y_VAL)                   ; call f
+    ld   a, $CD
+    call CG_FUNCOP
+    jr   .pop
+.ptr:                                  ; through a pointer: call RT_CALLHL
+    cp   OK_LVAL
+    jr   nc, .resident
+    call CG_LOADY                      ; a variable: loaded now
+    jr   .callhl
+.resident:                             ; computed before the arguments: pushed under them
+    call CG_UNIT                       ; (no arguments: the push now)
+    pop  bc
+    inc  c                             ; its slot is popped too
+    push bc
+    ld   a, c
+    dec  a
+    add  a, a
+    ld   l, a
+    ld   h, 0
+    ld   a, $21                        ; ld hl,2n / add hl,sp / rst LDI
+    call CG_OPW
+    ld   a, $39
+    call CG_B
+    ld   a, $CF
+    call CG_OP
+.callhl:
+    ld   hl, RT_CALLHL
+    call CG_CALL
+.pop:
+    pop  bc
+    inc  c
+.popw:                                 ; the caller removes the arguments: pop bc each
+    dec  c
+    jr   z, .result
+    ld   a, $C1
+    call CG_OP
+    jr   .popw
+.result:
+    ld   hl, (CX_FRET)
+    ld   (X_TYPE), hl
+    jp   CX_SET_RVAL
+.skip:                                 ; past one argument: Z if a `,` follows (consumed)
+    ld   b, 0                          ; brackets open
+.tok:
+    ld   a, (TOK_KIND)
+    or   a
+    jp   z, CC_E_SYNTAX                ; the end of the source, or a `;`: the list is not closed
+    cp   TK_SEMI
+    jp   z, CC_E_SYNTAX
+    sub  TK_LPAREN                     ; ( ) [ ] = 0 1 2 3
+    cp   TK_RBRACK - TK_LPAREN + 1
+    jr   nc, .comma
+    rra                                ; C: ) or ]
+    jr   nc, .open
+    ld   a, b
+    or   a
+    jr   z, .last                      ; the list's `)`
+    dec  b
+    jr   .step
+.open:
+    inc  b
+    jr   .step
+.comma:
+    cp   TK_COMMA - TK_LPAREN
+    jr   nz, .step
+    ld   a, b
+    or   a
+    jr   nz, .step
+    call LEX_NEXT
+    xor  a                             ; Z: a `,` (consumed)
+    ret
+.step:
+    push bc
+    call LEX_NEXT
+    pop  bc
+    jr   .tok
+.last:
+    or   1                             ; NZ: `)`
+    ret
 
 ; ============================================================================
 ; CX_PRIMARY -- a primary expression, or a cast (C89 6.3.1, 6.3.4)
-; Out: X = the operand
-; Errors: E_UNDECL, E_SYNTAX, E_OPERAND, E_TOOBIG, E_NOMEM
+; Out: X = the operand (X_FLAGS 0, or X_FLAGS_CONST for a const object)
+; Errors: E_UNDECL, E_SYNTAX, E_OPERAND, E_INCOMPLETE, E_TOOBIG, E_NOMEM
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 CX_PRIMARY:
+    xor  a
+    ld   (X_FLAGS), a
     ld   a, (TOK_KIND)
     cp   TK_NUM
     jr   z, .number
@@ -601,32 +1211,82 @@ CX_PRIMARY:
     call NM_FROM_TOK
     ld   c, NS_ORD
     call SYM_LOOKUP
-    jp   nz, CC_E_UNDECL               ; (M1.3: `f(` declares f implicitly)
+    jr   z, .found
+    ld   hl, (TOK_LINE)                ; undeclared: only a call declares it, as int f()
+    push hl                            ; (C89 6.3.2.2)
+    call LEX_NEXT
+    pop  hl
+    cp   TK_LPAREN
+    ld   a, E_UNDECL
+    jp   nz, CC_ERROR_AT
+    ld   a, TN_FUNC
+    ld   bc, TN_NODE_SIZE
+    call TY_NEW
+    ld   de, TY_INT
+    ld   bc, 0
+    call TY_SETAB
+    push hl
+    ld   a, SK_FUNC
+    call SYM_NEWG                      ; IX = HL = the file-scope entry
+    ld   (ix + S_FLAGS), 1 << SF_EXTERN
+    ld   (X_VAL), hl
+    pop  hl
+    call DCL_SETTYPE
+    ld   (X_TYPE), hl
+    ld   a, OK_FUNC
+    ld   (X_KIND), a
+    ret
+.found:
     call DCL_GETTYPE
     ld   (X_TYPE), hl
-    ld   l, (ix + S_VAL)
-    ld   h, (ix + S_VAL + 1)
-    ld   (X_VAL), hl
+    ld   e, (ix + S_VAL)
+    ld   d, (ix + S_VAL + 1)
+    ld   (X_VAL), de
     ld   a, (ix + S_KIND)
     cp   SK_ENUMC
-    ld   b, OK_CONST
-    jr   z, .bkind
+    ld   a, OK_CONST
+    jr   z, .kind
+    ld   a, (ix + S_KIND)
     cp   SK_FUNC
-    ld   b, OK_RVAL                    ; a function designator (M1.3: its address)
-    jr   z, .bkind
+    jr   z, .func
     cp   SK_OBJ
     jp   nz, CC_E_SYNTAX               ; a typedef name
-    ld   b, OK_LVAL
     ld   a, (ix + S_FLAGS)
-    and  1 << SF_AUTO | 1 << SF_PARAM
-    jr   nz, .bkind                    ; automatic: its address is not constant
-    ld   a, h
-    or   l
-    jr   z, .bkind                     ; no storage yet
-    ld   b, OK_LVALC                   ; static storage: a constant address
-.bkind:
-    ld   a, b
-    jr   .kind
+    and  X_FLAGS_CONST
+    ld   (X_FLAGS), a
+    bit  SF_PARAM, (ix + S_FLAGS)
+    jr   nz, .param
+    bit  SF_AUTO, (ix + S_FLAGS)
+    jr   nz, .auto
+    ld   a, d
+    or   e
+    jp   z, TY_E_INCOMPLETE            ; static storage not allocated yet (extern, incomplete)
+    ld   a, OK_LVALC
+    jp   .kind
+.param:                                ; IX+4+offset (spec.md 5.2)
+    ex   de, hl
+    ld   de, 4
+    jr   .frame
+.auto:                                 ; IX-(offset+size): locals lie below the saved IX
+    call TY_SIZE                       ; (HL = the type)
+    ld   e, (ix + S_VAL)
+    ld   d, 0
+    add  hl, de
+    call MATH_NEGATE16
+    ex   de, hl
+    ld   hl, 0
+.frame:
+    add  hl, de
+    ld   (X_VAL), hl
+    ld   a, OK_LVALF
+    jp   .kind
+.func:                                 ; the file-scope entry (a block-scope declaration is an
+    ld   de, 0                         ; alias of it)
+    ld   hl, (SYM_GLO)
+    call SYM_FIND
+    ld   (X_VAL), hl
+    ld   a, OK_FUNC
+    jp   .kind
 .string:                               ; a string literal: a static char array
     call STR_STAGE                     ; HL = bytes, BC = length
     inc  bc
@@ -662,7 +1322,8 @@ CX_PAREN_REST:
 
 ; ============================================================================
 ; CX_RVAL -- use X as a value (C89 6.2.2.1): an array becomes a pointer to its first element, a
-; function a pointer to it, an object its (run-time) value
+; function a pointer to it; an object at a run-time address is loaded; a deferred object stays
+; deferred (its value is loaded when used)
 ; Out: X converted; HL = X_TYPE
 ; Destroys: AF, BC, DE
 ; ============================================================================
@@ -674,9 +1335,11 @@ CX_RVAL:
     cp   TC_FUNC
     jr   z, .func
     ld   a, (X_KIND)
-    cp   OK_LVALC
-    ret  c
-    jr   .rval                         ; loading an object: a run-time value (M1.3: code)
+    cp   OK_LVAL
+    ret  nz
+    call CG_LOAD
+    ld   hl, (X_TYPE)
+    ret
 .array:
     call TY_DEREF
     call TY_PTR
@@ -685,18 +1348,28 @@ CX_RVAL:
     cp   OK_LVALC
     ld   a, OK_ADDRC
     jr   z, .set                       ; a static array: a constant address
-.rval:
+    ld   a, (X_KIND)
+    cp   OK_LVALF
+    call z, CG_FADDR
+.addr:                                 ; OK_LVAL: its address is the value
+    call CG_LVADDR
     ld   a, OK_RVAL
 .set:
     ld   (X_KIND), a
+    ld   hl, (X_TYPE)
     ret
 .func:
     call TY_PTR
     ld   (X_TYPE), hl
-    jr   .rval
+    ld   a, (X_KIND)
+    cp   OK_FUNC
+    ret  z
+    jr   .addr
 
 ; ============================================================================
-; CX_DEREF -- *X: X (a value) must be a pointer; X becomes the object it points to
+; CX_DEREF -- *X: X (a value) must be a pointer; X becomes the object it points to (a constant
+; pointer: an object at a constant address; the address of a function: the function; else the
+; pointer is loaded: OK_LVAL)
 ; Errors: E_OPERAND
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
@@ -705,15 +1378,24 @@ CX_DEREF:
     call TY_CLASS
     cp   TC_PTR
     jp   nz, CC_E_OPERAND
-    call TY_DEREF
-    ld   (X_TYPE), hl
     ld   a, (X_KIND)
+    cp   OK_FUNC
+    jr   z, .type
     cp   OK_LVALC
-    ld   a, OK_LVALC                   ; a constant pointer: an object at a constant address
+    ld   a, OK_LVALC
     jr   c, .set
+    call CG_LOAD
+    ld   hl, 0
+    ld   (X_VAL), hl
     ld   a, OK_LVAL
 .set:
     ld   (X_KIND), a
+.type:
+    ld   hl, (X_TYPE)
+    call TY_DEREF
+    ld   (X_TYPE), hl
+    xor  a
+    ld   (X_FLAGS), a
     ret
 
 ; ============================================================================
@@ -725,20 +1407,22 @@ CX_CAST:
     push hl
     ld   hl, (X_TYPE)
     call TY_CLASS
-    pop  hl
-    ld   (X_TYPE), hl
     ld   c, a                          ; C = the source class
+    pop  hl
     call TY_CLASS
     or   a
-    jp   z, CX_SET_RVAL                ; (void)
+    jr   z, .void
     cp   TC_ARRAY
     jp   nc, CC_E_OPERAND
-    ld   b, a
+    ld   b, a                          ; B = the target class
     ld   a, c
     call CX_SCALAR_A
     ld   a, (X_KIND)
+    cp   OK_FUNC
+    jr   z, .type                      ; a function's address stays one (address constants)
     cp   OK_LVALC
-    ret  nc                            ; (M1.3: code)
+    jr   nc, .code
+    ld   (X_TYPE), hl
     ld   hl, (X_VAL)
     ld   a, b
     cp   TC_CHAR
@@ -754,6 +1438,23 @@ CX_CAST:
     ld   h, 0
 .store:
     ld   (X_VAL), hl
+    ret
+.code:                                 ; at run time: the value, extended for a byte type
+    push hl
+    push bc
+    call CG_LOAD
+    pop  bc
+    pop  hl
+    ld   (X_TYPE), hl
+    ld   a, b
+    cp   c
+    ret  z
+    jp   CG_EXT
+.void:                                 ; (void): the value is not used
+    ld   (X_TYPE), hl
+    jp   CX_SET_RVAL
+.type:
+    ld   (X_TYPE), hl
     ret
 
 ; ============================================================================
@@ -816,7 +1517,7 @@ CX_CHECK_ASSIGN:
 ; ============================================================================
 ; CX_PUSHX -- push X (6 bytes, under the return address); CX_POPY -- pop such a copy into Y
 ; CX_SWAP -- exchange X and Y
-; Destroys: CX_PUSHX: DE, HL (AF, BC kept). CX_POPY: DE, HL. CX_SWAP: AF, BC, DE, HL
+; Destroys: CX_PUSHX: DE, HL (AF, BC kept). CX_POPY: DE, HL (AF, BC kept). CX_SWAP: AF, BC, DE, HL
 ; ============================================================================
 CX_PUSHX:
     pop  de

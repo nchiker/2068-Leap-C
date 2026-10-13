@@ -1,6 +1,8 @@
 # 2068-Leap-C — Specification
 
-**Version 0.1 (initial), 2026-10-12.** This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.2, 2026-10-13** (v0.1, 2026-10-12: initial). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+
+**Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
 **What is fixed and what is tuned:**
 
@@ -142,8 +144,8 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 | `$00` | reset → cold start | fixed |
 | `$08` | `LDI` (HL = word at HL) | body in the slot (5 B) |
 | `$10` | `STI` (word at DE = HL; HL kept) | body in the slot (6 B) |
-| `$18` | `ENTER n` (frame setup, stack check) | `jp` to the body |
-| `$20` | `LEAVE n` (frame teardown, return) | `jp` to the body |
+| `$18` | `ENTER n` (frame setup, stack check) | starts in the slot, `jp` to the rest |
+| `$20` | `LEAVE` (frame teardown, return) | body in the slot (5 B) |
 | `$28` | `CMPLT` (signed DE < HL → carry) | `jp` to the body |
 | `$30` | reserved: `LDL`/`STL` for the optional size template set (§5.6) | `jp` to the body |
 | `$38` | IM 1 interrupt (`call KBD_ISR_TICK; ei; reti`) | fixed |
@@ -377,16 +379,18 @@ The V2 kernel uses no IX/IY (verified).
 - `call f`; the result is in HL.
 - **The callee preserves IX and IY.** It may destroy AF, BC, DE, HL.
 
-Frame (IX = frame base after the prologue):
+Frame (IX = frame base after the prologue: the saved IX):
 
 ```
-IX+0 … IX+N-1   locals (N ≤ 255)
-IX+N            saved IX
-IX+N+2          return address
-IX+N+4 …        arguments, first argument lowest
+IX-N … IX-1     locals (N ≤ 255)
+IX+0            saved IX
+IX+2            return address
+IX+4 …          arguments, first argument lowest
 ```
 
-Offsets are unsigned bytes, so helpers need no sign extension. Calls through a function pointer use `call CALLHL` (`jp (hl)`).
+Calls through a function pointer use `call CALLHL` (`jp (hl)`).
+
+**Owner decision 2026-10-13 (M1.3).** v0.1 put IX at the lowest local (locals at `IX+0`, arguments at `IX+N+4`). Two facts make that unworkable for a single-pass compiler with inline frame access (§5.5): the frame size N is known only at the end of the function body, after its parameters have been used; and the Z80's `(ix+d)` displacement is signed (−128…+127), so arguments beyond `IX+127` cannot be reached inline at all. The stack's memory layout is unchanged; only IX's reference point moved, so argument offsets (`IX+4+2k`) and local offsets are known when they are used. Locals more than 128 bytes below IX are reached through an address template (`push ix / pop hl / ld bc,d / add hl,bc`).
 
 ### 5.3 Helper core (HOME)
 
@@ -396,8 +400,8 @@ Measured in the code-shape spike unless marked:
 |---|---|---|
 | `LDI` | RST `$08` | HL = (HL); destroys A |
 | `STI` | RST `$10` | (DE) = HL; HL kept; DE = address + 1 |
-| `ENTER n` | RST `$18` + byte | push IX; SP -= n; IX = SP; **stack check** against `STACK_LIMIT` (runtime error *stack overflow*) |
-| `LEAVE n` | RST `$20` + byte | SP = IX + n; pop IX; return to the caller; HL kept |
+| `ENTER n` | RST `$18` + byte | push IX; IX = SP; SP -= n; **stack check** against `STACK_LIMIT` (runtime error *stack overflow*) |
+| `LEAVE` | RST `$20` | SP = IX; pop IX; return to the caller; HL kept |
 | `CMPLT` | RST `$28` | signed compare: carry ⇔ DE < HL |
 | `CMPULT` | inline | unsigned `or a; sbc hl,de` (3 B) |
 | Shifts by a variable count (`SHL`, `SHR`, `SAR`) | CALL | |
