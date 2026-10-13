@@ -1,0 +1,7 @@
+# build outputs (make build)
+/build/
+__pycache__/
+*.pyc
+# spike: generated artifacts (spike/tools/get_v2_ref.sh and spike/run_spike.py regenerate them)
+/spike/v2ref/
+/spike/build/

@@ -1,0 +1,20 @@
+--- a/include/sysvars.inc
++++ b/include/sysvars.inc
+@@ -61,7 +61,7 @@
+ ; see this file's own header ("assembler-computed addresses") for why
+ ; everything from here on is DEFS-based instead of hand-typed hex EQUs
+ SYSVARS_RETURN_ORG EQU $
+-    ORG $8000
++    ORG LEAPC_SYSVARS_BASE        ; LEAP-C DELTA D1: was ORG $8000 (include/leapc_layout.inc)
+ 
+ ; ---- kernel/editor working storage ----
+ ; The original row/column cursor bytes were write-only after editing became a
+@@ -2978,6 +2978,8 @@
+                                 ; pointer while walking MEM_LINE_FIRST/
+                                 ; MEM_LINE_NEXT
+ 
++LEAPC_SYSVARS_END:                ; LEAP-C DELTA D1: end of the relocated system variables;
++    ORG LEAPC_SRC_BASE            ; the line store starts at LEAPC_SRC_BASE, not right here
+ PROG_AREA_START:   ; Current value $8455 (confirmed against a real
+                                 ; assembled build, not hand-computed —
+                                 ; see this file's own "assembler-

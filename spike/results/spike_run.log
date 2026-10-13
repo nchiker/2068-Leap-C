@@ -1,0 +1,117 @@
+== ROM config v2ref: booted to IO_READ_KEY
+A_C000      sum     di t=    75258 stack=10 ok=True correct=True frames=0 depth=1
+A_C000      sum     ei t=    77299 stack=26 ok=True correct=True frames=1 depth=1
+A_C000      copy    di t=    98363 stack=14 ok=True correct=True frames=0 depth=1
+A_C000      copy    ei t=   100398 stack=30 ok=True correct=True frames=1 depth=1
+A_C000      asum    di t=    47850 stack=12 ok=True correct=True frames=0 depth=1
+A_C000      asum    ei t=    47850 stack=12 ok=True correct=True frames=0 depth=1
+A_C000      move    di t=    13009 stack=14 ok=True correct=True frames=0 depth=1
+A_C000      move    ei t=    13009 stack=14 ok=True correct=True frames=0 depth=1
+A_C000      fact7   di t=    12596 stack=70 ok=True correct=True frames=0 depth=1
+A_C000      fact7   ei t=    12596 stack=70 ok=True correct=True frames=0 depth=1
+A_C000      fact20  di t=    39786 stack=200 ok=True correct=True frames=0 depth=1
+A_C000      fact20  ei t=    39786 stack=200 ok=True correct=True frames=0 depth=1
+A_C000      psvc    di t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+A_C000      psvc    ei t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+Ccall_C000  sum     di t=   241553 stack=14 ok=True correct=True frames=0 depth=1
+Ccall_C000  sum     ei t=   248945 stack=32 ok=True correct=True frames=3 depth=1
+Ccall_C000  copy    di t=   268402 stack=18 ok=True correct=True frames=0 depth=1
+Ccall_C000  copy    ei t=   274492 stack=32 ok=True correct=True frames=3 depth=1
+Ccall_C000  asum    di t=   132343 stack=16 ok=True correct=True frames=0 depth=1
+Ccall_C000  asum    ei t=   134332 stack=30 ok=True correct=True frames=1 depth=1
+Ccall_C000  move    di t=    33861 stack=18 ok=True correct=True frames=0 depth=1
+Ccall_C000  move    ei t=    33861 stack=18 ok=True correct=True frames=0 depth=1
+Ccall_C000  fact7   di t=    16841 stack=72 ok=True correct=True frames=0 depth=1
+Ccall_C000  fact7   ei t=    16841 stack=72 ok=True correct=True frames=0 depth=1
+Ccall_C000  fact20  di t=    53849 stack=202 ok=True correct=True frames=0 depth=1
+Ccall_C000  fact20  ei t=    53849 stack=202 ok=True correct=True frames=0 depth=1
+Ccall_C000  psvc    di t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+Ccall_C000  psvc    ei t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+Ccall_C000  soak    ei t= 51872599 stack=36 ok=True correct=True frames=742 depth=1
+hazard: returned=True HL=5807 (program code ran: False) depth=2
+A_8400      sum     di t=    75258 stack=10 ok=True correct=True frames=0 depth=1
+A_8400      sum     ei t=    77299 stack=26 ok=True correct=True frames=1 depth=1
+A_8400      copy    di t=    98371 stack=14 ok=True correct=True frames=0 depth=1
+A_8400      copy    ei t=   100411 stack=30 ok=True correct=True frames=1 depth=1
+A_8400      asum    di t=    47850 stack=12 ok=True correct=True frames=0 depth=1
+A_8400      asum    ei t=    47850 stack=12 ok=True correct=True frames=0 depth=1
+A_8400      move    di t=    13009 stack=14 ok=True correct=True frames=0 depth=1
+A_8400      move    ei t=    13009 stack=14 ok=True correct=True frames=0 depth=1
+A_8400      fact7   di t=    12596 stack=70 ok=True correct=True frames=0 depth=1
+A_8400      fact7   ei t=    12596 stack=70 ok=True correct=True frames=0 depth=1
+A_8400      fact20  di t=    39786 stack=200 ok=True correct=True frames=0 depth=1
+A_8400      fact20  ei t=    39786 stack=200 ok=True correct=True frames=0 depth=1
+A_8400      psvc    di t=     8836 stack=10 ok=True correct=True frames=0 depth=1
+A_8400      psvc    ei t=     8836 stack=10 ok=True correct=True frames=0 depth=1
+micro ldl_inline    t=  38 bytes=6 ok=True
+micro ldl_call      t= 130 bytes=4 ok=True
+micro stl_inline    t=  38 bytes=6 ok=True
+micro stl_call      t= 130 bytes=4 ok=True
+micro ldi_inline    t=  24 bytes=4 ok=True
+micro ldi_call      t=  51 bytes=3 ok=True
+micro sti_inline    t=  28 bytes=5 ok=True
+micro sti_call      t=  55 bytes=3 ok=True
+micro nop_call      t=  27 bytes=3 ok=True
+micro cmp_inline    t=  53 bytes=12 ok=True
+micro cmp_call      t=  80 bytes=3 ok=True
+micro frame_inline  t= 125 bytes=3 ok=True
+micro frame_call    t= 274 bytes=3 ok=True
+BASIC sum    compile=391744 run=1005344 loop=1005344 clean=True correct=True
+BASIC copy   compile=347992 run=1706387 loop=1706387 clean=True correct=True
+BASIC asum   compile=551589 run=864873 loop=511571 clean=True correct=True
+BASIC move   compile=784864 run=327137 loop=249746 clean=True correct=True
+BASIC fact7  compile=499195 run=75162 loop=75162 clean=True correct=True
+== ROM config rst: booted to IO_READ_KEY
+Crst_C000   sum     di t=   249371 stack=14 ok=True correct=True frames=0 depth=1
+Crst_C000   sum     ei t=   256857 stack=28 ok=True correct=True frames=3 depth=1
+Crst_C000   copy    di t=   273790 stack=18 ok=True correct=True frames=0 depth=1
+Crst_C000   copy    ei t=   281955 stack=34 ok=True correct=True frames=4 depth=1
+Crst_C000   asum    di t=   135342 stack=16 ok=True correct=True frames=0 depth=1
+Crst_C000   asum    ei t=   137361 stack=30 ok=True correct=True frames=1 depth=1
+Crst_C000   move    di t=    34569 stack=18 ok=True correct=True frames=0 depth=1
+Crst_C000   move    ei t=    34569 stack=18 ok=True correct=True frames=0 depth=1
+Crst_C000   fact7   di t=    17051 stack=72 ok=True correct=True frames=0 depth=1
+Crst_C000   fact7   ei t=    17051 stack=72 ok=True correct=True frames=0 depth=1
+Crst_C000   fact20  di t=    54495 stack=202 ok=True correct=True frames=0 depth=1
+Crst_C000   fact20  ei t=    54495 stack=202 ok=True correct=True frames=0 depth=1
+Crst_C000   psvc    di t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+Crst_C000   psvc    ei t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+Crst_C000   soak    ei t= 53390812 stack=36 ok=True correct=True frames=763 depth=1
+Mrst_C000   sum     di t=    75415 stack=10 ok=True correct=True frames=0 depth=1
+Mrst_C000   sum     ei t=    77456 stack=26 ok=True correct=True frames=1 depth=1
+Mrst_C000   copy    di t=    98587 stack=14 ok=True correct=True frames=0 depth=1
+Mrst_C000   copy    ei t=   100631 stack=30 ok=True correct=True frames=1 depth=1
+Mrst_C000   asum    di t=    55945 stack=14 ok=True correct=True frames=0 depth=1
+Mrst_C000   asum    ei t=    55945 stack=14 ok=True correct=True frames=0 depth=1
+Mrst_C000   move    di t=    16413 stack=16 ok=True correct=True frames=0 depth=1
+Mrst_C000   move    ei t=    16413 stack=16 ok=True correct=True frames=0 depth=1
+Mrst_C000   fact7   di t=    13874 stack=70 ok=True correct=True frames=0 depth=1
+Mrst_C000   fact7   ei t=    13874 stack=70 ok=True correct=True frames=0 depth=1
+Mrst_C000   fact20  di t=    43975 stack=200 ok=True correct=True frames=0 depth=1
+Mrst_C000   fact20  ei t=    43975 stack=200 ok=True correct=True frames=0 depth=1
+Mrst_C000   psvc    di t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+Mrst_C000   psvc    ei t=     8903 stack=10 ok=True correct=True frames=0 depth=1
+Crst_8400   sum     di t=   249411 stack=14 ok=True correct=True frames=0 depth=1
+Crst_8400   sum     ei t=   256779 stack=28 ok=True correct=True frames=3 depth=1
+Crst_8400   copy    di t=   273740 stack=18 ok=True correct=True frames=0 depth=1
+Crst_8400   copy    ei t=   281894 stack=32 ok=True correct=True frames=4 depth=1
+Crst_8400   asum    di t=   135343 stack=16 ok=True correct=True frames=0 depth=1
+Crst_8400   asum    ei t=   137385 stack=30 ok=True correct=True frames=1 depth=1
+Crst_8400   move    di t=    34453 stack=18 ok=True correct=True frames=0 depth=1
+Crst_8400   move    ei t=    34453 stack=18 ok=True correct=True frames=0 depth=1
+Crst_8400   fact7   di t=    17011 stack=72 ok=True correct=True frames=0 depth=1
+Crst_8400   fact7   ei t=    17011 stack=72 ok=True correct=True frames=0 depth=1
+Crst_8400   fact20  di t=    54531 stack=202 ok=True correct=True frames=0 depth=1
+Crst_8400   fact20  ei t=    54531 stack=202 ok=True correct=True frames=0 depth=1
+Crst_8400   psvc    di t=     8836 stack=10 ok=True correct=True frames=0 depth=1
+Crst_8400   psvc    ei t=     8836 stack=10 ok=True correct=True frames=0 depth=1
+micro ldl_rst       t= 134 bytes=2 ok=True
+micro stl_rst       t= 134 bytes=2 ok=True
+micro ldi_rst       t=  55 bytes=1 ok=True
+micro sti_rst       t=  59 bytes=1 ok=True
+micro frame_rst     t= 282 bytes=3 ok=True
+== ROM config disp: booted to IO_READ_KEY
+micro nop_rst       t=  31 bytes=1 ok=True
+micro cmp_dispatch  t= 217 bytes=2 ok=True
+sizes {"A_C000": {"SUM": 79, "COPY": 73, "ASUM": 122, "MOVE": 112, "FACT": 92}, "Ccall_C000": {"SUM": 55, "COPY": 56, "ASUM": 83, "MOVE": 84, "FACT": 66}, "Crst_C000": {"SUM": 35, "COPY": 40, "ASUM": 57, "MOVE": 54, "FACT": 50}, "Mrst_C000": {"SUM": 67, "COPY": 64, "ASUM": 97, "MOVE": 86, "FACT": 70}, "A_8400": {"SUM": 79, "COPY": 73, "ASUM": 122, "MOVE": 112, "FACT": 92}, "Crst_8400": {"SUM": 35, "COPY": 40, "ASUM": 57, "MOVE": 54, "FACT": 50}}
+helpers {"H_LDL": 17, "H_STL": 17, "H_ENTER": 18, "H_LEAVE": 16, "H_LDI": 5, "H_STI": 6, "H_CMPLT": 13, "H_DISPATCH": 16, "all": 113} frame fns {"EL_A": 19, "EL_C_CALL": 11, "EL_C_RST": 7}

@@ -1,0 +1,150 @@
+# 2068-Leap-C ROM budgets (spec.md section 2.2) and the budget ledger (project_plan.md section 1.2).
+#
+# tools/budget.py measures every component from the production symbol files: a component is a
+# list of [start_label, end_label) address ranges. `make budget` prints the table and the ROM map;
+# `make check` fails when
+#   - a component is larger than its budget (base budget + ledger changes),
+#   - code in a bank is not covered by exactly one component (unaccounted bytes),
+#   - the reserve after the ledger falls below the bank's floor (owner decision 4, 2026-10-13).
+# Components with no ranges yet have no code yet (their milestone has not started).
+
+[home]
+size = 16384
+code_end = "LEAPC_HOME_CODE_END"
+reserve_floor = 512
+
+[[home.component]]
+id = "page0"
+title = "Page zero, cold start, trampolines"
+budget = 160
+ranges = [["COMP_PAGE0_BEGIN", "COMP_PAGE0_END"]]
+
+[[home.component]]
+id = "platform"
+title = "Retained platform (graphics, memory, keyboard, math, interrupt, bank, AY) + deltas"
+budget = 3800
+ranges = [["COMP_PLATFORM_BEGIN", "COMP_PLATFORM_END"]]
+
+[[home.component]]
+id = "tape_block"
+title = "Tape block send/receive (moved from EXROM in Phase 7)"
+budget = 340
+ranges = []
+
+[[home.component]]
+id = "lexer"
+title = "Compiler: lexer + source streaming + keyword table (+ compile error exit)"
+budget = 1100
+ranges = [["COMP_LEXER_BEGIN", "COMP_LEXER_END"]]
+
+[[home.component]]
+id = "decl"
+title = "Compiler: declarations and type system"
+budget = 2000
+ranges = []
+
+[[home.component]]
+id = "symtab"
+title = "Compiler: scoped symbol table"
+budget = 800
+ranges = []
+
+[[home.component]]
+id = "expr"
+title = "Compiler: typed expressions"
+budget = 1800
+ranges = []
+
+[[home.component]]
+id = "codegen"
+title = "Compiler: code generator (templates, fixups, constant folding)"
+budget = 1200
+ranges = []
+
+[[home.component]]
+id = "stmt"
+title = "Compiler: statements and functions"
+budget = 1400
+ranges = []
+
+[[home.component]]
+id = "preproc"
+title = "Compiler: preprocessor (object-like #define)"
+budget = 300
+ranges = []
+
+[[home.component]]
+id = "helpers"
+title = "Runtime: helper core"
+budget = 500
+ranges = []
+
+[[home.component]]
+id = "library"
+title = "Runtime: library"
+budget = 1300
+ranges = []
+
+[[home.component]]
+id = "rtexit"
+title = "Runtime: start, exit, BREAK, runtime errors"
+budget = 200
+ranges = [["COMP_RTEXIT_BEGIN", "COMP_RTEXIT_END"]]
+
+[exrom]
+size = 8192
+base = 0xC000
+code_end = "LEAPC_EXROM_CODE_END"
+reserve_floor = 256
+
+[[exrom.component]]
+id = "xplatform"
+title = "Retained platform (editor engine, tape headers, integer formatting, sound)"
+budget = 1340
+ranges = [["COMP_XPLATFORM_BEGIN", "STORAGE_SEND_BLOCK"],
+          ["STORAGE_VERSION_WORD", "BASIC_FLOAT_TO_STRING_EXROM"]]
+
+[[exrom.component]]
+id = "xtape_block"
+title = "Tape block send/receive (in EXROM until Phase 7; ledger L1)"
+budget = 0
+ranges = [["STORAGE_SEND_BLOCK", "STORAGE_VERSION_WORD"]]
+
+[[exrom.component]]
+id = "xshell"
+title = "Leap-C shell (entry points, editor glue, commands, messages, chime)"
+budget = 2900
+ranges = [["COMP_XSHELL_BEGIN", "COMP_XSHELL_END"]]
+
+[[exrom.component]]
+id = "xkeywords"
+title = "C keyword highlighting table"
+budget = 250
+ranges = []
+
+[[exrom.component]]
+id = "xdiag"
+title = "Compiler diagnostics (message texts, error reporting)"
+budget = 650
+ranges = []
+
+[[exrom.component]]
+id = "xfp"
+title = "FP calculator + float formatting (optional component, spec.md 4.9)"
+budget = 2165
+ranges = [["BASIC_FLOAT_TO_STRING_EXROM", "COMP_XPLATFORM_END"]]
+
+# ---------------------------------------------------------------------------------------------
+# Ledger: every change to a base budget, with its measured reason. `delta` is added to the
+# component's budget and taken from (negative: returned to) the bank's reserve.
+
+[[ledger]]
+id = "L1"
+date = "2026-10-13"
+milestone = "M1.1"
+bank = "exrom"
+component = "xtape_block"
+delta = 331
+reason = """STORAGE_SEND_BLOCK + STORAGE_RECEIVE_BLOCK measure 331 B and stay in the EXROM until
+Phase 7 moves them to HOME (spec.md 8.3, HOME budget tape_block 340). Transitional allocation
+from the EXROM reserve (887 -> 556). Phase 7 removes this entry when the code moves."""

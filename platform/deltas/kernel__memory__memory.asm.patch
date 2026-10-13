@@ -1,0 +1,13 @@
+--- a/kernel/memory/memory.asm
++++ b/kernel/memory/memory.asm
+@@ -78,8 +78,8 @@
+ ; Destroys: AF, BC, DE, HL
+ ; ============================================================================
+ MEM_COLD_INIT:
+-    ld   hl, $8000
+-    ld   bc, PROG_AREA_MAX - $8000
++    ld   hl, LEAPC_COLD_CLEAR_BASE       ; LEAP-C DELTA D2: was $8000 (include/leapc_layout.inc)
++    ld   bc, PROG_AREA_MAX - LEAPC_COLD_CLEAR_BASE
+     jr   MEM_FILL_ZERO
+ 
+ ; ============================================================================

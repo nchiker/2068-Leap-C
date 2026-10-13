@@ -1,0 +1,2 @@
+// expect: num:0 num:31 num:171 num:255 num:65535u num:32767 num:32768u num:43981u num:4660
+0x0 0x1F 0XAB 0xff 0xFFFF 0x7FFF 0x8000 0xabcd 0x1234

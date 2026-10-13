@@ -1,0 +1,2 @@
+// expect: num:1 num:255 num:16
+0x0001 0x00ff 0x0010

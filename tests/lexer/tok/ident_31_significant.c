@@ -1,0 +1,2 @@
+// expect: id:abcdefghijklmnopqrstuvwxyz01234 ; id:abcdefghijklmnopqrstuvwxyz01234
+abcdefghijklmnopqrstuvwxyz0123456789ABCD ; abcdefghijklmnopqrstuvwxyz01234
