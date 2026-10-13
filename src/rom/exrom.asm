@@ -40,7 +40,11 @@ COMP_XSHELL_BEGIN:
 COMP_XCOMP_ENTRY:
     ASSERT $ == LEAPC_EXROM_FOLD
     jp   XC_FOLD
+    ASSERT $ == LEAPC_EXROM_LIBFIND
+    jp   LIB_FIND
 COMP_XCOMP_ENTRY_END:
+    ASSERT $ == LEAPC_EXROM_BEEP
+    jp   AY_BEEP_PLAY                  ; beep() (HOME LIB_BEEP: page in, play, page out)
 ; ---------------------------------------------------------------- shell
     INCLUDE "src/shell/shell.asm"
 COMP_XSHELL_END:
@@ -49,6 +53,7 @@ COMP_XSHELL_END:
 ; trampoline (bank rule 3: they never touch chunk 6)
 COMP_XCOMP_BEGIN:
     INCLUDE "src/compiler/fold.asm"
+    INCLUDE "src/compiler/libnames.asm"
 COMP_XCOMP_END:
 
 ; ---------------------------------------------------------------- retained platform (spec.md 2.1)

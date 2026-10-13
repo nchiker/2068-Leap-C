@@ -79,7 +79,7 @@ E_TOOBIG        EQU 101     ; PROGRAM TOO BIG (image regions full)
     IFNDEF LEAPC_RTERRORS
     DEFINE LEAPC_RTERRORS
 RTE_STACK       EQU 1       ; stack overflow (ENTER)
-RTE_HEAP        EQU 2       ; out of heap
+RTE_HEAP        EQU 2       ; out of heap (no Release 1 library function raises it: malloc gives NULL)
 RTE_HIRES       EQU 3       ; hi-res mode with the image in $6000-$77FF
 RTE_ARG         EQU 4       ; invalid library argument
 RTE_BREAK       EQU 5       ; BREAK

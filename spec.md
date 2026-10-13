@@ -1,12 +1,14 @@
 # 2068-Leap-C — Specification
 
-**Version 0.4, 2026-10-13** (v0.1, 2026-10-12: initial; v0.2, v0.3, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.5, 2026-10-13** (v0.1, 2026-10-12: initial; v0.2-v0.4, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
 **Changes in v0.3 (Phase 2, owner decisions O1/O2 of 2026-10-13):** the retained 16-bit math is cut to what C uses (§2.1, platform delta D3). Multiply and divide are the helper core's own routines (§5.3). `rand()`/`srand()` are a C generator (§7).
 
 **Changes in v0.4 (Phase 2, as built):** the preprocessor's rules and limits (§4.8, §4.10), the `SWITCH` tables (§5.3), and the function → line table's format (§5.9).
+
+**Changes in v0.5 (Phase 3, as built; `docs/milestones/M3.md`):** program start and exit (§5.7), BREAK (§5.8) and runtime errors (§5.9) as built; the heap (§3.2); the library's semantics, its binding to the compiler and its deviations (§7); the library's use of `AF'` (§5.1).
 
 **What is fixed and what is tuned:**
 
@@ -76,7 +78,7 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 | Memory: line store, fill, shift, cold init | 485 | HOME | kept. **Delta:** re-pointed to the Leap-C memory map (§3) |
 | Keyboard I/O | 434 | HOME | kept. **Delta:** symbol-shift map for the 8 C characters (§6.2) |
 | 16-bit math (`MATH_NEGATE16`, `ABS16`, `COMPARE16`) | 390 → 39 | HOME | **Delta D3 (v0.3):** multiply and divide moved to the helper core's register-only routines (§5.3); `SQRT16`, `SGN16`, `MULTIPLY16` removed (no Release 1 caller); `RND16` replaced by the library's `rand()` (§7) |
-| Interrupt (IM 1, `FRAMES`, keyboard scan) | 154 | HOME | kept. **Delta:** BREAK request for native programs (§5.8) |
+| Interrupt (IM 1, `FRAMES`, keyboard scan) | 154 | HOME | kept. **Delta D4 (v0.5):** BREAK request for native programs (§5.8): V2's BREAK latch (14 B) replaced by a call to the runtime (8 B) |
 | Bank switching (`BANK_PAGE_EXROM_IN/OUT`, depth-counted) | 46 | HOME | kept unchanged |
 | AY beep (HOME part) | 58 | HOME | kept |
 | `FOLD_UPPER` (was in the BASIC compiler) | 9 → 0 | HOME | not built: C is case-sensitive and nothing calls it |
@@ -219,8 +221,10 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 
 **Heap.** At run time, after the compile workspace is released:
 
-- `[source end, source-region top)` is the heap, used by `malloc`/`free` (§7.4);
+- `[source end, source-region top)` is the heap, used by `malloc`/`free` (§7);
 - the stack is `$F800-$FEFF`.
+
+As built (v0.5): blocks `[size:2][data]` from the end of the source (made even) up to an end mark in the region's last word (`LIB_HEAP_END`, a used block of size 0). A size counts its 2-byte header and is even; bit 15 is set while the block is in use. `malloc` searches first fit and joins the free blocks it passes; `free` clears the bit. Every program start sets up a new, empty heap, so a program interrupted inside `malloc` leaves nothing to repair.
 
 **Static data** is zeroed or initialised by the program-start code before `main`.
 
@@ -381,7 +385,7 @@ Floating point is **not** part of Release 1 code generation, but it is **not rem
 | BC, A, flags | scratch |
 | IX | frame base |
 | IY | reserved (unused by compiled code and the kernel) |
-| Alternate set | unused |
+| Alternate set | unused by compiled code. Library routines may use `AF'` within a call (v0.5); nothing keeps a value there |
 
 The V2 kernel uses no IX/IY (verified).
 
@@ -453,7 +457,7 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 
 ### 5.7 Program start and exit
 
-**Start, in HOME runtime:**
+**Start, in HOME runtime (`RT_RUN`):**
 
 1. Page EXROM out.
 2. Set SP = `$FF00` and record `RUN_SP`.
@@ -461,12 +465,20 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 4. Set `STACK_LIMIT`, initialise the heap and set `RUNNING = 1`.
 5. `call main`.
 
+**As built (v0.5):**
+
+- The program runs on its caller's stack (the shell's: a few words below `$FF00`), not from `$FF00`, so `RT_RUN` returns to its caller; `RUN_SP` is the stack at its call of `main`. The stack limit is the constant `LEAPC_RT_STACK_FLOOR` (ENTER's check).
+- Static data is not copied at the start: the compiler writes it into the image with its initial values (zero by default), and `RUN` always compiles first.
+- Every start clears the run state (`RT_STATE`: error, BREAK request, `NOBRK`, `rand()`'s state, the print position, inverse and over), sets the colours to paper 7 / ink 0 and sets up an empty heap.
+
 **Exit.** On return from `main`, `exit(n)`, a runtime error or BREAK, the runtime:
 
 1. silences AY channel A;
 2. restores the display state (normal mode, not hi-res) only if the program changed it — baseline behaviour, confirmed in Phase 3;
 3. restores `BANK_EXROM_DEPTH` and the paging state the shell expects;
 4. clears `RUNNING` and returns to the shell with a status code (exit value, runtime error number, or BREAK).
+
+**As built (v0.5):** every end returns through `RUN_SP` to `RT_RUN`, which clears `RUNNING` (with interrupts off for that instant), maps a failing address to its source line (§5.9), sets the volumes of **all three** AY channels to 0, sets the normal display mode (unconditionally: no visible change when it already is), restores the caller's paging depth and IX, and returns A = 0 with HL = the exit status, or A = the runtime error. Not restored: the border, the screen's contents and colours (the shell redraws them).
 
 ### 5.8 BREAK (fixed requirement; baseline mechanism)
 
@@ -479,6 +491,13 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 - Cost: about 20-40 B in the ISR delta (estimate; measured in Phase 3).
 - `PAUSE`-style waits in the library end on BREAK.
 
+**As built (v0.5):**
+
+- The ISR (platform delta D4) calls `RT_BREAKREQ` when it accepts the BREAK key, after latching it as usual. With no program running it is an ordinary key. Otherwise `RT_BREAKREQ` sets `BRK_HALT` (`BRKPEND`; the platform's `VM_HALTED`) and, if `NOBRK` is 0, ends the program at once with runtime error 5: the ISR's frame is dropped with the program's stack.
+- `NOBRK` sections: the EXROM trampoline of `beep()` (the only EXROM service programs use in Release 1; Phase 7 adds the tape). The beep's wait ends early on `BRK_HALT`, the trampoline pages the EXROM out and silences the AY, and its end (`RT_NOBRK_END`) then stops the program. **Heap updates are not deferred** (deviation): the heap belongs to one run and is set up again at the next start, so an interrupted `malloc` leaves nothing that must be consistent. AY register writes are single `OUT` pairs that the exit's silencing re-selects.
+- `pause()` and every other wait end on BREAK through the immediate unwind.
+- Cost (measured): the ISR delta is 8 B (V2's BREAK latch, 14 B, removed); the runtime's request and BREAK exit 32 B, the section end 12 B. The ISR's per-frame cost is unchanged: the delta runs only on the frame that accepts a key.
+
 ### 5.9 Runtime errors
 
 | Code | Error |
@@ -490,6 +509,14 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 | 5 | BREAK |
 
 The shell shows `RUNTIME ERROR n` with the source line of the failing function's call site where available. The line mapping comes from a function → line table the compiler emits: one record per function definition in the image's static data, `[link][address][line where the definition starts]`, newest first, from `RUN_FNLINES` (as built in Phase 2: 6 B per function).
+
+**As built (v0.5):** every error records an address in the failing code (`RT_ERRPC`); at the end, `RT_ERRLOC` takes the newest record of the table that starts at most 8 KB before it, and `RT_ERRLINE` is the line where that function's definition starts (0 if none). The address is:
+
+- stack overflow: the code of the function being entered;
+- a library error (codes 3, 4): the program's address of the library call (`LIB_CALLER`, recorded by every library function that takes arguments, and by `getkey()`), so the line is that of the function that called the library;
+- BREAK: the interrupted address if it is in the program's image; in the ROM (a library or platform routine, a helper), the last library call.
+
+No library function raises error 2 in Release 1: `malloc` returns NULL. Error 4 is raised by `beep()` (semitone), `sound()` (register), `mode()` (mode), `itoa()` (base) and `sprite_get()`/`sprite_put()` (rectangle).
 
 No bounds or NULL checks are generated; this is C.
 
@@ -562,6 +589,43 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 **Not built in:** circle and flood fill (V2 has them only as BASIC packages; implementable in C), ULAplus palette, printer. These are candidates for a later library-loading mechanism (§9).
 
 ---
+
+
+### 7.1 As built (v0.5)
+
+**Binding.** The library's names are not declared in advance and are not reserved. An identifier that no declaration in scope names is looked up among them (`LIB_BIND`, through the EXROM's name table) and, if it is one, becomes a defined file-scope function at its ROM address with its prototype. A program's own declaration of a name comes first and hides the library function. A program's own prototype of a library function declares a new function that must then be defined (deviation: C89 7.1.7 lets a program declare library functions itself). `#include <leap.h>` is a no-op.
+
+**Prototypes.** Pointer parameters are `void *` (any object pointer converts); integer parameters are `int`. Return types: `void`, `int`, `unsigned` (`frames`, `strlen`), `char *` (`gets`, `strcpy`, `strncpy`, `strcat`, `strchr`, `itoa`), `void *` (`malloc`, `memcpy`, `memmove`, `memset`). `printf` has no prototype: any arguments, the default promotions. Library functions have addresses (function pointers).
+
+**Screen.** Text rows 0-23, columns 0-31; pixels x 0-255, y 0-191 **from the top** (the platform's convention). Text continues on the next row after column 31; below row 23 the screen scrolls up. `'\n'` moves to the next row's start. Characters without a glyph show as spaces.
+
+| Function | As built |
+|---|---|
+| `cls()` | clears to the current colours (inverse not applied); print position (0, 0) |
+| `putchar(c)`, `puts(s)`, `print(s)` | `putchar` returns `c`; `puts` adds `'\n'` and returns 10 |
+| `at(row, col)`, `tab(col)` | row beyond 23 → 23; column & 31 |
+| `ink(n)`, `paper(n)`, `bright(n)`, `flash(n)` | n & 7, n & 7, n & 1, n & 1; used by printing, `plot`, `draw` and `cls` |
+| `inverse(n)`, `over(n)` | n & 1. Inverse swaps ink and paper for printing and plotting; over XORs characters and pixels |
+| `border(n)` | n & 7 |
+| `printf(fmt, …)` | `%d %u %x %c %s %%`, a decimal width (right-aligned with spaces). **Deviations:** no flags (`- 0 + #` space); another conversion character prints the next argument as a character; the return value is undefined |
+| `getkey()` | waits; ASCII or the editor's control codes (1-4 cursor, 8 DELETE, 13 ENTER) |
+| `inkey()` | the key pressed since the last read (the ISR's latch), else 0 |
+| `gets(buf, max)` | at most `max - 1` printable characters, echoed; DELETE edits; ENTER ends with a new line; returns `buf`; `max` < 1 counts as 1 |
+| `plot(x, y)`, `point(x, y)` | off the screen: nothing / 0. `plot` gives the cell the print attribute |
+| `draw(x0, y0, x1, y1)` | both ends included; off-screen coordinates move to the screen's edge |
+| `attr(row, col)` | the cell's attribute; 0 outside |
+| `mode(n)` | 0 normal, 1 hi-res colour; error 3 if the image uses `$6000-$77FF`; other n: error 4. The end of the program restores mode 0 |
+| `sprite_get/put(row, col, w, h, buf)` | 9 B per cell (8 pixel rows, the attribute), row by row; a rectangle not wholly on the screen, or empty: error 4 |
+| `beep(frames, semitone)` | frames unsigned (0: nothing); semitone -60..69 above middle C (below -39: A0), else error 4; AY channel A, through the EXROM trampoline (§5.8) |
+| `sound(reg, value)` | register 0-15 (else error 4), value & 255 |
+| `frames()`, `pause(n)` | `unsigned`; `pause(0)` returns at once |
+| `inp(port)`, `outp(port, value)` | 16-bit port addresses |
+| `str*`, `mem*` | C89 semantics; characters compared unsigned; `memcpy` is `memmove` (overlap safe) |
+| `atoi(s)` | skips spaces and control characters (1-32), optional sign, decimal digits; wraps beyond 16 bits |
+| `itoa(n, buf, base)` | bases 2-36 (lowercase), negative only in base 10; returns `buf`; another base: error 4 |
+| `abs(n)` | `abs(-32768)` = -32768 |
+| `malloc(n)`, `free(p)` | §3.2; NULL when nothing fits and for n ≥ 32 KB; `free(NULL)` does nothing |
+| `exit(n)` | ends the program with status n, from any depth |
 
 ## 8. Storage
 

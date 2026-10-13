@@ -54,6 +54,7 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D1 | `include/sysvars.inc` | `ORG $8000` → `ORG LEAPC_SYSVARS_BASE`. Before `PROG_AREA_START`: `LEAPC_SYSVARS_END:` and `ORG LEAPC_SRC_BASE` | Baseline memory layout (`spec.md` §3.1): system variables at `$5B00`, line store from `$7800` |
 | D2 | `kernel/memory/memory.asm` | `MEM_COLD_INIT` clears from `LEAPC_COLD_CLEAR_BASE` instead of the literal `$8000` | The same layout: the cold clear covers the relocated system variables |
 | D3 | `kernel/math/math.asm` | Deletions only: `MATH_UMUL16`, `MATH_UDIV16`, `MATH_MULTIPLY16`, `MATH_SIGN_PREP`, `MATH_APPLY_SIGN`, `MATH_DIVIDE16`, `MATH_SGN16`, `MATH_MOD16`, `MATH_SQRT16`, `MATH_RND16`, `MATH_RND_SEED` (351 B). Kept: `MATH_NEGATE16`, `MATH_ABS16`, `MATH_COMPARE16` | Owner decisions O1/O2 (Phase 2, `spec.md` v0.3). C's multiply and divide are the helper core's register-only routines (`src/runtime/helpers.asm`: about 1.4-2.3× faster). `SQRT16`, `SGN16` and `MULTIPLY16` have no Release 1 caller. `rand()`/`srand()` are the library's xorshift generator (`src/runtime/library.asm`). The system variables the removed routines used (`DIV_*`, `MATH_SIGN`, `SQRT_*`) stay defined in `sysvars.inc`, unused; `RND_STATE` is the library generator's state |
+| D4 | `kernel/interrupt/interrupt.asm` | In `KBD_ISR_TICK`'s key acceptance, V2's BREAK latch (`cp KEY_BREAK` … `ld (VM_ERROR_CODE),a` / `ld (VM_HALTED),a`, 14 B, under `IFDEF V2_PRODUCTION`) is replaced by `sub KEY_BREAK / ld b,a` before the latch and `ld a,b / or a / call z,RT_BREAKREQ` after it (8 B) | BREAK for native programs (Phase 3, `spec.md` §5.8): the runtime decides (an ordinary key while no program runs; the end of the program, or a deferred request during a `NOBRK` section). The idle per-frame path is unchanged |
 
 ## Names the platform expects from Leap-C
 
@@ -62,8 +63,9 @@ These names are defined by Leap-C files, so the platform files themselves do not
 | Name | Defined in | Meaning |
 |---|---|---|
 | `IO_KEY_SCAN_ROW` | `src/rom/home.asm` (page zero) | V2 production placed it in page-zero padding too |
-| `VM_HALTED`, `VM_ERROR_CODE` | `include/leapc_cells.inc` (= `BRK_HALT`, `BRK_CODE`) | the BREAK latch that the ISR sets and that `AY_WAIT_FRAMES` tests (the full mechanism comes in Phase 3, `spec.md` §5.8) |
-| `VM_ERR_RANGE` | `src/runtime/rtexit.asm` (= `RT_ERR_ARG`) | the beep semitone range error |
+| `VM_HALTED` | `include/leapc_cells.inc` (= `BRK_HALT`) | the BREAK request that `AY_WAIT_FRAMES` tests (set by the runtime's `RT_BREAKREQ` during a `NOBRK` section, `spec.md` §5.8) |
+| `RT_BREAKREQ` | `src/runtime/rtexit.asm` | called by the ISR (delta D4) when it accepts the BREAK key |
+| `VM_ERR_RANGE` | `src/runtime/rtexit.asm` (= `RT_ERR_ARG`) | the beep semitone range error (runtime error 4 at the program's `beep()` call) |
 | `V2_REDRAW_SCOPE`, `V2_RD_*` | `include/leapc_cells.inc` | V2 placed these editor cells at `$BEC0`, which is source RAM in the Leap-C layout |
 | `V2_FORMAT_WORD`, `PKG_ABI_WORD` | `include/leapc_rom.inc` (= `LEAPC_TAPE_VERSION` `$8C00`) | tape version word (`spec.md` §8.1) |
 | `KTAB_*` | `src/rom/exrom.asm` (= the HOME routines) | as in V2 production |

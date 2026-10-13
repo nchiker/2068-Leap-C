@@ -81,7 +81,7 @@ ranges = [["COMP_HELPERS_BEGIN", "COMP_HELPERS_END"]]
 
 [[home.component]]
 id = "library"
-title = "Runtime: library"
+title = "Runtime: library (leap.h) and its compiler binding (LIB_BIND)"
 budget = 1300
 ranges = [["COMP_LIBRARY_BEGIN", "COMP_LIBRARY_END"]]
 
@@ -130,7 +130,7 @@ ranges = []
 
 [[exrom.component]]
 id = "xcomp"
-title = "Compiler parts run through HOME trampolines (constant folding; ledger L5)"
+title = "Compiler parts run through HOME trampolines (constant folding L5; the library's names L19)"
 budget = 0
 ranges = [["COMP_XCOMP_ENTRY", "COMP_XCOMP_ENTRY_END"], ["COMP_XCOMP_BEGIN", "COMP_XCOMP_END"]]
 
@@ -370,3 +370,69 @@ component = "xcomp"
 delta = -5
 reason = """Constant folding calls the helper core's RT_MUL/RT_DIVS/RT_MODS/RT_DIVU (Phase 2 step 1)
 and measures 217 B with its entry jump; 5 B return to the EXROM reserve (334 -> 339 B)."""
+
+[[ledger]]
+id = "L19"
+date = "2026-10-13"
+milestone = "Phase 3"
+bank = "exrom"
+component = "xcomp"
+delta = 468
+reason = """Shrink protocol step 2 (cold code to EXROM): the compiler's binding of leap.h needs the 48
+library names with their addresses and signatures (LIB_NAMES 390 B, LIB_PARAMS 12 B) and their search
+(LIB_FIND 63 B), plus an entry jump (3 B). They are compile-time data, used only when an identifier is
+undeclared; the search reads only the identifier in the line store and its own table, writes nothing
+and raises no error (bank rule 3). Reached through the HOME trampoline CX_LIBFIND (12 B, page0's
+trampoline budget); the declaration is built in HOME (LIB_BIND, 93 B, library). Measured in HOME
+first: library 1,766 B against 1,300 B (the binding 579 B of it). Funded by L20, not the reserve."""
+
+[[ledger]]
+id = "L20"
+date = "2026-10-13"
+milestone = "Phase 3"
+bank = "exrom"
+component = "xshell"
+delta = -468
+reason = """Shrink protocol step 3 (reallocation from another component's unused budget) for L19: the EXROM
+reserve (339 B) is only 83 B above its floor, so the 468 B come from the Leap-C shell's unused budget
+(2,845 B left; Phase 5). The shell keeps 2,432 B: V2's shell glue was 2,754 B, of which 878 B were
+BASIC-only and are not carried over (spec.md 2.1), leaving about 1,876 B to adapt. Phase 7 returns
+331 B to the EXROM when the tape block I/O moves to HOME (L1); Phase 5 measures the shell and, if it
+needs more, the protocol applies again. EXROM reserve unchanged: 339 B (floor 256 B)."""
+
+[[ledger]]
+id = "L21"
+date = "2026-10-13"
+milestone = "Phase 3"
+bank = "home"
+component = "rtexit"
+delta = 17
+reason = """Program start and exit, BREAK and runtime errors measure 217 B after the shrink pass (229 B first
+build): RT_RUN 130 B (the run state cleared, the heap set up, every end through RUN_SP; at the end the
+AY's three volumes zeroed, the normal display mode, the paging restored), the error-line lookup through
+the function -> line table (RT_ERRLOC 35 B), the ISR's BREAK request (RT_BREAKREQ, RT_BREAK 32 B), the
+library's error exits (8 B) and the end of a BREAK-deferring section (RT_NOBRK_END 12 B). RT_ERR_STACK
+and RT_ERROR (13 B) stay in the page-zero padding. From the library's unused budget (L23)."""
+
+[[ledger]]
+id = "L22"
+date = "2026-10-13"
+milestone = "Phase 3"
+bank = "home"
+component = "expr"
+delta = 5
+reason = """The binding hook in CX_PRIMARY (`call LIB_BIND / jr z,.found`, 5 B): an undeclared identifier is
+looked up among the library's names before it becomes an implicit declaration or E_UNDECL. From the
+library's unused budget (L23)."""
+
+[[ledger]]
+id = "L23"
+date = "2026-10-13"
+milestone = "Phase 3"
+bank = "home"
+component = "library"
+delta = -22
+reason = """The library measures 1,274 B with the binding's HOME part (spec.md 7 without tape: 1,181 B of
+library code on the retained platform, LIB_BIND 93 B), after its name table moved to the EXROM (L19).
+22 B of its unused budget go to rtexit (L21) and expr (L22); 4 B are left. HOME reserve unchanged:
+532 B (floor 512 B)."""

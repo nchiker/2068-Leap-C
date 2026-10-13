@@ -1211,6 +1211,8 @@ CX_PRIMARY:
     ld   c, NS_ORD
     call SYM_LOOKUP
     jr   z, .found
+    call LIB_BIND                      ; a library function (src/runtime/libbind.asm)
+    jr   z, .found
     ld   hl, (TOK_LINE)                ; undeclared: only a call declares it, as int f()
     push hl                            ; (C89 6.3.2.2)
     call LEX_NEXT

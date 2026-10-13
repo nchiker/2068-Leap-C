@@ -50,7 +50,7 @@ import stmtbench        # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
-EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr")
+EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr", "lib", "rt")
 TEST_AREA = 0xE000
 TEST_DUMP_DATA = TEST_AREA + 8
 
@@ -250,6 +250,91 @@ def boot_checks(m):
     return out
 
 
+SECOND = ["int main(void)", "{", "    char *p;", "    p = malloc(10);", "    strcpy(p, \"ok\");",
+          "    print(p);", "    return strlen(p) + 40;", "}"]
+
+
+def phase3_builtins(m):
+    """Phase 3 checks that need the harness between runs (project_plan.md section 5)."""
+    S = m.sym
+    out = []
+    # recovery: after BREAK, a library runtime error and exit(), the next program compiles and runs
+    # in the same machine state (no snapshot restore), with the shell's paging (depth 1)
+    loop = c2src.lines_of(open(os.path.join(ROOT, "tests", "rt", "break_loop.c")).read())
+    for what, src, brk, want in (("BREAK", loop, ("after", 200_000), 5),
+                                 ("a library runtime error", ["int main(void) { mode(9); return 0; }"], None, 4),
+                                 ("exit()", ["int main(void) { exit(3); return 0; }"], None, 0)):
+        r1 = exectest.compile_and_run(m, src, audit=False, depth=1, brk=brk)
+        r2 = exectest.compile_and_run(m, SECOND, restore=False, depth=1)
+        ok = (r1.ran and r1.a == want and r1.depth == 1 and r1.sp == 0xFF02 and r1.ix == exectest.SENTINEL_IX
+              and r1.src_ok and r2.ran and r2.a == 0 and r2.hl == 42 and r2.depth == 1 and not r2.audit
+              and m.read(S("RUNNING"), 1)[0] == 0)
+        out.append(("(built-in) a second compile and run after %s" % what, ok,
+                    "" if ok else "first a=%s depth=%s sp=%04X; second hl=%s a=%s %s" % (
+                        r1.a, r1.depth, r1.sp, getattr(r2, "hl", None), getattr(r2, "a", None), r2.audit)))
+    # BREAK at the idle shell (no program running): an ordinary key; the shell keeps idling
+    m.restore()
+    pc = m.run_to([S("IO_READ_KEY")], 1_000_000)
+    sp0 = m.regs()["SP"]
+    exectest.press_break(m, True)
+    m.set_bps([])
+    m.run(400_000)
+    exectest.press_break(m, False)
+    m.run(200_000)
+    pc = m.run_to([S("IO_READ_KEY")], 1_000_000)
+    rg = m.regs()
+    ok = (pc == S("IO_READ_KEY") and rg["SP"] == sp0 and m.read(S("KBD_LASTK"), 1)[0] == 0x10
+          and m.read(S("BRK_HALT"), 1)[0] == 0 and m.read(S("RUNNING"), 1)[0] == 0)
+    out.append(("(built-in) BREAK at the idle shell is an ordinary key", ok,
+                "" if ok else "pc %04X sp %04X (was %04X) lastk %02X" % (pc, rg["SP"], sp0,
+                                                                         m.read(S("KBD_LASTK"), 1)[0])))
+    # the ISR's cost per frame (IM 1 vector to its reti), idle and with a key held
+    def isr_cost(n):
+        ts = []
+        for _ in range(n):
+            if m.run_to([0x0038], 1_000_000) != 0x0038:
+                return None
+            m.tstates_reset()
+            if m.run_to([0x003C], 100_000) != 0x003C:
+                return None
+            ts.append(m.tstates())
+            m.cmd("cpu-step")
+        return ts
+    m.restore()
+    idle = isr_cost(20)
+    m.cmd("send-keys-event 97 1")
+    held = isr_cost(40)
+    m.cmd("send-keys-event 97 0")
+    ok = bool(idle and held) and max(idle + held) <= 2750
+    msg = "ISR per frame: idle %s T (%d-%d), key held %d-%d T (V2: 2.0-2.5 kT; limit 2,750)" % (
+        round(sum(idle) / len(idle)) if idle else None, min(idle or [0]), max(idle or [0]),
+        min(held or [0]), max(held or [0]))
+    out.append(("(built-in) ISR cost per frame within V2's +10%", ok, msg))
+    # the binding's search (compile time, through the EXROM trampoline): the first and last names
+    # of the table and a name that is not the library's; the least of 3 runs (no interrupt inside)
+    m.restore()
+    m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)
+    times, ok = {}, True
+    for name, want in (("cls", S("LIB_CLS")), ("exit", S("LIB_EXIT")), ("count", None)):
+        m.write(0xF400, name.encode())
+        m.poke16(S("NM_PTR"), 0xF400)
+        m.write(S("NM_LEN"), len(name))
+        best = None
+        for _ in range(3):
+            m.tstates_reset()
+            r = m.call("CX_LIBFIND", maxi=200_000)
+            t = m.tstates()
+            rg = m.regs()
+            found = bool(rg["AF"] & 0x40)            # Z: a library name
+            ok = ok and r["ok"] and found == (want is not None) and (want is None or rg["HL"] == want)
+            ok = ok and m.read(S("BANK_EXROM_DEPTH"), 1)[0] == 0
+            best = t if best is None else min(best, t)
+        times[name] = best
+    out.append(("(built-in) the library's name search (CX_LIBFIND)", ok,
+                "cls %d T, exit %d T, not a library name %d T" % (times["cls"], times["exit"], times["count"])))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=10760)
@@ -373,20 +458,31 @@ def main():
                 want = sorted([(fn["f"], 1), (fn["g"], 3), (fn["main"], 8)])
                 ok = r.ran and r.hl == 2 and sorted(recs) == want
                 msg = "" if ok else "records %r, expected %r" % (recs, want)
-                # built-in: every run starts rand() afresh (RT_RUN clears RND_STATE: srand(1)'s sequence)
+                # built-in: every run starts rand() afresh (RT_RUN clears its state LIB_RND: srand(1)'s sequence)
                 m.restore()
-                m.write(S("RND_STATE"), b"\x34\x12")
+                m.write(S("LIB_RND"), b"\x34\x12")
                 r2 = exectest.compile_and_run(m, ["int main(void) { return 0; }"], restore=False)
-                ok2 = r2.ran and m.w16(S("RND_STATE")) == 0
+                ok2 = r2.ran and m.w16(S("LIB_RND")) == 0
                 for name, okk, mm in (("(built-in) the function -> line table", ok, msg),
                                       ("(built-in) rand() starts afresh in every run", ok2,
-                                       "" if ok2 else "RND_STATE %04X" % m.w16(S("RND_STATE")))):
+                                       "" if ok2 else "LIB_RND %04X" % m.w16(S("LIB_RND")))):
                     results["exec"].append(dict(case=name, ok=okk, msg=mm, info=None))
                     n, p_ = counts.get("run", (0, 0))
                     counts["run"] = (n + 1, p_ + okk)
                     if not okk:
                         failed += 1
                         print("exec: FAIL %s: %s" % (name, mm))
+            if not a.only:
+                for name, ok, msg in phase3_builtins(m):
+                    results["exec"].append(dict(case=name, ok=ok, msg=msg, info=None))
+                    n, p_ = counts.get("rt", (0, 0))
+                    counts["rt"] = (n + 1, p_ + ok)
+                    if not ok:
+                        failed += 1
+                        print("exec: FAIL %s: %s" % (name, msg))
+                    if "ISR" in name or "name search" in name:
+                        print("measured: %s" % msg)
+                        results["isr" if "ISR" in name else "libfind"] = msg
             if "bench" in suites and not a.only:
                 results["spike"] = stmtbench.measure(m)
                 for r in results["spike"]:

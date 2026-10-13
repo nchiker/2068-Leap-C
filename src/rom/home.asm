@@ -105,19 +105,19 @@ COLD_START:
     call BANK_PAGE_EXROM_IN
     jp   LEAPC_EXROM_SHELL
 ; ============================================================================
-; RT_ERR_STACK / RT_ERR_ARG / RT_ERROR -- end the running program with runtime error 1 / 4 / A
-; (spec.md 5.9; src/runtime/rtexit.asm): unwind to RT_RUN.main's caller (RUN_SP)
-; In:  RT_ERROR: A = the error number
-; Out: does not return to its caller: RT_ERRNUM = the error, SP = RUN_SP, `ret` into RT_RUN
-; Destroys: everything except A
+; RT_ERR_STACK -- ENTER: stack overflow, runtime error 1, in the function being entered
+; RT_ERROR -- end the running program (spec.md 5.7, 5.9; src/runtime/rtexit.asm): unwind to RT_RUN
+; In:  A = the runtime error (0: exit(), with the status in HL), HL = an address in the code that
+;      failed (RT_ERR_STACK: the function's; RT_ERRLOC finds its source line)
+; Out: does not return to its caller: RT_ERRNUM = A, RT_ERRPC = HL, SP = RUN_SP, `ret` into RT_RUN
+;      with HL kept
+; Destroys: everything except A and HL
 ; ============================================================================
 RT_ERR_STACK:
     ld   a, RTE_STACK
-    DB   $21                           ; (`ld hl,nn` swallows the next `ld a,n`)
-RT_ERR_ARG:
-    ld   a, RTE_ARG
 RT_ERROR:
     ld   (RT_ERRNUM), a
+    ld   (RT_ERRPC), hl
     ld   sp, (RUN_SP)
     ret
     ASSERT $ <= $0066
@@ -172,6 +172,19 @@ CX_FOLD:
     pop  af
     call LEAPC_EXROM_FOLD
     jp   BANK_PAGE_EXROM_OUT
+; ============================================================================
+; CX_LIBFIND -- the library function named NM: the trampoline to LIB_FIND in the EXROM
+; (src/compiler/libnames.asm; bank rule 3: it reads only the source and its own table)
+; Out: Z: HL = its address, D = its signature, E = its parameter list. NZ: not a library name
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CX_LIBFIND:
+    call BANK_PAGE_EXROM_IN
+    call LEAPC_EXROM_LIBFIND
+    push af
+    call BANK_PAGE_EXROM_OUT
+    pop  af
+    ret
 COMP_TRAMP_END:
 COMP_STMT_BEGIN:
     INCLUDE "src/compiler/stmt.asm"
@@ -189,6 +202,7 @@ COMP_RTEXIT_BEGIN:
 COMP_RTEXIT_END:
 COMP_LIBRARY_BEGIN:
     INCLUDE "src/runtime/library.asm"
+    INCLUDE "src/runtime/libbind.asm"
 COMP_LIBRARY_END:
 
 LEAPC_HOME_CODE_END:

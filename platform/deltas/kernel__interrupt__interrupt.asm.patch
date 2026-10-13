@@ -1,0 +1,27 @@
+--- a/kernel/interrupt/interrupt.asm
++++ b/kernel/interrupt/interrupt.asm
+@@ -237,19 +237,15 @@
+     ; debounce just reached 0 -- accept and latch, start repeat timer
+     call IO_DECODE_KEY
+     ld   (KBD_LASTK), a
+-    IFDEF V2_PRODUCTION
+-    cp   KEY_BREAK                     ; STUDY (D5): BREAK halts a running
+-    jr   nz, .not_break                ; program at the next dispatch --
+-    ld   a, 66                         ; VM_RUN.loop already tests VM_HALTED
+-    ld   (VM_ERROR_CODE), a            ; before every opcode, so no poll is
+-    ld   a, 1                          ; added to the VM. VM_INIT clears both
+-    ld   (VM_HALTED), a                ; cells at the next RUN, so a stale
+-.not_break:                            ; request raised in the editor is inert
+-    ENDIF
++    sub  KEY_BREAK                     ; LEAP-C (D4): B = 0 for BREAK (B is
++    ld   b, a                          ; restored by the pops at .done)
+     ld   a, $FF
+     ld   (KBD_KEYHIT), a
+     ld   a, KBD_REPDEL
+     ld   (KBD_REPEAT), a
++    ld   a, b                          ; LEAP-C (D4): BREAK stops a running C
++    or   a                             ; program (spec.md 5.8): the runtime
++    call z, RT_BREAKREQ                ; unwinds it unless it defers BREAK
+     jr   .done
+ 
+ .already_accepted:

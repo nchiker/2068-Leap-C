@@ -121,11 +121,31 @@ CC_SP:          DEFS 2              ; SP to restore on a compile error (set by t
 CC_ERRNUM:      DEFS 1              ; 0 = no error, else E_* (include/leapc_errors.inc)
 CC_ERRLINE:     DEFS 2              ; source line of the error (1-based)
 
-; ---- runtime (src/runtime/) ----
-RUN_SP:         DEFS 2              ; SP to restore when a program ends abnormally
-RT_ERRNUM:      DEFS 1              ; 0, or the last runtime error (spec.md section 5.9)
-BRK_HALT:       DEFS 1              ; nonzero once the ISR has latched BREAK (platform: VM_HALTED)
-BRK_CODE:       DEFS 1              ; code the ISR stores with it (platform: VM_ERROR_CODE)
+; ---- runtime (src/runtime/rtexit.asm, library.asm; spec.md 5.7-5.9, 7) ----
+RUN_SP:         DEFS 2              ; SP to restore when a program ends (its return into RT_RUN)
+RUNNING:        DEFS 1              ; nonzero while a program runs: BREAK ends it (spec.md 5.8)
+; RT_RUN clears RT_STATE .. RT_STATE_END at every program start
+RT_STATE:
+RT_ERRNUM:      DEFS 1              ; 0, or the program's runtime error (spec.md 5.9) ...
+RT_ERRPC:       DEFS 2              ; ... an address in the code that failed ...
+RT_ERRLINE:     DEFS 2              ; ... and the line where its function's definition starts (0: unknown)
+BRK_HALT:       DEFS 1              ; nonzero: BREAK requested during a NOBRK section (platform: VM_HALTED,
+                                    ; which ends AY_WAIT_FRAMES early)
+NOBRK:          DEFS 1              ; > 0: BREAK waits for the end of the section (EXROM trampolines)
+LIB_CALLER:     DEFS 2              ; the program's address of the last library call (errors, BREAK)
+LIB_RND:        DEFS 2              ; rand()'s state (0 = the sequence of srand(1))
+LIB_COL:        DEFS 1              ; the print position: column (0-31) ...
+LIB_ROW:        DEFS 1              ; ... and row (0-23)
+LIB_INVF:       DEFS 1              ; inverse(): 1 = ink and paper swapped for printing and plotting
+LIB_OVERF:      DEFS 1              ; over(): 1 = characters and pixels are XORed onto the screen
+LIB_CHBUF:      DEFS 2              ; a one-character string (LIB_PUTC; the second byte stays 0)
+RT_STATE_END:
+LIB_ATTR:       DEFS 1              ; the attribute: flash, bright, paper, ink (RT_RUN: ATTR_DEFAULT)
+LIB_FMT:        DEFS 2              ; printf: the next format character ...
+LIB_AP:         DEFS 2              ; ... and the next argument
+LIB_PTR:        DEFS 2              ; LIB_UTOA: the text
+LIB_NUM:        DEFS 7              ; printf: the text of a number (at most "-32768") or a character
+    ASSERT LIB_ROW == LIB_COL + 1 && LIB_OVERF == LIB_INVF + 1
 
 ; ---- editor engine selective redraw (platform rom/exrom_editor.asm, V2_FAST_REDRAW) ----
 ; V2 placed these at $BEC0-$BEC5 (rom/v2_exrom.asm), which is source RAM in the Leap-C map.
@@ -139,8 +159,7 @@ LEAPC_CELLS_END:
     ASSERT LEAPC_CELLS_END <= LEAPC_CELLS_LIMIT
     ORG LEAPC_CELLS_RETURN_ORG
 
-; Platform names for the BREAK cells (kernel/interrupt/interrupt.asm, rom/v2_ay_beep.asm).
+; Platform name for the BREAK request (rom/v2_ay_beep.asm: AY_WAIT_FRAMES ends early).
 VM_HALTED       EQU BRK_HALT
-VM_ERROR_CODE   EQU BRK_CODE
 
     ENDIF

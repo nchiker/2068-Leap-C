@@ -119,7 +119,7 @@ def rand_seq(seed, n):
     return out
 
 
-RND_STATE = None                     # set from the ROM's symbols by measure()
+RND_STATE = None                     # rand()'s state, LIB_RND: set from the ROM's symbols by measure()
 RAND_N = 64
 RAND_OUT = 0xF000
 
@@ -141,6 +141,59 @@ def rand_case(seed):
 
 CASES += [table_case(*t) for t in TABLE_CASES]
 CASES += [rand_case(None), rand_case(1), rand_case(0), rand_case(12345), rand_case(65535)]
+
+# ---- the library (Phase 3): one call each, the arguments pushed last first and popped by the
+# caller, as compiled code does. The text and graphics cases draw on the real screen.
+TEXT32 = '"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"'
+TEXT100 = '"' + "0123456789" * 10 + '"'
+HEAP_INIT = ("ld hl,$8000\n ld (LIB_HEAP_END),hl\n ld hl,(PROG_END)\n inc hl\n res 0,l\n ex de,hl\n"
+             " ld hl,LIB_HEAP_END\n or a\n sbc hl,de\n ex de,hl\n ld (hl),e\n inc hl\n ld (hl),d\n")
+
+
+def lib_case(name, setup, args, routine, check):
+    """args: the arguments' setup code, each leaving its value in HL, first argument first."""
+    push = "".join("%s\n push hl\n" % a for a in reversed(args))
+    site = "call %s\n" % routine + " pop bc\n" * len(args)
+    return ("library: " + name, "ld hl,0\n ld (LIB_COL),hl\n ld a,$38\n ld (LIB_ATTR),a\n" + setup + push,
+            site.rstrip("\n"), check)
+
+
+LIB_CASES = [
+    lib_case("putchar('A') (one character)", "", ["ld hl,'A'"], "LIB_PUTCHAR", lambda r, mem: r["HL"] == 65),
+    lib_case("print() of 32 characters (a row)", "jr skip\nstr: db %s,0\nskip:" % TEXT32, ["ld hl,str"],
+             "LIB_PRINT", lambda r, mem: True),
+    lib_case("printf(\"%d\", -12345)", "jr skip\nfmt: db \"%d\",0\nskip:", ["ld hl,fmt", "ld hl,-12345"],
+             "LIB_PRINTF", lambda r, mem: True),
+    lib_case("printf(\"%5u|%x\", 7, 48879)", "jr skip\nfmt: db \"%5u!%x\",0\nskip:",
+             ["ld hl,fmt", "ld hl,7", "ld hl,48879"], "LIB_PRINTF", lambda r, mem: True),
+    lib_case("itoa(-32768, buf, 10)", "", ["ld hl,-32768", "ld hl,DATA", "ld hl,10"], "LIB_ITOA",
+             lambda r, mem: mem(DATA, 7) == b"-32768\0" and r["HL"] == DATA),
+    lib_case("atoi(\"-12345\")", "jr skip\nstr: db \"-12345\",0\nskip:", ["ld hl,str"], "LIB_ATOI",
+             lambda r, mem: r["HL"] == (-12345) & 0xFFFF),
+    lib_case("strlen() of 100 characters", "jr skip\nstr: db %s,0\nskip:" % TEXT100, ["ld hl,str"],
+             "LIB_STRLEN", lambda r, mem: r["HL"] == 100),
+    lib_case("strcpy() of 100 characters", "jr skip\nstr: db %s,0\nskip:" % TEXT100, ["ld hl,DATA", "ld hl,str"],
+             "LIB_STRCPY", lambda r, mem: mem(DATA, 101) == (b"0123456789" * 10) + b"\0"),
+    lib_case("strcmp() of two equal 100-character strings", "jr skip\nstr: db %s,0\nskip:" % TEXT100,
+             ["ld hl,str", "ld hl,str"], "LIB_STRCMP", lambda r, mem: r["HL"] == 0),
+    lib_case("memcpy() of 256 bytes", "", ["ld hl,DATA", "ld hl,0", "ld hl,256"], "LIB_MEMCPY",
+             lambda r, mem: r["HL"] == DATA),
+    lib_case("memset() of 256 bytes", "", ["ld hl,DATA", "ld hl,$AA", "ld hl,256"], "LIB_MEMSET",
+             lambda r, mem: mem(DATA, 256) == b"\xaa" * 256),
+    lib_case("memmove() of 256 bytes, overlapping upwards", "", ["ld hl,DATA+1", "ld hl,DATA", "ld hl,256"],
+             "LIB_MEMMOVE", lambda r, mem: r["HL"] == DATA + 1),
+    lib_case("malloc(10) from a fresh heap", HEAP_INIT, ["ld hl,10"], "LIB_MALLOC",
+             lambda r, mem: r["HL"] != 0),
+    lib_case("plot(100, 100)", "", ["ld hl,100", "ld hl,100"], "LIB_PLOT", lambda r, mem: True),
+    lib_case("point(100, 100)", "", ["ld hl,100", "ld hl,100"], "LIB_POINT", lambda r, mem: r["HL"] in (0, 1)),
+    lib_case("draw(0, 0, 255, 191) (256 pixels)", "", ["ld hl,0", "ld hl,0", "ld hl,255", "ld hl,191"],
+             "LIB_DRAW", lambda r, mem: True),
+    lib_case("cls()", "", [], "LIB_CLS", lambda r, mem: mem(0x4000, 1) == b"\0"),
+    lib_case("sound(8, 0)", "", ["ld hl,8", "ld hl,0"], "LIB_SOUND", lambda r, mem: True),
+    lib_case("frames()", "", [], "LIB_FRAMES", lambda r, mem: True),
+    lib_case("inkey() (no key)", "", [], "LIB_INKEY", lambda r, mem: True),
+]
+CASES += LIB_CASES
 
 
 def site_bytes(site):
@@ -166,12 +219,13 @@ def measure(m):
     global RND_STATE
     out = []
     S = m.S
-    RND_STATE = S["RND_STATE"]
+    RND_STATE = S["LIB_RND"]
     for name, setup, site, check in CASES:
         d = tempfile.mkdtemp(prefix="lchb-")
-        syms = "\n".join("%s EQU $%04X" % (k, S[k]) for k in
-                         ("RT_CALLHL", "RT_MUL", "RT_DIVS", "RT_MODS", "RT_DIVU", "RT_MODU", "RT_SHL",
-                          "RT_SHR", "RT_SAR", "RT_CPL", "MATH_NEGATE16", "LIB_RAND", "LIB_SRAND", "RND_STATE"))
+        import re
+        used = set(re.findall(r"\b[A-Z][A-Z0-9_]+\b", setup + "\n" + site)) - {"DATA", "RAND_OUT", "RND_STATE"}
+        syms = "\n".join("%s EQU $%04X" % (k, S[k]) for k in sorted(used) if k in S)
+        syms += "\nRND_STATE EQU $%04X" % RND_STATE
         syms += "\nRAND_OUT EQU $%04X" % RAND_OUT
         def lines(text):                 # a line with a label starts in column 1, others are indented
             return [x.strip() if ":" in x.split(";")[0] else "    " + x.strip() for x in text.split("\n")]

@@ -49,6 +49,10 @@ LEAPC_STACK_TOP     EQU $FF00   ; initial SP
 ; lists, helpers and library routines, the IM 1 handler.
 LEAPC_RT_STACK_FLOOR EQU LEAPC_STACK_LIMIT + 128
 
+; The heap (spec.md 3.2, 7): at run time, from the end of the source (PROG_END) to LIB_HEAP_END,
+; the last word of the source region, which holds the heap's end mark (src/runtime/library.asm).
+LIB_HEAP_END        EQU LEAPC_SRC_TOP - 2
+
 ; MEM_COLD_INIT (platform delta D2) clears the system variables, the Leap-C cells, display file 2
 ; and the source region: LEAPC_COLD_CLEAR_BASE .. LEAPC_SRC_TOP-1.
 LEAPC_COLD_CLEAR_BASE EQU LEAPC_SYSVARS_BASE

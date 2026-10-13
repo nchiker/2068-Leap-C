@@ -26,6 +26,7 @@ def main():
     ap.add_argument("--port", type=int, default=10770)
     ap.add_argument("--noaudit", action="store_true")
     ap.add_argument("--words", nargs=2, metavar=("NAME", "N"), help="print N signed words of global NAME")
+    ap.add_argument("--screen", action="store_true", help="print the screen's text rows after the run")
     a = ap.parse_args()
     lines = c2src.lines_of(open(a.file, encoding="latin-1").read())
     m = Machine(os.path.join(ROOT, "build"), a.port)
@@ -37,7 +38,7 @@ def main():
             r.compile_t / max(1, len(lines)) / 3528.0))
         if r.errnum:
             print("error %s at line %d" % (ER_NAME.get(r.errnum, r.errnum), r.errline))
-        funcs = sorted((e.val, e.name) for e in r.globals if e.kind == 2 and e.flags & 8)
+        funcs = sorted((e.val, e.name) for e in r.globals if e.kind == 2 and e.flags & 8 and e.val >= 0x4000)
         bounds = [a for a, _ in funcs] + [r.code_end]
         for i, (addr, name) in enumerate(funcs):
             n = bounds[i + 1] - addr
@@ -51,6 +52,10 @@ def main():
             print("run: did not return (PC=%04X)" % getattr(r, "pc", 0))
         for f in r.audit:
             print("AUDIT:", f)
+        if a.screen:
+            for i, row in enumerate(m.screen_rows()):
+                print("%2d|%s" % (i, row))
+            print("RT_ERRLINE %d, RT_ERRPC $%04X" % (m.w16(m.sym("RT_ERRLINE")), m.w16(m.sym("RT_ERRPC"))))
         if a.words:
             e = [g for g in r.globals if g.name == a.words[0]][0]
             ws = [r.mem.w(e.val + 2 * i) for i in range(int(a.words[1]))]
