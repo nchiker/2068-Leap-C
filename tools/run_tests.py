@@ -29,6 +29,11 @@ ROM compiles each case (CC_PROGRAM) and runs it (RT_RUN); tools/exectest.py chec
 the compile or runtime error, memory and generated code, and audits every function return (stack
 balance, IX). tools/gen_exprtests.py generates tests/expr/gen from a model of the integer semantics.
 
+Phase 4 (tests/mem, and the built-ins of phase4_builtins): image regions and their transitions,
+#pragma hires, the stack's floor and the pending-argument limit, the heap's bounds, trampoline nesting,
+the IM 1 handler during chunk-6 code. The RAM canary and the banking invariants over the whole corpus
+are tools/canary.py (make test runs it after this).
+
 Usage: run_tests.py [--port N] [--only SUBSTR] [--suite boot,lexer,decl,exec,bench] [--json OUT]"""
 import argparse
 import glob
@@ -46,11 +51,12 @@ import decltest         # noqa: E402
 import declbench        # noqa: E402
 import exectest         # noqa: E402
 import helperbench      # noqa: E402
+import memguard         # noqa: E402
 import stmtbench        # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
-EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr", "lib", "rt")
+EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr", "lib", "rt", "mem")
 TEST_AREA = 0xE000
 TEST_DUMP_DATA = TEST_AREA + 8
 
@@ -335,6 +341,98 @@ def phase3_builtins(m):
     return out
 
 
+LOOP = ["int main(void)", "{", "    unsigned t;", "    unsigned n;", "    t = frames() + 20;", "    n = 0;",
+        "    while (frames() < t)", "        n++;", "    return n > 100;", "}"]
+
+
+def phase4_builtins(m):
+    """Phase 4 banking invariants that need the harness between steps (project_plan.md section 6):
+    trampoline nesting, beep()'s trampoline from the shell's paging, the IM 1 handler during
+    chunk-6 code. (The invariants over the whole corpus: tools/canary.py.)"""
+    from lcharness import STOP_ADDR
+    S = m.sym
+    out = []
+    marker = 0x5A
+
+    def chunk6():                                    # what chunk 6 shows: the EXROM's jp, or RAM
+        b = m.read(0xC000, 1)[0]
+        return "EXROM" if b == 0xC3 else "RAM" if b == marker else "$%02X" % b
+
+    # the compile-time trampolines at depth 0 (as the compiler calls them) and nested at depth 1
+    for depth in (0, 1):
+        m.restore()                                  # the idle shell: depth 1, chunk 6 = EXROM
+        m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)
+        m.write(0xC000, marker)
+        if depth:
+            m.call("BANK_PAGE_EXROM_IN", maxi=100_000)
+        m.setreg("AF", S("TK_STAR") << 8)
+        m.setreg("DE", 6)
+        m.setreg("HL", 7)
+        m.setreg("BC", 0)
+        r = m.call("CX_FOLD", maxi=200_000)
+        hl = m.regs()["HL"]
+        d1, c1 = m.read(S("BANK_EXROM_DEPTH"), 1)[0], chunk6()
+        m.write(0xF400, b"exit")
+        m.poke16(S("NM_PTR"), 0xF400)
+        m.write(S("NM_LEN"), 4)
+        r2 = m.call("CX_LIBFIND", maxi=200_000)
+        rg = m.regs()
+        d2, c2 = m.read(S("BANK_EXROM_DEPTH"), 1)[0], chunk6()
+        want = "EXROM" if depth else "RAM"
+        ok = (r["ok"] and r2["ok"] and hl == 42 and rg["HL"] == S("LIB_EXIT") and (d1, c1, d2, c2) ==
+              (depth, want, depth, want))
+        out.append(("(built-in) trampolines CX_FOLD and CX_LIBFIND at paging depth %d%s" % (
+            depth, " (nested)" if depth else ""), ok,
+            "" if ok else "fold %d depth %d chunk 6 %s; libfind HL %04X depth %d chunk 6 %s" % (
+                hl, d1, c1, rg["HL"], d2, c2)))
+    # beep() from the shell's paging: RT_RUN pages the EXROM out (depth 0), the trampoline in (1),
+    # NOBRK covers it; afterwards the shell's depth 1 again
+    src = ["int main(void)", "{", "    beep(2, 0);", "    return 7;", "}"]
+    r = exectest.compile_and_run(m, src, run=False)
+    m.call("BANK_PAGE_EXROM_IN", maxi=100_000)
+    m.setreg("IX", exectest.SENTINEL_IX)
+    pc = exectest.call_to(m, "RT_RUN", [S("AY_WAIT_FRAMES")], 5_000_000)   # (HOME, called by the EXROM's beep)
+    inside = (pc, m.read(S("BANK_EXROM_DEPTH"), 1)[0], m.read(S("NOBRK"), 1)[0], m.read(S("RUNNING"), 1)[0] != 0,
+              m.read(0xC000, 1)[0] == 0xC3)
+    m.cmd("cpu-step")
+    pc2 = m.run_to([STOP_ADDR], 5_000_000)
+    rg = m.regs()
+    after = (pc2, rg["HL"], m.read(S("BANK_EXROM_DEPTH"), 1)[0], m.read(S("NOBRK"), 1)[0],
+             m.read(S("RUNNING"), 1)[0], m.read(0xC000, 1)[0] == 0xC3)
+    ok = r.compile_ok and not r.errnum and inside == (S("AY_WAIT_FRAMES"), 1, 1, True, True) and \
+        after == (STOP_ADDR, 7, 1, 0, 0, True)
+    out.append(("(built-in) beep()'s trampoline from the shell's paging (depth 1 -> 0 -> 1 -> 0 -> 1)", ok,
+                "" if ok else "in the EXROM: %r; after: %r" % (inside, after)))
+    # the IM 1 handler during chunk-6 code: interrupts taken with the interrupted PC in chunk 6, the
+    # program's loop correct, and no write to chunk 6 at all (the loop writes none; the handler
+    # must not), with the banking invariants armed
+    r = exectest.compile_and_run(m, LOOP, run=False)
+    main_at = [e.val for e in r.globals if e.name == "main"][0]
+    memguard.arm(m, True)
+    m.cmd("set-breakpoint 12 PC=0038H and PEEK(SP+1)>BFH and PEEK(SP+1)<E0H")
+    m.cmd("set-breakpoint 13 MWA>BFFFH and MWA<E000H")
+    m.setreg("IX", exectest.SENTINEL_IX)
+    pc = exectest.call_to(m, "RT_RUN", [], 20_000_000)
+    hits, other = 0, None
+    while pc != STOP_ADDR:
+        if pc == 0x0038 and 0xC000 <= m.w16(m.regs()["SP"]) < 0xE000:
+            hits += 1
+            m.cmd("cpu-step")
+            pc = m.run_to([STOP_ADDR], 20_000_000)
+        else:
+            other = "stopped at $%04X: %s" % (pc, memguard.fired(m) or "a write to chunk 6")
+            break
+    for i in (12, 13):
+        m.cmd("set-breakpoint %d" % i)
+    memguard.arm(m, False)
+    hl = m.regs()["HL"]
+    ok = 0xC000 <= main_at < 0xE000 and other is None and hits >= 15 and hl == 1
+    out.append(("(built-in) the IM 1 handler during chunk-6 code", ok,
+                "%d interrupts taken in chunk 6 (main at $%04X), result %d%s" % (
+                    hits, main_at, hl, "; " + other if other else "")))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=10760)
@@ -472,6 +570,16 @@ def main():
                     if not okk:
                         failed += 1
                         print("exec: FAIL %s: %s" % (name, mm))
+            if not a.only:
+                for name, ok, msg in phase4_builtins(m):
+                    results["exec"].append(dict(case=name, ok=ok, msg=msg, info=None))
+                    n, p_ = counts.get("mem", (0, 0))
+                    counts["mem"] = (n + 1, p_ + ok)
+                    if not ok:
+                        failed += 1
+                        print("exec: FAIL %s: %s" % (name, msg))
+                    if "IM 1" in name:
+                        print("measured: %s" % msg)
             if not a.only:
                 for name, ok, msg in phase3_builtins(m):
                     results["exec"].append(dict(case=name, ok=ok, msg=msg, info=None))

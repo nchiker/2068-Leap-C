@@ -92,8 +92,7 @@ MEM_COLD_INIT:
 ; inspection.
 ; In:  none
 ; Out: PROG_END = PROG_AREA_START; ARRAYS_END = PROG_END (no arrays
-;      exist yet); VARS_START = PROG_AREA_MAX (no scalars exist yet);
-;      all sprite slots undefined/unshown
+;      exist yet); VARS_START = PROG_AREA_MAX (no scalars exist yet)
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 MEM_INIT:
@@ -114,39 +113,11 @@ MEM_INIT:
                                        ; never at cold boot; folding it
                                        ; in here actually closes that
                                        ; gap rather than widening it
-    xor  a
-    ld   (STR_FUNC_POOL_NEXT), a        ; safety net, not load-bearing —
-                                       ; correct acquire/release pairing
-                                       ; within a statement's own
-                                       ; evaluation should always leave
-                                       ; this at 0 anyway (see sysvars.
-                                       ; inc's own STR_FUNC_POOL header)
-    ld   (EXTENSION_MAGIC), a           ; unregister RAM module before NEW/
-    ld   (EXTENSION_MAGIC+1), a         ; cold boot can leave a stale target
-    ld   (EXTENSION_SLOT_COUNT), a      ; real bug caught before any build:
-                                        ; without this, a stale nonzero
-                                        ; count from a PREVIOUS module's
-                                        ; registration would make a fresh
-                                        ; module's own first statement
-                                        ; registration wrongly land on
-                                        ; slot 1 (or refuse slot 0/1
-                                        ; entirely if count was already 2)
-                                        ; instead of starting clean
-    IFDEF FULL_ENGINE_PRESENT
-    IFNDEF STACK_AUDIT
-    ld   hl, EXT_SERVICE_TABLE_TEMPLATE
-    ld   de, EXT_SERVICE_VERSION_ADDR
-    ld   bc, EXT_SERVICE_TABLE_TEMPLATE_END - EXT_SERVICE_TABLE_TEMPLATE
-    ldir
-    ENDIF
-    ENDIF
-    ld   hl, SPRITE_SLOT_DEFINED
-    ld   bc, SPRITE_SLOT_MAX * 2        ; DEFINED and SHOWN are contiguous
-    call MEM_FILL_ZERO
-    ld   (SPRITE_DISPLAY_DEPTH), a       ; MEM_FILL_ZERO returns A=0
-    IFDEF FULL_ENGINE_PRESENT
-    call BASIC_RESET_TEXT_ATTR           ; cold boot/NEW shared default
-    ENDIF
+    ; LEAP-C DELTA D5: the clears of V2's string-function pool, package
+    ; registry (EXTENSION_*) and sprite slots are removed. Leap-C has no
+    ; BASIC string functions, packages or sprite slots: nothing reads those
+    ; cells (tools/check_ram_layout.py), and MEM_COLD_INIT zeroes the system
+    ; variables before the cold start calls this.
     ret
 
     IFDEF FULL_ENGINE_PRESENT

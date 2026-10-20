@@ -14,7 +14,8 @@
 ; RT_ENTER -- the rest of RST $18 ENTER n
 ; In:  HL -> n (the byte after the rst), the caller's IX pushed, the return address under it
 ; Out: IX -> the saved IX, SP = IX - n; continues after n
-; Errors: runtime error 1 (stack overflow) when SP would go below LEAPC_RT_STACK_FLOOR
+; Errors: runtime error 1 (stack overflow) when SP would go below LEAPC_RT_STACK_FLOOR: checked
+;      before SP moves, so the frame is never made (the floor is page-aligned: a high-byte compare)
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 RT_ENTER:
@@ -27,12 +28,14 @@ RT_ENTER:
     ld   l, a
     ld   h, $FF
     inc  hl                            ; HL = -n
-    add  hl, sp
-    ld   sp, hl
-    ld   bc, -LEAPC_RT_STACK_FLOOR
-    add  hl, bc                        ; C: SP >= the floor
+    add  hl, sp                        ; HL = the new SP
+    ld   a, h
+    cp   LEAPC_RT_STACK_FLOOR >> 8     ; C: below the floor
     ex   de, hl
-    jp   nc, RT_ERR_STACK
+    jp   c, RT_ERR_STACK
+    ex   de, hl
+    ld   sp, hl
+    ex   de, hl
 ; RT_CALLHL -- call the function at HL (calls through a function pointer: `call RT_CALLHL`)
 RT_CALLHL:
     jp   (hl)

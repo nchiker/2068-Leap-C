@@ -69,7 +69,7 @@ ranges = [["COMP_STMT_BEGIN", "COMP_STMT_END"]]
 
 [[home.component]]
 id = "preproc"
-title = "Compiler: preprocessor (object-like #define)"
+title = "Compiler: preprocessor (object-like #define, #pragma hires)"
 budget = 300
 ranges = [["COMP_PREPROC_BEGIN", "COMP_PREPROC_END"]]
 
@@ -436,3 +436,67 @@ reason = """The library measures 1,274 B with the binding's HOME part (spec.md 7
 library code on the retained platform, LIB_BIND 93 B), after its name table moved to the EXROM (L19).
 22 B of its unused budget go to rtexit (L21) and expr (L22); 4 B are left. HOME reserve unchanged:
 532 B (floor 512 B)."""
+
+[[ledger]]
+id = "L24"
+date = "2026-10-20"
+milestone = "Phase 4"
+bank = "home"
+component = "platform"
+delta = -53
+reason = """Shrink protocol step 1 (measured, behaviour identical): platform deltas D5 and D6 remove dead stores
+to V2 cells that nothing in Leap-C reads (tools/check_ram_layout.py): MEM_INIT's clears of V2's string-function
+pool, package registry (EXTENSION_*) and sprite slots (D5, 25 B; MEM_COLD_INIT zeroes the system variables
+before the cold start calls it), and GFX_SPRITE_INVALIDATE with its calls in GFX_CLS, GFX_SCROLL_TEXT_UP and
+GFX_SET_MODE (D6, 25 B). AY_BEEP_TABLE no longer crosses a 256-byte page, so AY_BEEP_PERIOD assembles its short
+form again (3 B, docs/milestones/M3.md section 10). The platform measures 3,255 B; it keeps its 141 B for
+Phase 5 (glyphs and key map) and returns 53 B to the HOME reserve (532 -> 585 B) for L25-L28."""
+
+[[ledger]]
+id = "L25"
+date = "2026-10-20"
+milestone = "Phase 4"
+bank = "home"
+component = "preproc"
+delta = 41
+reason = """#pragma hires (spec.md 3.2, 4.8): the directive record for `pragma` (13 B), the pragma dispatch
+(PP_PRAGMA and its record chain PP_PRAGMAS with `hires`, 20 B, through PP_DISPATCH, the directive lookup made
+reusable at no cost) and PP_HIRES (8 B: image region 4's [low] = its [high], so neither code nor data is placed
+there from that line on). The preprocessor measures 482 B. From the reserve (L24)."""
+
+[[ledger]]
+id = "L26"
+date = "2026-10-20"
+milestone = "Phase 4"
+bank = "home"
+component = "library"
+delta = 2
+reason = """LIB_MODE (mode(1)) accepts image region 4 reserved by #pragma hires ([LEAPC_IMG4_END][LEAPC_IMG4_END]) as
+well as untouched ([LEAPC_IMG4_BASE][LEAPC_IMG4_END]): +6 B. The library's 4 B left cover 4 of them; 2 B from
+the reserve (L24). The library measures 1,280 B."""
+
+[[ledger]]
+id = "L27"
+date = "2026-10-20"
+milestone = "Phase 4"
+bank = "home"
+component = "expr"
+delta = 17
+reason = """Stack collision protection (spec.md 4.10, 5.3): CX_CALL limits the argument words pushed and not yet
+popped, by a call and the calls whose arguments contain it, to LEAPC_ARGS_MAX (32; E_NESTING): the check in the
+counting pass (9 B), the count per push (2 B) and its release after the call (6 B). With the held operands
+(bounded by the compiler's nesting guard) the stack between two frame checks then stays within ENTER's margin
+(include/leapc_layout.inc). It also ends a hang: a call with 256 arguments wrapped the 8-bit argument count and
+the compile never returned. The expression compiler measures 2,645 B. From the reserve (L24)."""
+
+[[ledger]]
+id = "L28"
+date = "2026-10-20"
+milestone = "Phase 4"
+bank = "home"
+component = "helpers"
+delta = 1
+reason = """ENTER checks the new stack pointer before it moves SP (a high-byte compare against the page-aligned
+floor LEAPC_RT_STACK_FLOOR = $F900), so a frame that does not fit is never made and an interrupt cannot push
+below the floor's margin: +1 B. The helper core measures 233 B. From the reserve: HOME reserve after Phase 4
+524 B (floor 512 B)."""

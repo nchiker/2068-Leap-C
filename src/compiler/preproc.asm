@@ -5,9 +5,10 @@
 ; PP_HOOK, and a line end to PP_EOL when LEX_MODE is not 0. The parser never sees it.
 ;
 ; Directives. A `#` that is the first token on its line starts a directive;
-; its tokens are read with LM_EOL (TK_EOL ends them). `#define NAME replacement`, `#undef NAME`,
-; `#include <leap.h>` / `"leap.h"` (a no-op: the library is built in, spec.md 7). Any other
-; directive, a function-like macro and any other header are "not supported"; `#` alone is ignored.
+; its tokens are read with LM_EOL (TK_EOL ends them) and never expanded. `#define NAME replacement`,
+; `#undef NAME`, `#include <leap.h>` / `"leap.h"` (a no-op: the library is built in, spec.md 7),
+; `#pragma hires` (image region 4 reserved, spec.md 3.2). Any other directive or pragma, a
+; function-like macro and any other header are "not supported"; `#` alone is ignored.
 ;
 ; Macros. A definition is a record [link][name length][name][replacement] in the global area, on
 ; the chain PP_MACROS; the name and the replacement (the rest of the line) are pointers into the
@@ -108,7 +109,7 @@ PP_E_NESTING:
 ; ============================================================================
 ; PP_DIRECTIVE -- (jumped to by PP_HOOK at a `#` that starts a line) the directive; then the
 ; next token, as LEX_NEXT
-; Errors: E_NOTSUP (another directive, a function-like macro, another header), E_SYNTAX, E_REDEF
+; Errors: E_NOTSUP (another directive or pragma, a function-like macro, another header), E_SYNTAX, E_REDEF
 ;      (a macro defined again), E_NOMEM, the lexical errors of the line
 ; Destroys: AF, BC, DE, HL (IX and NM kept: a directive can come between any two tokens)
 ; ============================================================================
@@ -118,9 +119,10 @@ PP_DIRECTIVE:
     call LEX_NEXT                      ; the directive's name
     cp   TK_EOL
     jr   z, PP_END                     ; `#` alone
-    cp   TK_IDENT
-    jr   nz, PP_E_NOTSUP               ; (#if, #else: keywords)
     ld   hl, PP_DIRS
+PP_DISPATCH:                           ; the current token (A) names a record of the chain HL:
+    cp   TK_IDENT                      ; its handler (#if, #else: keywords)
+    jr   nz, PP_E_NOTSUP
     call PP_FIND_IN
     jr   nz, PP_E_NOTSUP
     ld   de, PM_TEXT
@@ -129,6 +131,14 @@ PP_DIRECTIVE:
     jp   (hl)
 PP_E_NOTSUP:
     jp   CC_E_NOTSUP
+PP_PRAGMA:                             ; #pragma NAME (PP_PRAGMAS; any other: not supported)
+    call LEX_NEXT
+    ld   hl, PP_PRAGMAS
+    jr   PP_DISPATCH
+PP_HIRES:                              ; #pragma hires (spec.md 3.2): image region 4, display file 2,
+    ld   hl, (IMG_LIM + 4 * 3 + 2)     ; is full from here on: its [low] = its [high]. What is already
+    ld   (IMG_LIM + 4 * 3), hl         ; there stays (mode(1) then refuses: LIB_MODE)
+    jr   PP_LINE_END
 PP_UNDEF:                              ; #undef NAME (not defined: nothing to do)
     call PP_NAME
     call PP_FIND
@@ -288,15 +298,28 @@ PP_DIRS:
     DB   5
     DW   .n_undef, PP_UNDEF
 .include:
-    DW   0
+    DW   .pragma
     DB   7
     DW   .n_include, PP_INCLUDE
+.pragma:
+    DW   0
+    DB   6
+    DW   .n_pragma, PP_PRAGMA
 .n_define:
     DB   "define"
 .n_undef:
     DB   "undef"
 .n_include:
     DB   "include"
+.n_pragma:
+    DB   "pragma"
+; the pragmas (PP_PRAGMA)
+PP_PRAGMAS:
+    DW   0
+    DB   5
+    DW   .n_hires, PP_HIRES
+.n_hires:
+    DB   "hires"
 PP_LEAPH:
     DB   "leap.h"
 PP_LEAPH_N      EQU $ - PP_LEAPH

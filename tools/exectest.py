@@ -38,6 +38,9 @@ Phase 3 (the library and the runtime):
   // breakpc: LO HI                when the ISR accepted BREAK (RT_BREAKREQ), the interrupted PC was
                                    in [LO, HI) (ROM symbols or numbers): the state the case tests
   // breakdeferred                 ... and NOBRK was above 0 (the request waited for the section's end)
+Phase 4 (memory layout):
+  // stacklow: ADDR                the run writes no byte of $F400-$FEFF below ADDR (a canary fills
+                                   that range before the run; image region 3 must be unused)
 After every run: IX is the caller's again (a sentinel), SP is back above the return slot, and the
 line store (the source) is unchanged.
 
@@ -51,6 +54,7 @@ import re
 import struct
 
 import c2src
+import memguard
 from decltest import Mem, chain, ER, ER_NAME
 
 SENTINEL_IX = 0x5A5A
@@ -67,7 +71,7 @@ def parse_case(path):
     for l in text.split("\n"):
         s = l.strip()
         m = re.match(r"//\s*(expect|mem|golden|maxi|rundepth|region):\s*(.*)$", s) or \
-            re.match(r"//\s*(screen|keys|rtline|ay|attr|pixel|break|cell|breakpc):\s*(.*)$", s) or \
+            re.match(r"//\s*(screen|keys|rtline|ay|attr|pixel|break|cell|breakpc|stacklow):\s*(.*)$", s) or \
             re.match(r"//\s*(noaudit|breakdeferred)()\s*$", s)
         if m:
             exp.append((m.group(1), m.group(2).strip()))
@@ -86,6 +90,12 @@ def call_to(m, routine, stops, maxi):
 
 class Result:
     pass
+
+
+def alloc_order(addr):
+    """The image's allocation order of an address (regions 1-4, spec.md 3.2): code continues from a
+    region into the next one, and region 4 ($6000) comes after region 3 ($F400)."""
+    return (addr - 0xC000) & 0xFFFF
 
 
 def expand(m, ordinary, hx):
@@ -133,11 +143,18 @@ def ay_regs(m):
     return list(m.read(AY_OUT, 16))
 
 
+STACK_CANARY = (0xF400, 0xFF00)          # region 3 and the stack: below RET_SLOT
+CANARY = 0xA5
+
+
 def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=True, depth=0, keys=None,
-                    brk=None):
+                    brk=None, stack_canary=False, invariants=False, canary=False):
     """restore=False: keep the machine as the previous run left it (recovery tests). depth=1: run
     with the EXROM paged in, as the shell does (RT_RUN pages it out and back). keys: the keyboard
-    feed (parse_keys). brk: ("at", symbol, n) or ("after", n): BREAK pressed then."""
+    feed (parse_keys). brk: ("at", symbol, n) or ("after", n): BREAK pressed then.
+    invariants: arm the banking invariants (memguard) for the compile and the run; a violation ends
+    the case with res.violation. canary: the RAM canary (memguard.Canary): res.canary_hits (the
+    compile's and the run's) and res.stack_lows."""
     from lcharness import STOP_ADDR
     S = m.sym
     res = Result()
@@ -148,10 +165,21 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
     src0 = m.read(m.sym("PROG_AREA_START"), m.w16(m.sym("PROG_END")) - m.sym("PROG_AREA_START"))
     r = m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)
     assert r["ok"], "BANK_PAGE_EXROM_OUT did not return"
+    res.violation = []
+    res.canary_hits = []
+    guard = memguard.Canary(m) if canary else None
+    res.stack_lows = guard.stack_low if guard else {}
+    if guard:
+        guard.before_compile()
+    memguard.arm(m, invariants)
     m.tstates_reset()
     pc = call_to(m, "CC_PROGRAM", [], 60_000_000)
     res.compile_ok = pc == STOP_ADDR
     res.compile_t = m.tstates()
+    if invariants and not res.compile_ok:
+        res.violation = ["compile: " + v for v in memguard.fired(m)]
+    if guard and res.compile_ok:
+        res.canary_hits += [dict(h, phase="compile") for h in guard.after_compile()]
     mem = Mem(m)
     res.errnum = mem.b(S("CC_ERRNUM"))
     res.errline = mem.w(S("CC_ERRLINE"))
@@ -159,12 +187,23 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
     res.code_end = mem.w(S("CG_PC"))
     res.ran = False
     if not res.compile_ok or res.errnum or not run:
+        memguard.arm(m, False)
         res.mem = mem
         return res
-    funcs = sorted(((e.val, e) for e in res.globals if e.kind == 2 and e.flags & 8), key=lambda t: t[0])
+    # the program's functions in allocation order (image regions 1, 2, 3, 4: region 4 lies below region 1,
+    # so the order is the address less $C000, modulo 64 K); library functions (ROM addresses) are not
+    funcs = sorted(((alloc_order(e.val), e) for e in res.globals if e.kind == 2 and e.flags & 8 and e.val >= 0x6000),
+                   key=lambda t: t[0])
+    if guard:                                   # (chunk 6 is RAM now: ZRCP writes what is mapped)
+        guard.before_run(hires_ok=any("mode(" in l for l in lines))
     if depth:
         r = m.call("BANK_PAGE_EXROM_IN", maxi=100_000)
         assert r["ok"], "BANK_PAGE_EXROM_IN did not return"
+    res.stack_low = None
+    if stack_canary:
+        lim = S("IMG_LIM") + 8                  # region 3 [low][high] must be [base][end]: unused
+        assert (mem.w(lim), mem.w(lim + 2)) == (0xF400, 0xF800), "stacklow: image region 3 is in use"
+        m.write(STACK_CANARY[0], bytes([CANARY]) * (STACK_CANARY[1] - STACK_CANARY[0]))
     m.setreg("IX", SENTINEL_IX)
     stops = [S("RT_RUN.back")] + ([S("RST_LEAVE")] if audit else [])
     keyq = list(keys or [])
@@ -210,7 +249,7 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
         elif pc == S("RST_LEAVE"):
             hits += 1
             ret = m.w16(rg["SP"]) - 1         # the rst LEAVE itself
-            f = [e for a, e in funcs if a <= ret]
+            f = [e for a, e in funcs if a <= alloc_order(ret)]
             if f:
                 fa = f[-1].val
                 n = m.read(fa + 1, 1)[0]
@@ -228,6 +267,13 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
         pc = m.run_to([STOP_ADDR] + stops, maxi)
     res.run_t = m.tstates()
     res.ran = pc == STOP_ADDR
+    if invariants:
+        if not res.ran:
+            res.violation += ["run: " + v for v in memguard.fired(m)]
+        memguard.arm(m, False)
+    if stack_canary:
+        d = m.read(STACK_CANARY[0], STACK_CANARY[1] - STACK_CANARY[0])
+        res.stack_low = next((STACK_CANARY[0] + i for i, x in enumerate(d) if x != CANARY), None)
     if pressed:
         press_break(m, False)
     rg = m.regs()
@@ -240,11 +286,25 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
     res.rtline = m.w16(S("RT_ERRLINE"))
     res.src_ok = m.read(S("PROG_AREA_START"), len(src0)) == src0 and \
         m.w16(S("PROG_END")) == S("PROG_AREA_START") + len(src0)
+    if guard and res.ran:                       # (with the EXROM paged in, chunk 6 reads as the EXROM)
+        rg = m.regs()
+        paged = m.read(S("BANK_EXROM_DEPTH"), 1)[0]
+        guard.run_stack_low()
+        if paged:
+            m.write(S("BANK_EXROM_DEPTH"), 1)
+            assert m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)["ok"]
+        res.canary_hits += [dict(h, phase="run") for h in guard.after_run()]
+        if paged:
+            assert m.call("BANK_PAGE_EXROM_IN", maxi=100_000)["ok"]
+            m.write(S("BANK_EXROM_DEPTH"), paged)
+        for r_ in ("SP", "PC"):
+            m.setreg(r_, rg[r_])
     res.mem = Mem(m)
     return res
 
 
-def check_case(m, path):
+def check_case(m, path, guards=False):
+    """guards: run with the banking invariants and the RAM canary (memguard; tools/canary.py)."""
     text, exp = parse_case(path)
     lines = c2src.lines_of(text)
     keys = [k for k, _ in exp]
@@ -271,9 +331,21 @@ def check_case(m, path):
             brk = ("after", int(t[1].replace("_", ""), 0)) if t[0] == "after" else \
                 ("at", t[1], int(t[2]) if len(t) > 2 else 1)
     run = run or any(k in keys for k in ("screen", "ay", "attr", "pixel", "rtline", "cell"))
+    run = run or "stacklow" in keys
     res = compile_and_run(m, lines, maxi=maxi, audit="noaudit" not in keys, run=run, depth=depth,
-                          keys=kfeed, brk=brk)
+                          keys=kfeed, brk=brk, stack_canary="stacklow" in keys and not guards,
+                          invariants=guards, canary=guards)
     msgs = []
+    if res.violation:
+        msgs.append("banking invariant violated: " + ", ".join(res.violation))
+    for h in res.canary_hits:
+        if not h.get("allowed"):
+            msgs.append("canary: the %s wrote %s %s-%s (%d bytes)" % (h["phase"], h["span"], h["first"], h["last"],
+                                                                      h["bytes"]))
+    if guards and res.stack_lows.get("run") is not None and res.stack_lows["run"] < memguard.STACK[0]:
+        msgs.append("the stack went below $%04X" % memguard.STACK[0])
+    if guards and "stacklow" in keys:
+        res.stack_low = res.stack_lows.get("run")
     if not res.compile_ok:
         return False, "compile did not return", None
     got_err = (res.errnum, res.errline) if res.errnum else None
@@ -314,8 +386,13 @@ def check_case(m, path):
     rows = ayr = None
     for k, body in exp:
         toks = body.split()
-        if not res.ran and k in ("screen", "ay", "attr", "pixel", "rtline", "cell"):
+        if not res.ran and k in ("screen", "ay", "attr", "pixel", "rtline", "cell", "stacklow"):
             continue
+        if k == "stacklow":
+            lo = int(toks[0].lstrip("$"), 16) if toks[0].startswith("$") else int(toks[0], 0)
+            if res.stack_low is None or res.stack_low < lo:
+                msgs.append("the run wrote the stack down to %s, below $%04X" % (
+                    "$%04X" % res.stack_low if res.stack_low is not None else None, lo))
         if k == "screen":
             rows = rows or m.screen_rows()
             n, _, text = body.partition(" ")
@@ -396,5 +473,7 @@ def check_case(m, path):
     if not exp:
         msgs.append("no expectations in the case")
     info = dict(error=got_err, compile_t=res.compile_t, lines=len(lines),
-                run_t=getattr(res, "run_t", None), code=res.code_end)
+                run_t=getattr(res, "run_t", None), code=res.code_end,
+                stack_low=getattr(res, "stack_low", None), stack_lows=res.stack_lows,
+                canary=res.canary_hits, violation=res.violation)
     return not msgs, "; ".join(msgs), info

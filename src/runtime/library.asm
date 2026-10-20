@@ -766,13 +766,18 @@ LIB_MODE:
     jp   nz, RT_ERR_ARG
     or   l
     jp   z, GFX_SET_MODE               ; (A = 0)
-    ld   hl, (IMG_LIM + 4 * 3 + 2)     ; region 4 [low][high]: unused while it is still
-    ld   de, (IMG_LIM + 4 * 3)         ; [LEAPC_IMG4_BASE][LEAPC_IMG4_END] (the compiler's limits)
-    sbc  hl, de                        ; (NC)
+    ld   hl, (IMG_LIM + 4 * 3 + 2)     ; region 4 [low][high] (the compiler's limits): unused while
+    ld   de, (IMG_LIM + 4 * 3)         ; it is [LEAPC_IMG4_BASE][LEAPC_IMG4_END], or reserved by
+    sbc  hl, de                        ; #pragma hires: [LEAPC_IMG4_END][LEAPC_IMG4_END] (NC)
+    ld   a, d
+    jr   z, .full                      ; [X][X]: reserved when X is the region's end
     ld   de, LEAPC_IMG4_BASE - LEAPC_IMG4_END
     add  hl, de
     ld   a, h
     or   l
+    DB   $01                           ; (`ld bc,nn` swallows the `cp`)
+.full:
+    cp   LEAPC_IMG4_END >> 8
     ld   a, RTE_HIRES
     jp   nz, RT_LIBERR
     ld   a, 1

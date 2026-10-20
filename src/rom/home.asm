@@ -211,10 +211,15 @@ COMP_TEST_BEGIN:
     INCLUDE "src/test/test_hooks.asm"
 COMP_TEST_END:
     ENDIF
+    IFDEF LEAPC_NEGCTL                  ; the layout guard's negative controls (nothing is saved)
+    INCLUDE "src/test/layout_negctl.asm"
+    ENDIF
     ASSERT $ <= LEAPC_HOME_END
     DS   LEAPC_HOME_END - $, $FF
     IFDEF LEAPC_TEST
     SAVEBIN "build/test/leapc_home.bin", $0000, LEAPC_HOME_END
     ELSE
+    IFNDEF LEAPC_NEGCTL
     SAVEBIN "build/leapc_home.bin", $0000, LEAPC_HOME_END
+    ENDIF
     ENDIF

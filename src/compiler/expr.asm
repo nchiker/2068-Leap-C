@@ -984,9 +984,12 @@ CX_POSTFIX_LOOP:
 ; spec.md 5.2). The arguments are evaluated and pushed right to left: a first pass marks where
 ; each starts (LEX_MARK), then each is parsed from its mark, last first, and the lexer skips the
 ; others again to the `)`. With a prototype the number of arguments must match and each is
-; checked against its parameter's type.
+; checked against its parameter's type. The words pushed at run time and not yet popped, by this
+; call and the calls whose arguments contain it, are at most LEAPC_ARGS_MAX (CX_PEND): the stack
+; between two frame checks stays within ENTER's margin (include/leapc_layout.inc).
 ; Out: X = OK_RVAL, the function's return type; current token after `)`
-; Errors: E_OPERAND (not a function), E_ARGS, E_TYPE, E_SYNTAX, E_NESTING, the arguments' errors
+; Errors: E_OPERAND (not a function), E_ARGS, E_TYPE, E_SYNTAX, E_NESTING (also: more than
+;      LEAPC_ARGS_MAX argument words pending), the arguments' errors
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 CX_CALL:
@@ -1018,6 +1021,10 @@ CX_CALL:
     call CC_STACKCHK
     ld   hl, CX_ARGN
     inc  (hl)
+    ld   a, (CX_PEND)                  ; the words the enclosing calls have pushed, and this
+    add  a, (hl)                       ; call's: their bound is the stack floor's margin
+    cp   LEAPC_ARGS_MAX + 1            ; (include/leapc_layout.inc)
+    jp   nc, PP_E_NESTING
     call .skip
     jr   z, .arg
 .counted:                              ; current token `)`
@@ -1064,6 +1071,9 @@ CX_CALL:
     call CG_OP
     ld   hl, CX_ARGN
     dec  (hl)
+    dec  hl
+    inc  (hl)                          ; CX_PEND: one more word pushed
+    ASSERT CX_PEND == CX_ARGN - 1
     jr   .eval
 .end:                                  ; after the first argument: the others again, to `)`
     ld   a, (TOK_KIND)
@@ -1079,6 +1089,10 @@ CX_CALL:
     call CX_POPY                       ; Y = the callee
     ld   a, (CX_ARGT)
     ld   c, a                          ; C = the words to pop afterwards
+    ld   hl, CX_PEND                   ; (popped after the call: no longer pending for the code
+    ld   a, (hl)                       ; compiled from here on)
+    sub  c
+    ld   (hl), a
     push bc
     ld   a, (Y_KIND)
     cp   OK_FUNC

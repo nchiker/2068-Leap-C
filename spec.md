@@ -1,6 +1,6 @@
 # 2068-Leap-C — Specification
 
-**Version 0.5, 2026-10-13** (v0.1, 2026-10-12: initial; v0.2-v0.4, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.6, 2026-10-20** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
@@ -9,6 +9,8 @@
 **Changes in v0.4 (Phase 2, as built):** the preprocessor's rules and limits (§4.8, §4.10), the `SWITCH` tables (§5.3), and the function → line table's format (§5.9).
 
 **Changes in v0.5 (Phase 3, as built; `docs/milestones/M3.md`):** program start and exit (§5.7), BREAK (§5.8) and runtime errors (§5.9) as built; the heap (§3.2); the library's semantics, its binding to the compiler and its deviations (§7); the library's use of `AF'` (§5.1).
+
+**Changes in v0.6 (Phase 4, as built; `docs/milestones/M4.md`):** the memory map is final (§3.1: baseline layout A, the RAM each region holds, the layout guard); the region rules as built (§3.2: code and data in the image regions, `#pragma hires`, the stack's floor, the heap's bounds); `#pragma hires` (§4.8); the limits measured (§4.10, with the capacity table); `ENTER`'s stack check (§5.3); the platform deltas D5 and D6 (§2.1); runtime-error lines in code continued from image region 3 into region 4 (§5.9).
 
 **What is fixed and what is tuned:**
 
@@ -74,8 +76,8 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 
 | Module | V2 size | Bank | Leap-C status |
 |---|---:|---|---|
-| Graphics: text, attributes, scrolling, pixels, line, sprite capture/draw, font | 2,071 | HOME | kept. **Delta:** 8 glyphs `[ ] { } \| ~ ^ \` (§6.2) |
-| Memory: line store, fill, shift, cold init | 485 | HOME | kept. **Delta:** re-pointed to the Leap-C memory map (§3) |
+| Graphics: text, attributes, scrolling, pixels, line, sprite capture/draw, font | 2,071 | HOME | kept. **Delta:** 8 glyphs `[ ] { } \| ~ ^ \` (§6.2). **Delta D6 (v0.6):** V2's sprite-slot invalidation removed (no sprite slots in Leap-C; 25 B) |
+| Memory: line store, fill, shift, cold init | 485 | HOME | kept. **Delta:** re-pointed to the Leap-C memory map (§3); **D5 (v0.6):** `MEM_INIT` no longer clears V2's string-pool, package and sprite-slot cells (25 B) |
 | Keyboard I/O | 434 | HOME | kept. **Delta:** symbol-shift map for the 8 C characters (§6.2) |
 | 16-bit math (`MATH_NEGATE16`, `ABS16`, `COMPARE16`) | 390 → 39 | HOME | **Delta D3 (v0.3):** multiply and divide moved to the helper core's register-only routines (§5.3); `SQRT16`, `SGN16`, `MULTIPLY16` removed (no Release 1 caller); `RND16` replaced by the library's `rand()` (§7) |
 | Interrupt (IM 1, `FRAMES`, keyboard scan) | 154 | HOME | kept. **Delta D4 (v0.5):** BREAK request for native programs (§5.8): V2's BREAK latch (14 B) replaced by a call to the runtime (8 B) |
@@ -165,7 +167,7 @@ Measured costs:
 
 ---
 
-## 3. Memory map (baseline)
+## 3. Memory map (final, Phase 4)
 
 ### 3.1 Layout
 
@@ -194,6 +196,17 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 
 **All code refers to the layout only through symbols** in `include/leapc_layout.inc`, so tuning it means changing symbols, not rewriting code.
 
+**As built (v0.6, final).** Baseline layout A is final: the relocation met no blocker (M1.1), so fallback B is not used. What each range holds:
+
+| Range | Holds (measured, `docs/milestones/M4.md`) |
+|---|---|
+| `$5B00-$5D59` | the platform system variables (602 B) |
+| `$5D5A-$5FFF` | the Leap-C cells: 384 B used (`LEAPC_CELLS_END` `$5EDA`), 294 B free for Phase 5's shell |
+| `$F180-$F3FF` | the V2 platform cells Leap-C keeps at their V2 addresses: `UDG_TABLE` (`$F180`, 168 B), `EDIT_LINE_BUF` (`$F228`, 128 B), `GFX_LINE_X0..Y1` (`$F3C4`, 4 B). The other 340 B are V2 cells nothing in Leap-C uses |
+| `$F800-$FEFF` | the stack; `ENTER`'s floor `$F900` (§5.3) |
+
+**The layout guard.** `make check` proves from the listings that every RAM address the HOME and EXROM code references is a system variable or Leap-C cell, a display-file-1 constant, one of the platform cells above, a region boundary or an EXROM label; a cell anywhere else (source region, image region, stack, `$FF00-$FFFF`, an unused V2 cell) fails the build (`tools/check_ram_layout.py`, with 8 negative controls). `make test` runs a RAM canary over the whole corpus (`tools/canary.py`): neither the compile nor the run writes outside the RAM this map gives them.
+
 ### 3.2 Region rules
 
 **Source store.**
@@ -214,17 +227,27 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 - **Region order:** chunk 6 → `$E000-$F17F` → `$F400-$F7FF` → `$6000-$77FF`.
 - Exhausting all regions is compile error *program too big*.
 
+As built (v0.6):
+
+- **Code.** Each instruction unit (at most 8 bytes) is placed only when 12 bytes are free below the region's data (`CG_GUARD`: the unit, a held operand's push and a linking `jp`). Otherwise the code continues in the next region in the order with 12 bytes free, linked by `jp`. A function, a loop or a `switch` can span regions; jumps and calls are absolute.
+- **Data.** Each object (global, `static` local, string literal, `switch` table, function → line record) goes to the first region in the order with room for all of it, from the top down. An object never spans regions: the largest is 8,192 bytes (region 1). Data can go back to room left in an earlier region.
+- Both meet without overlap: code never passes the data's low end, and data never comes below the code's reserved end.
+
 **Hi-res protection.**
 
 - The runtime's mode switch to dual-screen/hi-res mode fails with a runtime error if the image uses `$6000-$77FF`.
 - A compile option (`#pragma hires`) reserves that region so the compiler never allocates it.
+
+As built (v0.6): `#pragma hires` (§4.8) makes region 4 full from its line on (its limits become `[end][end]`); with no room in regions 1-3 the program is *program too big*. `mode(1)` succeeds while region 4 holds nothing: untouched, or reserved by the pragma. A late pragma cannot take back what is already in region 4 (code continues there if it already runs there; data placed there stays): `mode(1)` then gives runtime error 3. Put `#pragma hires` at the top of the program.
 
 **Heap.** At run time, after the compile workspace is released:
 
 - `[source end, source-region top)` is the heap, used by `malloc`/`free` (§7);
 - the stack is `$F800-$FEFF`.
 
-As built (v0.5): blocks `[size:2][data]` from the end of the source (made even) up to an end mark in the region's last word (`LIB_HEAP_END`, a used block of size 0). A size counts its 2-byte header and is even; bit 15 is set while the block is in use. `malloc` searches first fit and joins the free blocks it passes; `free` clears the bit. Every program start sets up a new, empty heap, so a program interrupted inside `malloc` leaves nothing to repair.
+**Stack (as built, v0.6).** The program runs on its caller's stack; `ENTER` refuses a frame below `$F900` (§5.3). What runs between two frame checks (held expression operands, pending call arguments, a library routine, the IM 1 handler) is bounded by the compiler (§4.10) to at most 250 bytes, so the stack never leaves `$F800-$FEFF`. The compiler's own recursion stops at `$F8C0` (*nesting too deep*).
+
+As built (v0.5): blocks `[size:2][data]` from the end of the source (made even) up to an end mark in the region's last word (`LIB_HEAP_END` `$BFFE`, a used block of size 0). A size counts its 2-byte header and is even; bit 15 is set while the block is in use. `malloc` searches first fit and joins the free blocks it passes; `free` clears the bit. Every program start sets up a new, empty heap, so a program interrupted inside `malloc` leaves nothing to repair.
 
 **Static data** is zeroed or initialised by the program-start code before `main`.
 
@@ -348,6 +371,7 @@ All C89 operators except those on unsupported types:
   - A macro's name inside its own expansion, directly or through other macros, stays an identifier (C89 6.8.3.4).
   - Defining a macro that is already defined is `ALREADY DEFINED`, also for an identical replacement (C89 allows that one; deviation). `#undef` it first.
   - Macro names are identifiers; a keyword cannot be one.
+- **`#pragma hires` (as built, v0.6):** reserves image region 4 (display file 2) from its line on (§3.2). The pragma's name is case-sensitive and never macro-expanded (no directive's tokens are); `#pragma` with any other name, or none, is "not supported"; anything after `hires` on the line is a syntax error. It may appear more than once and wherever a directive may.
 
 ### 4.9 Floating point (optional, later)
 
@@ -364,13 +388,42 @@ Floating point is **not** part of Release 1 code generation, but it is **not rem
 |---|---|
 | Identifier significance | 31 characters |
 | Line length | 127 characters |
-| Nesting depth (blocks, expressions) | bounded by the compiler's stack guard; at least 32 levels guaranteed |
+| Nesting depth (blocks, expressions) | bounded by the compiler's stack guard; at least 32 levels guaranteed (measured, v0.6: §4.10.1) |
 | Function parameters | 16 |
+| Argument words pending at once (v0.6) | 32: the arguments a call pushes and those already pushed by the calls whose arguments contain it ("nesting too deep"). A single call to a function without a prototype (or `printf`) can pass 32 words. It bounds the stack between two frame checks (§3.2) |
 | Local frame size | 255 bytes (8-bit frame offsets; larger locals → "frame too large"; use `static` or the heap) |
 | `switch` cases | memory-bound (6 B of compile workspace per case) |
 | Macro expansions nested in one another | 8 ("nesting too deep") |
 | Tokens produced by one macro expansion, nested ones included | 255 ("nesting too deep") |
 | String literal length | one line, 126 characters (adjacent literals concatenate) |
+
+#### 4.10.1 Measured capacity (v0.6)
+
+Measured on the production ROM (`tools/capacity.py`, `make capacity`; every limit is a verified pair: the largest that compiles or runs, and one more that fails with the error shown):
+
+| Item | Measured limit | One more |
+|---|---|---|
+| Source, minimal program (comments and `main`) | 18,412 B of line store (`PROG_END` $BFEC); workspace 20 B | E_NOMEM |
+| Source, typical program (76 modules: a global array, a function with a loop, locals, a call) | 15,087 B of line store, 851 lines (13,385 B of text); workspace 3,255 B; image 11,059 B of code, 1,678 B of data; compile 8.38 ms per line | E_NOMEM |
+| Image: code (macro-expanded statements, 43 functions) | 19,411 B of code and 266 B of data of 19,840 B (region 1: 8,074 code, 116 data, 2 free; region 2: 4,419 code, 60 data, 1 free; region 3: 1,010 code, 12 data, 2 free; region 4: 5,908 code, 78 data, 158 free) | E_TOOBIG |
+| Image: the largest single object | 8,192 B (region 1; an object never spans regions) | E_TOOBIG |
+| Image: all static data, with a minimal program | 19,817 B | E_TOOBIG |
+| Recursion: reference: 1 int parameter, 1 int local | 190 levels from `main` | stack overflow (runtime error 1) |
+| Recursion: no parameter, no local | 381 levels from `main` | stack overflow (runtime error 1) |
+| Recursion: 4 int parameters, 10 int locals | 47 levels from `main` | stack overflow (runtime error 1) |
+| Heap: the largest block, minimal program | 18,316 B (first block's data at $7872) | NULL |
+| Heap: the largest block with a large source | 234 B (18,193 B of source, 300 B below the minimal program's limit; at the limit itself 16 B) | NULL |
+| Nesting: parentheses | 112 levels | E_NESTING |
+| Nesting: held operands | 60 levels | E_NESTING |
+| Nesting: blocks | 154 levels | E_NESTING |
+| Nesting: if | 386 levels | E_NESTING |
+| Nesting: while | 193 levels | E_NESTING |
+| Nesting: nested calls | 60 levels | E_NESTING |
+| Nesting: struct members | 274 levels | E_NOMEM |
+
+- **The source region is the binding limit for ordinary programs.** Source and compile workspace share `$7800-$BFFF` (18,432 B); the image has its own 19,840 B. The typical program above reaches *out of memory* with 12.7 KB of image, so about 7 KB of image stays unused. (The feasibility study's 21.5 KB assumed source and code shared one pool.) Its workspace is about 43 B per module; per declaration: 13 B for a global scalar, a local or a struct member (with a 4-character name), 20 B for an array, 24 B for a two-parameter prototype.
+- Locals are on the stack: frames from `main` down to `$F900` (1,522 B from the harness's call; the shell's own frames reduce it slightly).
+- Every nesting limit is above the 32 levels guaranteed; *nesting too deep* is the compiler's stack guard.
 
 ---
 
@@ -416,7 +469,7 @@ Measured in the code-shape spike unless marked:
 |---|---|---|
 | `LDI` | RST `$08` | HL = (HL); destroys A |
 | `STI` | RST `$10` | (DE) = HL; HL kept; DE = address + 1 |
-| `ENTER n` | RST `$18` + byte | push IX; IX = SP; SP -= n; **stack check** against `STACK_LIMIT` (runtime error *stack overflow*) |
+| `ENTER n` | RST `$18` + byte | push IX; IX = SP; SP -= n; **stack check** against `STACK_LIMIT` (runtime error *stack overflow*). As built (v0.6): the new SP is checked before SP moves, against the page-aligned floor `LEAPC_RT_STACK_FLOOR` = `$F900` (the margin above `$F800` covers what runs between two frame checks, §3.2) |
 | `LEAVE` | RST `$20` | SP = IX; pop IX; return to the caller; HL kept |
 | `CMPLT` | RST `$28` | signed compare: carry ⇔ DE < HL |
 | `CMPULT` | inline | unsigned `or a; sbc hl,de` (3 B) |
@@ -519,6 +572,8 @@ The shell shows `RUNTIME ERROR n` with the source line of the failing function's
 No library function raises error 2 in Release 1: `malloc` returns NULL. Error 4 is raised by `beep()` (semitone), `sound()` (register), `mode()` (mode), `itoa()` (base) and `sprite_get()`/`sprite_put()` (rectangle).
 
 No bounds or NULL checks are generated; this is C.
+
+**Image region 4 (v0.6).** Region 4 (`$6000`) lies below region 1 in memory although it comes last in the allocation order, so a failure in the part of a function that started in region 3 and continues in region 4 has no function starting at most 8 KB below it: its line is 0 (unknown), never a wrong line. Functions that start in region 4 report their lines.
 
 ---
 

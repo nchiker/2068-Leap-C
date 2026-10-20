@@ -103,7 +103,6 @@ BORDER_DEFAULT  EQU 7     ; white — matches ATTR_DEFAULT's white PAPER,
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_CLS:
-    call GFX_SPRITE_INVALIDATE
     ld   hl, SCREEN_ADDR
     ld   de, SCREEN_ADDR + 1
     ld   bc, 6144 - 1           ; bitmap is 6144 bytes ($4000-$57FF)
@@ -140,24 +139,11 @@ GFX_PAINT_ATTR:
     ldir
     ret
 
-; ============================================================================
-; GFX_SPRITE_INVALIDATE
-; Forget displayed/save-under state before a global screen transformation.
-; Captured images and dimensions remain defined and may be SHOWn again.
-; In: none
-; Out: SPRITE_SLOT_SHOWN[0..7]=0, SPRITE_DISPLAY_DEPTH=0
-; Destroys: AF, B, HL
-; ============================================================================
-GFX_SPRITE_INVALIDATE:
-    xor  a
-    ld   hl, SPRITE_SLOT_SHOWN
-    ld   b, SPRITE_SLOT_MAX
-.loop:
-    ld   (hl), a
-    inc  hl
-    djnz .loop
-    ld   (SPRITE_DISPLAY_DEPTH), a
-    ret
+; LEAP-C DELTA D6: GFX_SPRITE_INVALIDATE removed. It cleared V2's sprite-slot
+; state (SPRITE_SLOT_SHOWN, SPRITE_DISPLAY_DEPTH) for BASIC's sprite slots,
+; which Leap-C does not have: nothing reads those cells
+; (tools/check_ram_layout.py). Its calls in GFX_CLS, GFX_SCROLL_TEXT_UP,
+; GFX_SCROLL_TEXT_DOWN and GFX_SET_MODE are removed with it.
 
 ; ============================================================================
 ; GFX_ROW_BASE_ADDR
@@ -243,7 +229,6 @@ GFX_COPY_ROW_BITMAP:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_SCROLL_TEXT_UP:
-    call GFX_SPRITE_INVALIDATE
     ld   hl, ATTR_ADDR + 32          ; row 1's attributes (linear memory
     ld   de, ATTR_ADDR               ; — the whole 22-row block moves in
     ld   bc, 22*32                   ; one shot, no per-row loop needed)
@@ -297,7 +282,6 @@ GFX_SCROLL_OUTPUT_UP:
 ; ============================================================================
     IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (legacy builds keep it)
 GFX_SCROLL_TEXT_DOWN:
-    call GFX_SPRITE_INVALIDATE
     ld   hl, ATTR_ADDR + 22*32 - 1   ; last byte of rows 0-21 (source)
     ld   de, ATTR_ADDR + 23*32 - 1   ; last byte of rows 1-22 (dest) —
     ld   bc, 22*32                   ; overlapping, dst > src, needs the
@@ -1121,9 +1105,6 @@ GFX_SET_ATTR_EXT:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_SET_MODE:
-    push af
-    call GFX_SPRITE_INVALIDATE
-    pop  af
     ld   (GFX_MODE), a
     cp   1
     jr   z, .highres

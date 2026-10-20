@@ -20,9 +20,9 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `include/hardware.inc` | ports, screen geometry | both | pristine |
 | `include/keys.inc` | key codes | EXROM | pristine |
 | `include/sysvars.inc` | platform system variables | both | **delta D1** |
-| `kernel/memory/memory.asm` | line store, fill, shift, cold init | HOME | **delta D2** |
+| `kernel/memory/memory.asm` | line store, fill, shift, cold init | HOME | **deltas D2, D5** |
 | `kernel/io/io.asm` | keyboard | HOME | pristine |
-| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font | HOME | pristine |
+| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font | HOME | **delta D6** |
 | `kernel/math/math.asm` | 16-bit negate, absolute value, signed compare | HOME | **delta D3** |
 | `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | pristine |
 | `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | pristine |
@@ -55,6 +55,8 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D2 | `kernel/memory/memory.asm` | `MEM_COLD_INIT` clears from `LEAPC_COLD_CLEAR_BASE` instead of the literal `$8000` | The same layout: the cold clear covers the relocated system variables |
 | D3 | `kernel/math/math.asm` | Deletions only: `MATH_UMUL16`, `MATH_UDIV16`, `MATH_MULTIPLY16`, `MATH_SIGN_PREP`, `MATH_APPLY_SIGN`, `MATH_DIVIDE16`, `MATH_SGN16`, `MATH_MOD16`, `MATH_SQRT16`, `MATH_RND16`, `MATH_RND_SEED` (351 B). Kept: `MATH_NEGATE16`, `MATH_ABS16`, `MATH_COMPARE16` | Owner decisions O1/O2 (Phase 2, `spec.md` v0.3). C's multiply and divide are the helper core's register-only routines (`src/runtime/helpers.asm`: about 1.4-2.3× faster). `SQRT16`, `SGN16` and `MULTIPLY16` have no Release 1 caller. `rand()`/`srand()` are the library's xorshift generator (`src/runtime/library.asm`). The system variables the removed routines used (`DIV_*`, `MATH_SIGN`, `SQRT_*`) stay defined in `sysvars.inc`, unused; `RND_STATE` is the library generator's state |
 | D4 | `kernel/interrupt/interrupt.asm` | In `KBD_ISR_TICK`'s key acceptance, V2's BREAK latch (`cp KEY_BREAK` … `ld (VM_ERROR_CODE),a` / `ld (VM_HALTED),a`, 14 B, under `IFDEF V2_PRODUCTION`) is replaced by `sub KEY_BREAK / ld b,a` before the latch and `ld a,b / or a / call z,RT_BREAKREQ` after it (8 B) | BREAK for native programs (Phase 3, `spec.md` §5.8): the runtime decides (an ordinary key while no program runs; the end of the program, or a deferred request during a `NOBRK` section). The idle per-frame path is unchanged |
+| D5 | `kernel/memory/memory.asm` | Deletions only: `MEM_INIT` no longer clears V2's string-function pool index (`STR_FUNC_POOL_NEXT`), package registry (`EXTENSION_MAGIC`, `EXTENSION_SLOT_COUNT`) and sprite slots (`SPRITE_SLOT_DEFINED/SHOWN`, `SPRITE_DISPLAY_DEPTH`) (25 B) | Phase 4 (`docs/milestones/M4.md`, ledger L24): Leap-C has none of these V2 features and nothing reads the cells (`tools/check_ram_layout.py`; the `$F3xx` package cells are outside the Leap-C map's use). `MEM_COLD_INIT` zeroes the system variables before the cold start calls `MEM_INIT` |
+| D6 | `kernel/graphics/graphics.asm` | Deletions only: `GFX_SPRITE_INVALIDATE` and its calls in `GFX_CLS`, `GFX_SCROLL_TEXT_UP`, `GFX_SCROLL_TEXT_DOWN` (not assembled in production) and `GFX_SET_MODE` (25 B) | Phase 4 (ledger L24): it cleared V2's sprite-slot display state for BASIC's sprite slots; Leap-C's `sprite_get`/`sprite_put` use the program's buffers, and nothing reads those cells |
 
 ## Names the platform expects from Leap-C
 
