@@ -41,7 +41,7 @@ CC_COMPILE:
     ld   hl, (PROG_END)
     ld   (WS_LOC), hl
     call LEX_INIT
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
 .decl:
     or   a                             ; TK_EOF
     jp   z, CC_FINISH
@@ -92,7 +92,7 @@ CC_STACKCHK:
 ; ============================================================================
 NEXT_HL:
     push hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  hl
     ret
 
@@ -187,7 +187,7 @@ LEX_RESTORE:
     ret  z
     push hl
     push bc
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  bc
     pop  hl
     jr   .skip
@@ -216,7 +216,7 @@ SKIP_GROUP:
     jp   z, LEX_NEXT
 .next:
     push bc
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  bc
     jr   SKIP_GROUP
 SKIP_SUFFIXES:
@@ -364,7 +364,7 @@ DECL_SPECS:
 .typebit:
     call .bit
 .next:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     jr   .loop
 .bit:                                  ; add type specifier bit A (twice: E_TYPESPEC)
     ld   hl, DS_MASK
@@ -419,11 +419,11 @@ DECL_SPECS:
 ; Destroys: AF, BC, DE, IX; NM
 ; ============================================================================
 STRUCT_SPEC:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_IDENT
     jr   nz, .anon
     call NM_FROM_TOK
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   c, NS_TAG
     cp   TK_LBRACE
     jr   z, .here
@@ -479,7 +479,7 @@ MEMBERS:
     ld   (ST_SIZE), hl
     ld   hl, ST_HEAD                   ; the tail's link field: ST_HEAD itself at first
     ld   (ST_TAIL), hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
 .decl:
     cp   TK_RBRACE
     jr   z, .end
@@ -526,7 +526,7 @@ MEMBERS:
     ld   a, (TOK_KIND)
     cp   TK_COMMA
     jr   nz, .semi
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     jr   .member
 .semi:
     pop  hl
@@ -562,11 +562,11 @@ ST_NODE:
 ; Destroys: AF, BC, DE, IX; NM
 ; ============================================================================
 ENUM_SPEC:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_IDENT
     jr   nz, .body
     call NM_FROM_TOK
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   c, NS_TAG
     cp   TK_LBRACE
     jr   z, .def
@@ -605,10 +605,10 @@ ENUM_SPEC:
     push hl
     ld   a, (TOK_LEN)
     push af
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_ASSIGN
     jr   nz, .named
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call CX_CONST_INT                  ; HL = value
     pop  af
     pop  de
@@ -652,7 +652,7 @@ DECLARATOR:
     call TY_PTR
 .qual:
     push hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  hl
     cp   TK_CONST                      ; `* const`: accepted (spec.md 4.2: const is enforced
     jr   z, .qual                      ; for objects declared const only)
@@ -663,7 +663,7 @@ DECLARATOR:
     cp   TK_LPAREN
     jr   nz, .name
     push hl
-    call LEX_NEXT                      ; the token after `(`
+    rst  $30                          ; LEX_NEXT: the token after `(`
     call DCL_NESTED
     pop  hl
     jr   nz, .fsuffix
@@ -675,7 +675,7 @@ DECLARATOR:
     call SUFFIXES                      ; the type with the outer suffixes
     call LEX_RESTORE
     push hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  hl
     call DECLARATOR                    ; the inner declarator, with that type
     push hl
@@ -739,7 +739,7 @@ SUFFIXES:
     cp   TK_LPAREN
     ret  nz
     push hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  hl
 SUFFIX_FUNC:
     push hl
@@ -766,7 +766,7 @@ SUFFIX_FUNC:
     ret
 SUFFIX_ARRAY:
     push hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   hl, 0
     cp   TK_RBRACK
     jr   z, .count                     ; `[]`
@@ -865,7 +865,7 @@ PARAMS:
     cp   TK_COMMA
     jr   nz, .end
     push bc
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  bc
     jr   .param
 .end:
@@ -981,7 +981,7 @@ DECLARATION:
     jp   nz, CC_EXPECT
     push hl
     push bc
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  bc
     pop  hl
     ld   e, 0
@@ -1118,7 +1118,7 @@ DCL_STATIC:
     bit  SF_DEFINED, (ix + S_FLAGS)
     jp   nz, CC_E_REDEF
     set  SF_DEFINED, (ix + S_FLAGS)
-    call LEX_NEXT                      ; the initialiser's first token
+    rst  $30                          ; LEX_NEXT: the initialiser's first token
     push ix
     call DCL_GETTYPE
     push hl
@@ -1139,7 +1139,7 @@ DCL_STATIC:
     ld   l, c
     call LEX_RESTORE
     push hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  bc
     pop  hl
     push bc

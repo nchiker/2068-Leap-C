@@ -23,13 +23,32 @@ import time
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.expanduser("~/ts2068-debug"))
 from ts2068_debug.zrcp import ZRCPClient, ZRCPError      # noqa: E402
-from ts2068_debug.process import ZEsarUXProcess          # noqa: E402
+from ts2068_debug.process import ZEsarUXProcess as _ZProcess  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ZESARUX = os.path.expanduser("~/Applications/ZEsarUX-13.0")
+# ZEsarUX's own speed settings (Phase 5): --emulatorspeed shortens the real-time wait after each
+# frame (10-1000 %) and --frameskip skips drawing frames; neither changes the emulated machine (the
+# T-states per frame, the interrupts), so every measurement is unchanged. Measured on the idle editor:
+# 3.4 MT/s at real speed, 8.1 MT/s with these. LEAPC_REALTIME=1 runs at real speed.
+FAST_ARGS = [] if os.environ.get("LEAPC_REALTIME") else ["--emulatorspeed", "1000", "--frameskip", "49"]
 RET_SLOT = 0xFF00          # return address slot for routine calls (spec.md 3.1: unused by the ROM)
 STOP_ADDR = 0xFF02         # `jr $` written here; routine calls return to it
 GLYPH_PROG = 0xF400        # glyph rendering program (image region 3, free at the idle prompt)
+UNKNOWN = "\u2591"         # screen_rows: a cell that is no glyph
+BOLD_MARK = "\u2022"       # screen_rows(marks=True): the next character is bold
+
+
+class ZEsarUXProcess(_ZProcess):
+    """ts2068-debug's ZEsarUX launcher (the same arguments) with FAST_ARGS."""
+
+    def start(self):
+        args = ["./" + self.binary, "--noconfigfile", "--machine", self.machine, "--enable-remoteprotocol",
+                "--remoteprotocol-port", str(self.port), "--vo", "null", "--ao", "null"] + FAST_ARGS
+        if self.romfile:
+            args += ["--romfile", os.path.abspath(self.romfile)]
+        self._proc = subprocess.Popen(args, cwd=str(self.install_dir), stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL)
 
 
 def load_syms(*paths):
@@ -180,13 +199,18 @@ class Machine:
 
     def _glyph_table(self):
         """Render chars 32..143 with the real GFX_PUTCHAR (A=char, B=row, C=col) and map each
-        8x8 cell bitmap back to its character (as V2's qharness)."""
+        8x8 cell bitmap back to its character (as V2's qharness). Phase 5: chars 32..126 are also
+        rendered with GFX_PUTCHAR_BOLD (the editor's keyword highlighting); `self.bold` maps those
+        cells to their characters."""
         d = tempfile.mkdtemp(prefix="lcglyph-")
         src = ["    DEVICE ZXSPECTRUM48", "    ORG $%04X" % GLYPH_PROG, "    ld d,32", "    ld b,0",
-               "    ld c,0", "loop:", "    push de", "    push bc", "    ld a,d",
-               "    call $%04X" % self.sym("GFX_PUTCHAR"), "    pop bc", "    pop de", "    inc d", "    inc c",
-               "    ld a,c", "    cp 32", "    jr nz,nx", "    ld c,0", "    inc b", "nx: ld a,d", "    cp 144",
-               "    jr nz,loop", "done: jr done", '    SAVEBIN "%s/g.bin", $%04X, $-$%04X' % (d, GLYPH_PROG, GLYPH_PROG)]
+               "    ld c,0", "    ld hl,$%04X" % self.sym("GFX_PUTCHAR"), "    ld e,144", "loop:", "    push de",
+               "    push bc", "    push hl", "    ld a,d", "    call jphl", "    pop hl", "    pop bc", "    pop de",
+               "    inc d", "    inc c", "    ld a,c", "    cp 32", "    jr nz,nx", "    ld c,0", "    inc b",
+               "nx: ld a,d", "    cp e", "    jr nz,loop", "    ld a,e", "    cp 127", "    jr z,done",
+               "    ld e,127", "    ld d,32", "    ld b,4", "    ld c,0", "    ld hl,$%04X" % self.sym("GFX_PUTCHAR_BOLD"),
+               "    jr loop", "jphl: jp (hl)",
+               "done: jr done", '    SAVEBIN "%s/g.bin", $%04X, $-$%04X' % (d, GLYPH_PROG, GLYPH_PROG)]
         open(d + "/g.asm", "w").write("\n".join(src) + "\n")
         r = subprocess.run(["sjasmplus", "--nologo", "--sym=" + d + "/g.sym", d + "/g.asm"],
                            capture_output=True, text=True)
@@ -203,9 +227,20 @@ class Machine:
             cell = cell_from(scr, i // 32, i % 32)
             table.setdefault(cell, chr(ch) if ch < 128 else chr(0x2580 + ch - 128))
         table[bytes(8)] = " "
+        self.plain_cells = {chr(ch): cell_from(scr, i // 32, i % 32) for i, ch in enumerate(range(32, 127))}
+        self.bold = {}
+        self.bold_cells = {}
+        for i, ch in enumerate(range(32, 127)):
+            cell = cell_from(scr, 4 + i // 32, i % 32)
+            self.bold_cells[chr(ch)] = cell
+            if cell not in table:
+                self.bold.setdefault(cell, chr(ch))
         return table
 
-    def screen_rows(self, scr=None, nrows=24):
+    def screen_rows(self, scr=None, nrows=24, marks=False):
+        """The screen's text rows (trailing spaces dropped). A cell that is no glyph reads as
+        UNKNOWN; a bold glyph (the editor's keywords) reads as its character, or with marks=True
+        as BOLD_MARK followed by it."""
         scr = scr if scr is not None else self.read(0x4000, 6144)
         rows = []
         for r in range(nrows):
@@ -213,10 +248,12 @@ class Machine:
             for col in range(32):
                 cell = cell_from(scr, r, col)
                 ch = self.glyphs.get(cell)
+                if ch is None and cell in self.bold:
+                    ch = (BOLD_MARK if marks else "") + self.bold[cell]
                 if ch is None:
                     inv = bytes(255 - b for b in cell)
                     ch = self.glyphs.get(inv)
-                    ch = ch.lower() if ch and ch.isalpha() else ("~" if ch is None else ch)
+                    ch = ch.lower() if ch and ch.isalpha() else (UNKNOWN if ch is None else ch)
                 s += ch
             rows.append(s.rstrip())
         return rows

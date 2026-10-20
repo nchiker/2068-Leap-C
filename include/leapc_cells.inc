@@ -157,6 +157,20 @@ V2_RD_INDEX:    DEFS 2              ; CUR_EDIT_INDEX at the last redraw
 V2_RD_NEWROW:   DEFS 1              ; scratch of the two-line path
 V2_RD_NEWH:     DEFS 1
 
+; ---- the shell (src/shell/shell.asm, Phase 5). V2 kept its shell cells at $BE70-$BEBF (source RAM
+; in the Leap-C map); the shell also uses the platform's editor system variables (CUR_EDIT_POS,
+; CUR_EDIT_INDEX, VIEW_TOP_INDEX, BASIC_ACTIVE_ROW) and TOKEN_BUF (a record being stored, or the
+; text of a line being drawn).
+SH_VIEW_MAX     EQU 20              ; lines above the cursor line at most (V2's view)
+SH_DRAW_PTR:    DEFS 2              ; SH_DRAW_TEXT: the line being drawn ...
+SH_DRAW_ROW:    DEFS 1              ; ... the screen row of its next part ...
+SH_DRAW_LEFT:   DEFS 1              ; ... and its parts (screen rows) left
+SH_CMD_PTR:     DEFS 2              ; the record being drawn or measured
+SH_LINE_COUNT:  DEFS 2              ; lines in the source at the last full redraw (the status line)
+SH_ERR_LINE:    DEFS 2              ; SH_RUN: the source line of the error being reported (0: unknown)
+SH_HEIGHTS:     DEFS SH_VIEW_MAX    ; SH_VIEW: the screen rows of each line above the cursor line
+SH_STATUS_BUF:  DEFS 33             ; the status row's text (32 characters and the NUL)
+
 LEAPC_CELLS_END:
     ASSERT LEAPC_CELLS_END <= LEAPC_CELLS_LIMIT
     ORG LEAPC_CELLS_RETURN_ORG

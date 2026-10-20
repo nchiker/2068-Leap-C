@@ -21,8 +21,8 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `include/keys.inc` | key codes | EXROM | pristine |
 | `include/sysvars.inc` | platform system variables | both | **delta D1** |
 | `kernel/memory/memory.asm` | line store, fill, shift, cold init | HOME | **deltas D2, D5** |
-| `kernel/io/io.asm` | keyboard | HOME | pristine |
-| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font | HOME | **delta D6** |
+| `kernel/io/io.asm` | keyboard | HOME | **delta D7** |
+| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font | HOME | **deltas D6, D8** |
 | `kernel/math/math.asm` | 16-bit negate, absolute value, signed compare | HOME | **delta D3** |
 | `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | pristine |
 | `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | pristine |
@@ -41,7 +41,7 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 - `v2_layout.inc` (BASIC's compile and run layout) and `v2_ktab.inc`;
 - the port-$FE `kernel/sound` (V2 production uses the AY beep instead).
 
-The V2 shell (`rom/exrom_v2_shell.asm`) is adapted into `src/shell/` in Phase 5, with its own provenance note.
+The V2 shell (`rom/exrom_v2_shell.asm` at the tag) is adapted into `src/shell/shell.asm` (Phase 5), with its own provenance note in that file's header: it is Leap-C source, not a vendored file, so it is not in `MANIFEST`. V2's current release `v2.0.2-emu.1` (`77f1baa`) differs from the tag in that file and in `rom/exrom_editor.asm` only in comments (checked in Phase 5).
 
 ## Configuration
 
@@ -57,6 +57,8 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D4 | `kernel/interrupt/interrupt.asm` | In `KBD_ISR_TICK`'s key acceptance, V2's BREAK latch (`cp KEY_BREAK` … `ld (VM_ERROR_CODE),a` / `ld (VM_HALTED),a`, 14 B, under `IFDEF V2_PRODUCTION`) is replaced by `sub KEY_BREAK / ld b,a` before the latch and `ld a,b / or a / call z,RT_BREAKREQ` after it (8 B) | BREAK for native programs (Phase 3, `spec.md` §5.8): the runtime decides (an ordinary key while no program runs; the end of the program, or a deferred request during a `NOBRK` section). The idle per-frame path is unchanged |
 | D5 | `kernel/memory/memory.asm` | Deletions only: `MEM_INIT` no longer clears V2's string-function pool index (`STR_FUNC_POOL_NEXT`), package registry (`EXTENSION_MAGIC`, `EXTENSION_SLOT_COUNT`) and sprite slots (`SPRITE_SLOT_DEFINED/SHOWN`, `SPRITE_DISPLAY_DEPTH`) (25 B) | Phase 4 (`docs/milestones/M4.md`, ledger L24): Leap-C has none of these V2 features and nothing reads the cells (`tools/check_ram_layout.py`; the `$F3xx` package cells are outside the Leap-C map's use). `MEM_COLD_INIT` zeroes the system variables before the cold start calls `MEM_INIT` |
 | D6 | `kernel/graphics/graphics.asm` | Deletions only: `GFX_SPRITE_INVALIDATE` and its calls in `GFX_CLS`, `GFX_SCROLL_TEXT_UP`, `GFX_SCROLL_TEXT_DOWN` (not assembled in production) and `GFX_SET_MODE` (25 B) | Phase 4 (ledger L24): it cleared V2's sprite-slot display state for BASIC's sprite slots; Leap-C's `sprite_get`/`sprite_put` use the program's buffers, and nothing reads those cells |
+| D7 | `kernel/io/io.asm` | `KEY_ASCII_TABLE_SYMBOL`: SYMBOL SHIFT + A S D F G give `~ \| \ { }`, + U Y give `] [`, + H gives `^` (zeros before). `IO_DECODE_KEY` no longer turns SYMBOL SHIFT + A/S into `KEY_NEXT_ERROR`/`KEY_PREV_ERROR` (−19 B) | Phase 5: the C punctuation key map (`spec.md` §6.2, owner-approved baseline). V2's error-navigation codes had no handler in Leap-C (the editor engine passes them to the shell's navigation hook, which ignores them) |
+| D8 | `kernel/graphics/graphics.asm` | `PUNCT_CHAR_TABLE`: 8 entries for `[ ] { } \| ~ ^ \` (font indices 86-93) and the entries reordered by their frequency in C (each keeps its V2 font index); `FONT_TABLE`: the 8 glyphs (64 B); `GFX_CLEAR_ROW_TEXT` deleted (16 B); the file header's glyph count | Phase 5: the C characters' glyphs (`spec.md` §6.2). The table is scanned linearly for every punctuation character drawn, so C's frequent ones first make the editor's redraw faster (measured with the typing cost). `GFX_CLEAR_ROW_TEXT` was V2's status-bar clear; the Leap-C shell clears rows itself (6 kT instead of 23 kT) and nothing else calls it |
 
 ## Names the platform expects from Leap-C
 

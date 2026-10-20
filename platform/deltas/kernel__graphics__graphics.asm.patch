@@ -1,6 +1,18 @@
 --- a/kernel/graphics/graphics.asm
 +++ b/kernel/graphics/graphics.asm
-@@ -103,7 +103,6 @@
+@@ -24,8 +24,9 @@
+ ;
+ ; Owns: the screen bitmap/attribute addressing scheme, and character
+ ; output (GFX_PUTCHAR, GFX_CLS, GFX_PRINT_STRING, GFX_INVERT_ATTR).
+-; FONT_TABLE covers space, 0-9, A-Z, a-z, and 23 punctuation characters
+-; (86 glyphs total: " ! @ # $ % & ' ( ) _ : . , = + - ; / * < > ?) — grown
++; FONT_TABLE covers space, 0-9, A-Z, a-z, and 31 punctuation characters
++; (94 glyphs total: " ! @ # $ % & ' ( ) _ : . , = + - ; / * < > ?, and
++; LEAP-C DELTA D8: [ ] { } | ~ ^ \) — grown
+ ; as needed rather than up front. The quote character was added once
+ ; PRINT "..." string literals made it a real blocker; most of the rest
+ ; cover kernel/io's confirmed-confidence subset of SYMBOL SHIFT's
+@@ -103,7 +104,6 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  GFX_CLS:
@@ -8,7 +20,7 @@
      ld   hl, SCREEN_ADDR
      ld   de, SCREEN_ADDR + 1
      ld   bc, 6144 - 1           ; bitmap is 6144 bytes ($4000-$57FF)
-@@ -140,24 +139,11 @@
+@@ -140,24 +140,11 @@
      ldir
      ret
  
@@ -38,7 +50,7 @@
  
  ; ============================================================================
  ; GFX_ROW_BASE_ADDR
-@@ -243,7 +229,6 @@
+@@ -243,7 +230,6 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  GFX_SCROLL_TEXT_UP:
@@ -46,7 +58,7 @@
      ld   hl, ATTR_ADDR + 32          ; row 1's attributes (linear memory
      ld   de, ATTR_ADDR               ; — the whole 22-row block moves in
      ld   bc, 22*32                   ; one shot, no per-row loop needed)
-@@ -297,7 +282,6 @@
+@@ -297,7 +283,6 @@
  ; ============================================================================
      IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (legacy builds keep it)
  GFX_SCROLL_TEXT_DOWN:
@@ -54,7 +66,7 @@
      ld   hl, ATTR_ADDR + 22*32 - 1   ; last byte of rows 0-21 (source)
      ld   de, ATTR_ADDR + 23*32 - 1   ; last byte of rows 1-22 (dest) —
      ld   bc, 22*32                   ; overlapping, dst > src, needs the
-@@ -1121,9 +1105,6 @@
+@@ -1121,9 +1106,6 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  GFX_SET_MODE:
@@ -64,3 +76,121 @@
      ld   (GFX_MODE), a
      cp   1
      jr   z, .highres
+@@ -1210,35 +1192,8 @@
+     jr   c, .loop
+     ret
+ 
+-; ============================================================================
+-; GFX_CLEAR_ROW_TEXT
+-; Clears one character row's BITMAP ONLY (all 32 columns) — leaves the
+-; attribute byte at every cell completely untouched, unlike
+-; GFX_CLEAR_ROW, which resets both. Built for basic/'s status bar: it
+-; needs to erase old text before drawing new text, but always wants
+-; the row inverted, never briefly at the default attribute in between
+-; — clearing the attribute too (even just to immediately set it back
+-; to inverted afterward) means the row visibly passes through a non-
+-; inverted state for the moment in between, which showed up as a
+-; smaller, but still-present, flash even after GFX_CLEAR_ROW's own
+-; earlier fix for the worse, fully-toggling version of this bug.
+-; In:  B = row (0-23)
+-; Out: none
+-; Destroys: AF, BC, DE, HL
+-; ============================================================================
+-GFX_CLEAR_ROW_TEXT:
+-    ld   c, 0
+-.loop:
+-    push bc
+-    ld   a, " "
+-    call GFX_PUTCHAR
+-    pop  bc
+-
+-    inc  c
+-    ld   a, c
+-    cp   GFX_COLS
+-    jr   c, .loop
+-    ret
++; LEAP-C DELTA D8: GFX_CLEAR_ROW_TEXT (the status bar's bitmap-only row clear) removed: the
++; Leap-C shell clears rows itself (src/shell/shell.asm SH_CLEAR_ROW), and nothing else calls it.
+ 
+ ; ============================================================================
+ ; Pixel graphics: GFX_PIXEL_ADDR_SETUP / GFX_WRITE_PIXEL / GFX_READ_PIXEL /
+@@ -1640,30 +1595,41 @@
+ ; delimiters instead — mirrors the convention already proven working
+ ; for the standalone quote check this replaced. ----
+ PUNCT_CHAR_TABLE:
+-    DB   '"', 63
+-    DB   "!", 64
+-    DB   "@", 65
+-    DB   "#", 66
+-    DB   "$", 67
+-    DB   "%", 68
+-    DB   "&", 69
+-    DB   "'", 70
++    ; LEAP-C DELTA D8: the entries in the order of their frequency in C source (the scan is linear:
++    ; the editor draws every character of a line it redraws), each with its V2 font index; then
++    ; the eight characters C needs that V2 has no glyph for (spec.md 6.2), indices 86-93
++    DB   ";", 80
+     DB   "(", 71
+     DB   ")", 72
+-    DB   "_", 73
+-    DB   ":", 74
+-    DB   ".", 75
+     DB   ",", 76
+     DB   "=", 77
++    DB   "_", 73
++    DB   "*", 82
++    DB   "{", 88
++    DB   "}", 89
++    DB   '"', 63
+     DB   "+", 78
+     DB   "-", 79
+-    DB   ";", 80
+-    DB   "/", 81
+-    DB   "*", 82
++    DB   ".", 75
+     DB   "<", 83
+     DB   ">", 84
++    DB   "[", 86
++    DB   "]", 87
++    DB   "&", 69
++    DB   "/", 81
++    DB   "'", 70
++    DB   "!", 64
++    DB   "%", 68
++    DB   "|", 90
++    DB   ":", 74
++    DB   "#", 66
+     DB   "?", 85
+-PUNCT_CHAR_COUNT EQU 23
++    DB   "^", 92
++    DB   "~", 91
++    DB   $5C, 93
++    DB   "@", 65
++    DB   "$", 67
++PUNCT_CHAR_COUNT EQU 31
+ 
+ ; Block-graphics (128-143) and UDG (144-164) character-code ranges —
+ ; see GFX_CHAR_TO_FONT_OFFSET's .is_block_graphics/.is_udg. UDG_COUNT
+@@ -1891,6 +1857,22 @@
+     ; was added (see that table's header) — mapping and glyph always
+     ; ship together per this project's established rule.
+     DB   $70, $88, $08, $10, $20, $00, $20, $00
++    ; LEAP-C DELTA D8: C's [ ] { } | ~ ^ \ (spec.md 6.2), in the letters' columns ($80-$08) like
++    ; every glyph above except '/', whose mirror '\' is; bit 0 stays clear for GFX_PUTCHAR_BOLD.
++    ; '[' and ']': brackets as tall as the letters
++    DB   $70, $40, $40, $40, $40, $40, $70, $00
++    DB   $70, $10, $10, $10, $10, $10, $70, $00
++    ; '{' and '}': braces with a centre point, each the other's mirror
++    DB   $18, $20, $20, $40, $20, $20, $18, $00
++    DB   $C0, $20, $20, $10, $20, $20, $C0, $00
++    ; '|': a solid bar (the gap of '!' tells them apart)
++    DB   $20, $20, $20, $20, $20, $20, $20, $00
++    ; '~': a centred wave
++    DB   $00, $00, $40, $A8, $10, $00, $00, $00
++    ; '^': a caret at the top of the cell
++    DB   $20, $50, $88, $00, $00, $00, $00, $00
++    ; '\': the mirror of '/'
++    DB   $00, $40, $20, $10, $08, $04, $00, $00
+ 
+ ; ============================================================================
+ ; Sprites — GFX_SPRITE_CAPTURE / GFX_SPRITE_DRAW (2026-08-19)

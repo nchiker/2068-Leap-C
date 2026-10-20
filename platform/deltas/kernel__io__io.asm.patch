@@ -1,0 +1,61 @@
+--- a/kernel/io/io.asm
++++ b/kernel/io/io.asm
+@@ -419,25 +419,9 @@
+     ld   a, (IO_SCAN_TABLE+7)        ; row 7: bit1 = SYMBOL SHIFT
+     bit  1, a
+     jr   nz, .no_shift                ; neither shift held
+-
+-    ; --- SYMBOL SHIFT + A/S combo (basic/'s error nav), checked
+-    ; before the generic table lookup — row1 is otherwise entirely
+-    ; unmapped there anyway (see kernel/io's own header) ---
+-    ld   a, b
+-    cp   1
+-    jr   nz, .sym_table_lookup
+-    ld   a, c
+-    or   a
+-    jr   nz, .chk_prev_error
+-    ld   a, KEY_NEXT_ERROR            ; row1 bit0 = 'A'
+-    ret
+-.chk_prev_error:
+-    cp   1
+-    jr   nz, .sym_table_lookup
+-    ld   a, KEY_PREV_ERROR            ; row1 bit1 = 'S'
+-    ret
+-
+-.sym_table_lookup:
++    ; LEAP-C DELTA D7: SYMBOL SHIFT + A/S no longer give V2's error-navigation codes
++    ; (KEY_NEXT_ERROR/KEY_PREV_ERROR, which no Leap-C code handles): they are C's '~' and '|'
++    ; in the table below (spec.md 6.2)
+     ld   hl, KEY_ASCII_TABLE_SYMBOL
+     jr   .table_lookup
+ 
+@@ -623,9 +607,9 @@
+     ; confirmed (needed for basic/'s division operator); X not
+     ; confirmed, left unmapped
+     DB   0, ":", 0, "?", "/"
+-    ; row 1: A, S, D, F, G -> keyword tokens on real hardware, not
+-    ; implementable as simple characters
+-    DB   0, 0, 0, 0, 0
++    ; row 1: A, S, D, F, G -> LEAP-C DELTA D7: C's '~' '|' '\' '{' '}'
++    ; (spec.md 6.2; keyword tokens on the stock ROM)
++    DB   "~", "|", $5C, "{", "}"
+     ; row 2: Q, W, E, R, T -> R='<' and T='>' confirmed (needed for
+     ; basic/'s new IF relational operators); Q/W/E give compound
+     ; TOKENS on real hardware (<=, <>, >= respectively — confirmed via
+@@ -638,10 +622,12 @@
+     ; row 4: 0, 9, 8, 7, 6
+     DB   "_", ")", "(", "'", "&"
+     ; row 5: P, O, I, U, Y -> P confirmed (needed for PRINT "..."),
+-    ; O confirmed; I/U/Y not confirmed
+-    DB   '"', ";", 0, 0, 0
+-    ; row 6: ENTER, L, K, J, H -> ENTER n/a; L/K/J confirmed; H not
+-    DB   0, "=", "+", "-", 0
++    ; O confirmed; I not confirmed; LEAP-C DELTA D7: U = ']', Y = '['
++    ; (the Spectrum legends; spec.md 6.2)
++    DB   '"', ";", 0, "]", "["
++    ; row 6: ENTER, L, K, J, H -> ENTER n/a; L/K/J confirmed; LEAP-C
++    ; DELTA D7: H = '^' (the Spectrum's up-arrow legend; spec.md 6.2)
++    DB   0, "=", "+", "-", "^"
+     ; row 7: SPACE, SYM SHIFT, M, N, B -> SYMBOL SHIFT+SPACE itself has
+     ; no confirmed meaning and stays unmapped here (BREAK is CAPS
+     ; SHIFT+SPACE, a different combo — see KEY_BREAK, handled

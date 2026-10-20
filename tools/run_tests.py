@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Leap-C test runner (make test): boot, lexer and declaration tests in ZEsarUX.
 
-Boot tests (production and test images): cold start reaches the shell's idle key wait with the
-baseline layout in force (spec.md 3.1) and the start screen shown.
+Boot tests (production and test images): cold start reaches the editor's key wait with the
+baseline layout in force (spec.md 3.1) and the editor's empty screen shown.
 
 Lexer tests (tests/lexer/**/*.c, test image): each case is written into the line store and lexed
 by the ROM (TEST_LEX_DUMP). The dump must equal the host reference lexer (tools/clex.py) on every
@@ -34,7 +34,11 @@ Phase 4 (tests/mem, and the built-ins of phase4_builtins): image regions and the
 the IM 1 handler during chunk-6 code. The RAM canary and the banking invariants over the whole corpus
 are tools/canary.py (make test runs it after this).
 
-Usage: run_tests.py [--port N] [--only SUBSTR] [--suite boot,lexer,decl,exec,bench] [--json OUT]"""
+Phase 5 (suite `shell`, tools/shelltest.py): the editor and its commands driven through the keyboard
+(the ISR's latch and the real key matrix), the C punctuation's keys and glyphs, keyword highlighting,
+RUN with its error and BREAK recovery, the typing cost per key and the selective-redraw oracle.
+
+Usage: run_tests.py [--port N] [--only SUBSTR] [--suite boot,lexer,decl,exec,bench,shell] [--json OUT]"""
 import argparse
 import glob
 import json
@@ -53,6 +57,7 @@ import exectest         # noqa: E402
 import helperbench      # noqa: E402
 import memguard         # noqa: E402
 import stmtbench        # noqa: E402
+import shelltest        # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
@@ -231,7 +236,7 @@ def boot_checks(m):
     S = m.sym
     out = []
     rows = m.screen_rows()
-    out.append(("screen banner", rows[0] == "2068-LEAP-C" and rows[2] == "READY", repr(rows[:3])))
+    out.append(("editor screen (Phase 5 shell)", not any(rows[:23]) and rows[23] == "LINE 1/0", repr(rows[22:])))
     r = m.regs()
     out.append(("idle key wait", r["PC"] == S("IO_READ_KEY"), "PC=%04X" % r["PC"]))
     out.append(("stack in $F800-$FEFF", 0xF800 <= r["SP"] <= 0xFF00, "SP=%04X" % r["SP"]))
@@ -250,8 +255,9 @@ def boot_checks(m):
     m.restore()
     # chunk 6 is EXROM at the prompt: the shell entry jump is visible at $C000
     out.append(("chunk 6 = EXROM", m.read(0xC000, 1)[0] == 0xC3, "$C000=%02X" % m.read(0xC000, 1)[0]))
-    # cold-cleared RAM: the Leap-C cells and the source region read 0 after boot (spot check)
-    z = m.read(S("LEAPC_CELLS_BASE"), S("LEAPC_CELLS_END") - S("LEAPC_CELLS_BASE"))
+    # cold-cleared RAM: the Leap-C cells read 0 after boot (spot check), up to the editor's and the
+    # shell's, which the editor's first redraw writes
+    z = m.read(S("LEAPC_CELLS_BASE"), S("V2_REDRAW_SCOPE") - S("LEAPC_CELLS_BASE"))
     out.append(("Leap-C cells cleared", not any(z), ""))
     return out
 
@@ -438,10 +444,10 @@ def main():
     ap.add_argument("--port", type=int, default=10760)
     ap.add_argument("--only")
     ap.add_argument("--json", default=os.path.join(ROOT, "build", "test_results.json"))
-    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench")
+    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench,shell")
     a = ap.parse_args()
     suites = a.suite.split(",")
-    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[])
+    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[])
     failed = 0
     t_start = time.time()
 
@@ -692,6 +698,13 @@ def main():
         pass
     finally:
         m.stop()
+    # ---- the shell (Phase 5): the editor, the C punctuation, RUN, typing cost, the redraw oracle
+    if "shell" in suites:
+        nfail, rows, typing = shelltest.run_all(a.port, [a.only] if a.only else None)
+        results["shell"] = rows
+        if typing:
+            results["typing"] = typing
+        failed += nfail
     results["failed"] = failed
     results["wall_s"] = round(time.time() - t_start, 1)
     with open(a.json, "w") as f:

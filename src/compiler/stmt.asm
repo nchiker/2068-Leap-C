@@ -96,7 +96,7 @@ FUNC_DEF:
     ld   hl, 0
     ld   (FRAME_OFS), hl
     ld   (FRAME_MAX), hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call BLOCK_ITEMS
     call SCOPE_CLOSE
     ld   hl, (FN_LABELS)               ; every label a goto names must be defined
@@ -169,7 +169,7 @@ CHAIN_END:
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 BLOCK:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call SCOPE_OPEN
     ld   hl, (FRAME_OFS)
     push hl
@@ -224,11 +224,11 @@ STATEMENT:
     jp   (hl)
 .ident:                                ; `name :` is a label (NM = the name, from IS_DECL_START)
     call LEX_MARK
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_COLON
     jr   z, .label
     call LEX_RESTORE
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     jr   .expr
 .label:
     pop  bc                            ; (the mark)
@@ -240,7 +240,7 @@ STATEMENT:
     call CG_HERE                       ; the gotos so far land here (DE = the address)
     ld   (ix + S_VAL), e
     ld   (ix + S_VAL + 1), d
-    call LEX_NEXT                      ; past `:`
+    rst  $30                          ; LEX_NEXT: past `:`
     jr   STATEMENT
 
 
@@ -252,7 +252,7 @@ STATEMENT:
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 RETURN:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_SEMI
     jr   z, .leave
     call CX_EXPR
@@ -303,7 +303,7 @@ DCL_AUTOINIT:
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 STMT_GOTO:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_IDENT
     jp   nz, CC_E_SYNTAX
     call NM_FROM_TOK
@@ -317,7 +317,7 @@ STMT_GOTO:
 .known:
     call CG_OPW
 STMT_NEXT:                             ; past the statement's last token, then `;`
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     jr   STMT_END
 STMT_BREAK:
     ld   hl, BRK_CH
@@ -382,14 +382,14 @@ STMT_IF:
     call CG_JP                         ; over the else part
     ex   (sp), hl
     call CG_HERE                       ; the else part
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call STATEMENT
 .end:
     pop  hl
     jp   CG_HERE
 STMT_DO:
     call LOOP_OPEN
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   hl, (CG_PC)
     push hl                            ; [the top]
     call STATEMENT
@@ -450,7 +450,7 @@ LOOP_OPEN:
     jp   (hl)
 STMT_FOR:
     call LOOP_OPEN
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   a, TK_LPAREN
     call CC_EXPECT
     cp   TK_SEMI
@@ -486,7 +486,7 @@ STMT_FOR:
     ld   a, TK_RPAREN
     call CC_EXPECT
     call STATEMENT
-    jp   LOOP_BACK
+    jr   LOOP_BACK
 ; STMT_PAREN -- after a keyword: `( expression )`, X a scalar value
 ; STMT_COND -- the same, then the jump when it is false: HL = its chain
 ; STMT_TESTF -- an expression, a scalar, and the jump when it is false: HL = its chain
@@ -497,7 +497,7 @@ STMT_JF:
     ld   hl, 1
     jp   CG_JFALSE
 STMT_PAREN:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   a, TK_LPAREN
     call CC_EXPECT
     call STMT_SCALAR
@@ -557,7 +557,7 @@ STMT_SWITCH:
     ret
 STMT_CASE:
     call SW_IN
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call CX_CONST_INT                  ; HL = the value
     ex   de, hl
     call SW_FIND
@@ -581,7 +581,7 @@ STMT_DEFAULT:
     ld   a, h
     or   l
     jr   nz, SW_E_DUP                  ; a second default
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call SW_LABEL
     ld   (SW_DEFAULT), de
     jp   STATEMENT

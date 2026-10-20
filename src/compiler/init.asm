@@ -84,7 +84,7 @@ STR_STAGE:
     ldir
 .empty:
     push de
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  de
     cp   TK_STR
     jr   z, .literal
@@ -156,7 +156,7 @@ INIT:
     ld   (hl), d
     ret
 .braced_scalar:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  hl
     pop  de
     call INIT
@@ -166,7 +166,7 @@ INIT:
     ld   a, (TOK_KIND)
     cp   TK_LBRACE
     jr   nz, .open
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   b, 1
 .open:
     pop  hl
@@ -344,7 +344,7 @@ INIT_LIST:
     call .left
     jr   z, .done                      ; elided braces: the `,` belongs to the outer list
 .more:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     jr   .loop
 .done:
     ld   hl, (IL_LEFT)                 ; given = $FFFF - left (for `[]`)

@@ -73,7 +73,7 @@ CX_EXPR:
 ; CX_NEXTV -- step past the current token, then an assignment expression as a value (CX_RVAL)
 ; Destroys: AF, BC, DE, HL, IX; NM
 CX_NEXTV:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call CX_ASSIGN
     jp   CX_RVAL
 
@@ -244,7 +244,7 @@ CX_COND:
     ret  nz
     call CX_RVAL
     call CX_SCALAR_X
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call CX_TRUTH                      ; C: constant, A = its truth
     jr   c, .const
     ld   hl, 0
@@ -352,7 +352,7 @@ CX_BINARY:
     ld   b, a
     push bc                            ; B = operator, C = its precedence
     call CX_RVAL
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  bc
     push bc
     ld   a, b
@@ -733,10 +733,10 @@ CX_UNARY:
     cp   TK_SIZEOF
     jp   nz, CX_POSTFIX
     call CX_MUTE                       ; sizeof: the operand is not evaluated
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_LPAREN
     jr   nz, .sz_unary
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call IS_DECL_START
     jr   z, .sz_paren
     call TYPE_NAME                     ; sizeof ( type-name )
@@ -765,7 +765,7 @@ CX_UNARY:
 .pre:                                  ; a prefix operator A: its operand first, then HL
     push af
     push hl
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call CX_UNARY
     pop  hl
     pop  af
@@ -935,7 +935,7 @@ CX_POSTFIX_LOOP:
     or   c
     jp   z, TY_E_INCOMPLETE
     push bc
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_IDENT
     jp   nz, CC_E_SYNTAX
     call NM_FROM_TOK
@@ -952,7 +952,7 @@ CX_POSTFIX_LOOP:
     add  hl, de                        ; the member's address, displacement or offset
     ld   (X_VAL), hl
 .next:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     jr   CX_POSTFIX_LOOP
 .call:
     call CX_CALL
@@ -966,7 +966,7 @@ CX_POSTFIX_LOOP:
     ld   a, (X_FLAGS)                  ; (an element of a const array is const)
     push af
     call CX_HOLD
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call CX_EXPR
     ld   a, TK_RBRACK
     call CC_EXPECT
@@ -1013,7 +1013,7 @@ CX_CALL:
     call CX_HOLD                       ; [callee]
     xor  a
     ld   (CX_ARGN), a
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_RPAREN
     jr   z, .counted
 .arg:                                  ; [mark]...[callee]
@@ -1079,7 +1079,7 @@ CX_CALL:
     ld   a, (TOK_KIND)
     cp   TK_COMMA
     jr   nz, .close
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
 .again:
     call .skip
     jr   z, .again
@@ -1165,12 +1165,12 @@ CX_CALL:
     ld   a, b
     or   a
     jr   nz, .step
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     xor  a                             ; Z: a `,` (consumed)
     ret
 .step:
     push bc
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  bc
     jr   .tok
 .last:
@@ -1195,7 +1195,7 @@ CX_PRIMARY:
     jr   z, .ident
     cp   TK_LPAREN
     jp   nz, CC_E_SYNTAX
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     call IS_DECL_START
     jp   z, CX_PAREN_REST
     call TYPE_NAME                     ; a cast
@@ -1229,7 +1229,7 @@ CX_PRIMARY:
     jr   z, .found
     ld   hl, (TOK_LINE)                ; undeclared: only a call declares it, as int f()
     push hl                            ; (C89 6.3.2.2)
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     pop  hl
     cp   TK_LPAREN
     ld   a, E_UNDECL

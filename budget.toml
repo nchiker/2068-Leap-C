@@ -118,9 +118,9 @@ ranges = [["COMP_XSHELL_BEGIN", "COMP_XCOMP_ENTRY"], ["COMP_XCOMP_ENTRY_END", "C
 
 [[exrom.component]]
 id = "xkeywords"
-title = "C keyword highlighting table"
+title = "C keyword highlighting (the scanner; the keyword table is the lexer's, in HOME)"
 budget = 250
-ranges = []
+ranges = [["COMP_XKEYWORDS_BEGIN", "COMP_XKEYWORDS_END"]]
 
 [[exrom.component]]
 id = "xdiag"
@@ -500,3 +500,83 @@ reason = """ENTER checks the new stack pointer before it moves SP (a high-byte c
 floor LEAPC_RT_STACK_FLOOR = $F900), so a frame that does not fit is never made and an interrupt cannot push
 below the floor's margin: +1 B. The helper core measures 233 B. From the reserve: HOME reserve after Phase 4
 524 B (floor 512 B)."""
+
+[[ledger]]
+id = "L29"
+date = "2026-10-20"
+milestone = "Phase 5"
+bank = "home"
+component = "decl"
+delta = -53
+reason = """Owner decision (Phase 5): RST $30, reserved for the optional size template set, serves the compiler's most
+frequent call instead: `jp LEX_NEXT` in its vector ($0030-$0032, page zero's existing bytes), and `rst $30` (1 B)
+replaces each of the 60 `call LEX_NEXT` (3 B) in decl, expr, stmt, init and preproc; tools/relax_jumps.py then turned
+7 jumps brought into range into `jr` (spec.md 2.3 v0.7). 127 B in all, 4 T more per token. The declarations measure
+2,947 B (22 calls in decl.asm, 4 in init.asm, NEXT_HL); 53 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L30"
+date = "2026-10-20"
+milestone = "Phase 5"
+bank = "home"
+component = "expr"
+delta = -30
+reason = """RST $30 for LEX_NEXT (L29): 15 call sites. The expression compiler measures 2,615 B; 30 B return to the
+HOME reserve."""
+
+[[ledger]]
+id = "L31"
+date = "2026-10-20"
+milestone = "Phase 5"
+bank = "home"
+component = "stmt"
+delta = -30
+reason = """RST $30 for LEX_NEXT (L29): 14 call sites and a relaxed jump. The statement compiler measures 1,370 B; its
+30 B left (1 B before L29) return to the HOME reserve."""
+
+[[ledger]]
+id = "L32"
+date = "2026-10-20"
+milestone = "Phase 5"
+bank = "home"
+component = "preproc"
+delta = -12
+reason = """RST $30 for LEX_NEXT (L29): 5 call sites and a relaxed jump. The preprocessor measures 470 B; 12 B return
+to the HOME reserve."""
+
+[[ledger]]
+id = "L33"
+date = "2026-10-20"
+milestone = "Phase 5"
+bank = "home"
+component = "library"
+delta = -4
+reason = """Jumps brought into relative range by L29's shrink (tools/relax_jumps.py): the library measures 1,276 B;
+its 4 B left return to the HOME reserve."""
+
+[[ledger]]
+id = "L34"
+date = "2026-10-20"
+milestone = "Phase 5"
+bank = "home"
+component = "platform"
+delta = -96
+reason = """Phase 5's platform work measures +45 B: the 8 C glyphs and their punctuation-table entries (delta D8,
+64 + 16 B), less V2's SYMBOL SHIFT + A/S error-navigation decoding (delta D7, -19 B; the key map itself changes in
+place) and GFX_CLEAR_ROW_TEXT (D8, -16 B: V2's status-bar clear, unreachable once the shell clears rows itself).
+bank.asm now assembles after the AY beep so that AY_BEEP_TABLE stays within a 256-byte page (AY_BEEP_PERIOD's short
+form, 3 B; M3.md section 10). The platform measures 3,300 B; the 96 B kept for Phase 5 and left over return to the
+HOME reserve. HOME reserve after Phase 5: 749 B (floor 512 B)."""
+
+[[ledger]]
+id = "L35"
+date = "2026-10-20"
+milestone = "Phase 5"
+bank = "exrom"
+component = "xkeywords"
+delta = -109
+reason = """C keyword highlighting measures 141 B (src/shell/highlight.asm: the scanner, SH_KW_MARK and SH_IDCHAR). It
+uses the compiler's keyword table in HOME (LEX_KEYWORD, called with the EXROM paged in: it reads only TOK_BUF, TOK_LEN
+and its table), so the EXROM holds no keyword list. 109 B return to the EXROM reserve (339 -> 448 B, floor 256 B).
+The shell (xshell) measures 1,592 B of its 2,432 B: the rest stays with it for Phase 6 (FREE, the run reports) and
+Phase 7 (SAVE, LOAD, VERIFY)."""

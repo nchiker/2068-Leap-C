@@ -11,6 +11,7 @@
     INCLUDE "include/leapc_cells.inc"
     INCLUDE "include/keys.inc"
     INCLUDE "include/leapc_tokens.inc"
+    INCLUDE "include/leapc_errors.inc"
     IFDEF LEAPC_TEST
     INCLUDE "build/test/home_exports.inc"
     ELSE
@@ -48,6 +49,9 @@ COMP_XCOMP_ENTRY_END:
 ; ---------------------------------------------------------------- shell
     INCLUDE "src/shell/shell.asm"
 COMP_XSHELL_END:
+COMP_XKEYWORDS_BEGIN:
+    INCLUDE "src/shell/highlight.asm"
+COMP_XKEYWORDS_END:
 
 ; ---------------------------------------------------------------- compiler parts run through a HOME
 ; trampoline (bank rule 3: they never touch chunk 6)

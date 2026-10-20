@@ -116,7 +116,7 @@ PP_E_NESTING:
 PP_DIRECTIVE:
     ld   a, 1 << LM_EOL
     ld   (LEX_MODE), a
-    call LEX_NEXT                      ; the directive's name
+    rst  $30                          ; LEX_NEXT: the directive's name
     cp   TK_EOL
     jr   z, PP_END                     ; `#` alone
     ld   hl, PP_DIRS
@@ -132,7 +132,7 @@ PP_DISPATCH:                           ; the current token (A) names a record of
 PP_E_NOTSUP:
     jp   CC_E_NOTSUP
 PP_PRAGMA:                             ; #pragma NAME (PP_PRAGMAS; any other: not supported)
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     ld   hl, PP_PRAGMAS
     jr   PP_DISPATCH
 PP_HIRES:                              ; #pragma hires (spec.md 3.2): image region 4, display file 2,
@@ -147,7 +147,7 @@ PP_UNDEF:                              ; #undef NAME (not defined: nothing to do
     inc  hl
     ld   (hl), 0                       ; its name's length: never found again
 PP_LINE_END:                           ; the line must end here
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_EOL
     jp   nz, CC_E_SYNTAX
 PP_END:
@@ -175,7 +175,7 @@ PP_DEFINE:                             ; #define NAME replacement
     ld   de, (LEX_PTR)
     call SW_PUT                        ; [replacement]: the rest of the line
 .text:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_EOL
     jr   nz, .text
     jr   PP_END
@@ -191,7 +191,7 @@ PP_INCLUDE:                            ; #include <leap.h> or "leap.h"
     jr   z, .header
     ld   c, a
     cp   '"'
-    jp   nz, PP_E_NOTSUP
+    jr   nz, PP_E_NOTSUP
 .header:
     ld   de, PP_LEAPH
     ld   b, PP_LEAPH_N
@@ -207,11 +207,11 @@ PP_INCLUDE:                            ; #include <leap.h> or "leap.h"
     jp   nz, PP_E_NOTSUP               ; (the closing > or ")
     inc  hl
     ld   (LEX_PTR), hl
-    jp   PP_LINE_END
+    jr   PP_LINE_END
 
 ; PP_NAME -- the next token: an identifier (TOK_BUF). Errors: E_SYNTAX. Destroys: AF, BC, DE, HL
 PP_NAME:
-    call LEX_NEXT
+    rst  $30                          ; LEX_NEXT
     cp   TK_IDENT
     ret  z
     jp   CC_E_SYNTAX

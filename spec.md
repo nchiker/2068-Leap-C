@@ -1,6 +1,6 @@
 # 2068-Leap-C — Specification
 
-**Version 0.6, 2026-10-20** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.7, 2026-10-20** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6, 2026-10-20). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
@@ -11,6 +11,8 @@
 **Changes in v0.5 (Phase 3, as built; `docs/milestones/M3.md`):** program start and exit (§5.7), BREAK (§5.8) and runtime errors (§5.9) as built; the heap (§3.2); the library's semantics, its binding to the compiler and its deviations (§7); the library's use of `AF'` (§5.1).
 
 **Changes in v0.6 (Phase 4, as built; `docs/milestones/M4.md`):** the memory map is final (§3.1: baseline layout A, the RAM each region holds, the layout guard); the region rules as built (§3.2: code and data in the image regions, `#pragma hires`, the stack's floor, the heap's bounds); `#pragma hires` (§4.8); the limits measured (§4.10, with the capacity table); `ENTER`'s stack check (§5.3); the platform deltas D5 and D6 (§2.1); runtime-error lines in code continued from image region 3 into region 4 (§5.9).
+
+**Changes in v0.7 (Phase 5, as built; `docs/milestones/M5.md`):** the editor and shell (§6.1), the C punctuation's keys and glyphs, confirmed by the owner (§6.2), RUN's recovery as built in Phase 5 (§6.3), RST `$30` given to the compiler's `LEX_NEXT` by owner decision (§2.3, §5.3, §5.6), the platform deltas D7 and D8 (§2.1).
 
 **What is fixed and what is tuned:**
 
@@ -76,9 +78,9 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 
 | Module | V2 size | Bank | Leap-C status |
 |---|---:|---|---|
-| Graphics: text, attributes, scrolling, pixels, line, sprite capture/draw, font | 2,071 | HOME | kept. **Delta:** 8 glyphs `[ ] { } \| ~ ^ \` (§6.2). **Delta D6 (v0.6):** V2's sprite-slot invalidation removed (no sprite slots in Leap-C; 25 B) |
+| Graphics: text, attributes, scrolling, pixels, line, sprite capture/draw, font | 2,071 | HOME | kept. **Delta D8 (v0.7):** 8 glyphs `[ ] { } \| ~ ^ \` and their punctuation-table entries (§6.2; 80 B). **Delta D6 (v0.6):** V2's sprite-slot invalidation removed (no sprite slots in Leap-C; 25 B) |
 | Memory: line store, fill, shift, cold init | 485 | HOME | kept. **Delta:** re-pointed to the Leap-C memory map (§3); **D5 (v0.6):** `MEM_INIT` no longer clears V2's string-pool, package and sprite-slot cells (25 B) |
-| Keyboard I/O | 434 | HOME | kept. **Delta:** symbol-shift map for the 8 C characters (§6.2) |
+| Keyboard I/O | 434 | HOME | kept. **Delta D7 (v0.7):** symbol-shift map for the 8 C characters (§6.2), in place in the table; SYMBOL SHIFT + A/S no longer give V2's error-navigation codes, which no Leap-C code handles (−19 B) |
 | 16-bit math (`MATH_NEGATE16`, `ABS16`, `COMPARE16`) | 390 → 39 | HOME | **Delta D3 (v0.3):** multiply and divide moved to the helper core's register-only routines (§5.3); `SQRT16`, `SGN16`, `MULTIPLY16` removed (no Release 1 caller); `RND16` replaced by the library's `rand()` (§7) |
 | Interrupt (IM 1, `FRAMES`, keyboard scan) | 154 | HOME | kept. **Delta D4 (v0.5):** BREAK request for native programs (§5.8): V2's BREAK latch (14 B) replaced by a call to the runtime (8 B) |
 | Bank switching (`BANK_PAGE_EXROM_IN/OUT`, depth-counted) | 46 | HOME | kept unchanged |
@@ -86,7 +88,7 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 | `FOLD_UPPER` (was in the BASIC compiler) | 9 → 0 | HOME | not built: C is case-sensitive and nothing calls it |
 | Editor engine | 737 | EXROM | kept unchanged |
 | Tape: `STORAGE_*` | 793 | EXROM | kept. **Phase 7:** block send/receive (331 B) move to HOME (§8.3) |
-| Shell: editor/screen glue, command loop, tape commands, messages, chime, entry slots | 2,754 | EXROM | adapted into the Leap-C shell; BASIC-only parts removed |
+| Shell: editor/screen glue, command loop, tape commands, messages, chime, entry slots | 2,754 | EXROM | adapted into the Leap-C shell; BASIC-only parts removed (v0.7, Phase 5: §6.1) |
 | Integer formatting | 79 | EXROM | kept |
 | Sound, AY beep (EXROM part) | 59 | EXROM | kept |
 | FP calculator + float formatting | 2,165 | EXROM | **retained as an optional component** (§4.9). Not used by Release 1 code generation |
@@ -155,7 +157,7 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 | `$18` | `ENTER n` (frame setup, stack check) | starts in the slot, `jp` to the rest |
 | `$20` | `LEAVE` (frame teardown, return) | body in the slot (5 B) |
 | `$28` | `CMPLT` (signed DE < HL → carry) | `jp` to the body |
-| `$30` | reserved: `LDL`/`STL` for the optional size template set (§5.6) | `jp` to the body |
+| `$30` | **v0.7:** `LEX_NEXT`, the compiler's next token (owner decision, Phase 5). Was reserved for `LDL`/`STL` of the optional size template set (§5.6) | `jp` to the body |
 | `$38` | IM 1 interrupt (`call KBD_ISR_TICK; ei; reti`) | fixed |
 | `$66` | NMI | fixed |
 
@@ -164,6 +166,7 @@ Measured costs:
 - CALL+RET 27 T; RST through a `jp` vector + RET 31 T.
 - A body at the vector saves the `jp` (derived 21 T + body).
 - The RST map is confirmed against operation frequencies measured on the Phase 2 test corpus.
+- **v0.7 (Phase 5, owner decision):** RST `$30` serves the compiler instead of generated code. `LEX_NEXT` is the compiler's most frequent call (60 call sites); `rst $30` replaces each 3-byte `call`, saving 120 B of HOME (127 B with the jumps it brought into relative range), for 4 T per token. Generated code never uses it. The optional size template set (§5.6), if Phase 8 builds it, reaches `LDL`/`STL` by `call`.
 
 ---
 
@@ -201,7 +204,7 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 | Range | Holds (measured, `docs/milestones/M4.md`) |
 |---|---|
 | `$5B00-$5D59` | the platform system variables (602 B) |
-| `$5D5A-$5FFF` | the Leap-C cells: 384 B used (`LEAPC_CELLS_END` `$5EDA`), 294 B free for Phase 5's shell |
+| `$5D5A-$5FFF` | the Leap-C cells: 447 B used (`LEAPC_CELLS_END` `$5F19`; v0.7: the shell's 63 B), 231 B free |
 | `$F180-$F3FF` | the V2 platform cells Leap-C keeps at their V2 addresses: `UDG_TABLE` (`$F180`, 168 B), `EDIT_LINE_BUF` (`$F228`, 128 B), `GFX_LINE_X0..Y1` (`$F3C4`, 4 B). The other 340 B are V2 cells nothing in Leap-C uses |
 | `$F800-$FEFF` | the stack; `ENTER`'s floor `$F900` (§5.3) |
 
@@ -477,7 +480,7 @@ Measured in the code-shape spike unless marked:
 | `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU` | CALL | the helper core's register-only shift-and-add multiply and restoring divide (v0.3; they replace the V2 math). The compiler's constant arithmetic uses the same routines |
 | `SWITCH` | CALL + inline table address | `call RT_SWITCH / dw table`. The table is static data, made after the switch's body. Sparse: `[n][default]` then `[value][address]` pairs. Dense, when smaller (highest − lowest ≤ 2n − 3): `[range \| $8000][default][lowest]` then one address per value |
 | `CALLHL` | CALL | indirect function call |
-| `LDL`/`STL` (size set only) | RST `$30` + byte | local word load/store, as measured in the spike |
+| `LDL`/`STL` (size set only) | CALL + byte (v0.7: RST `$30` is `LEX_NEXT`, §2.3) | local word load/store, as measured in the spike (there through RST `$30`) |
 
 ### 5.4 Code-generation model (fixed)
 
@@ -506,7 +509,7 @@ Measured in the code-shape spike unless marked:
 
 ### 5.6 Optional size template set (later)
 
-All-compact templates (local access through RST `LDL`/`STL`) were measured at 49% of the inline bytes and 2.7-3.3× slower. They are reserved as an optional size mode (`#pragma size`), implemented only if Phase 8 measurements show a capacity need.
+All-compact templates (local access through RST `LDL`/`STL`) were measured at 49% of the inline bytes and 2.7-3.3× slower. They are reserved as an optional size mode (`#pragma size`), implemented only if Phase 8 measurements show a capacity need. **v0.7:** RST `$30` now serves the compiler (§2.3), so such a set would reach `LDL`/`STL` by `call` (3 B instead of 1 per access, and 6 T more); Phase 4 measured the source region, not the image, as the binding limit (§4.10.1).
 
 ### 5.7 Program start and exit
 
@@ -599,6 +602,17 @@ These come from V2's full-screen editor and shell glue, adapted:
 
 - No immediate-statement mode in Release 1 (C has no statements outside functions).
 
+**As built (v0.7, Phase 5).** The shell (`src/shell/shell.asm`, EXROM) is V2's shell glue adapted routine by routine; the editor engine (`rom/exrom_editor.asm`) is the vendored one, unchanged.
+
+- **Screen.** Rows 0-22 show the source; row 23 is the status row (`LINE n/m`: the cursor's line and the line count, white on black with V2's red, green and blue swatch), also used for messages. A line longer than 32 characters wraps at its last space (or at 32 characters) onto up to four rows.
+- **Keys** (the platform's): CAPS SHIFT + 5/8 move left/right, + 7/6 up/down (between the rows of a wrapped line first), + 0 is DELETE (on an empty line it deletes the line), + 1 deletes the line, + ENTER inserts an empty line before it; ENTER stores the line. BREAK does nothing in the editor.
+- **Editing** keeps V2's rules: leaving a line with UP, DOWN or insert line stores an edit first, as ENTER does; a line that does not fit gives `PROGRAM FULL` and stays in the edit buffer.
+- **The view** shows up to 20 lines above the cursor's line (V2), fewer when they wrap onto more rows than there are above it: the cursor's line is always whole on the screen (V2 could push it off the screen).
+- **Redraw.** Typing redraws only the cursor's line, or, when the line starts or stops wrapping onto another row, that line and the ones below it (V2 redrew the whole screen then); UP and DOWN near the top redraw only the two lines involved; LEFT and RIGHT move only the cursor. A key clears the whole screen only when the view moves (measured: no typed key clears it in any of the test scenarios). Typing costs 47 kT per key on V2's 10-line typing scenario (V2: 72 kT) and at most V2's cost in all of V2's scenarios (`docs/milestones/M5.md` §6).
+- **Keyword highlighting.** A line not being edited shows its C keywords in bold as typed, from the compiler's own keyword table (no copy in the EXROM). Not keywords: identifiers that contain one (`int1`, `_if`), case variants (`INT`), and the text of string literals, character constants and comments. Each line is scanned on its own: a line inside a `/* ... */` comment begun on an earlier line is highlighted as code.
+- **Commands** are recognised only on the append line (the empty line after the last), alone on the line apart from spaces, in any case; anything else is stored as source. Phase 5 builds `RUN`, `LIST` and `NEW`; `FREE` and the reports come in Phase 6, `SAVE`, `LOAD` and `VERIFY` in Phase 7.
+- **`LIST`** shows the source a page (23 rows) at a time with keywords bold; a line that does not fit starts the next page; a key shows the next page, BREAK ends the listing.
+
 ### 6.2 C punctuation (baseline mapping; physical legends need owner confirmation)
 
 The V2 key map cannot produce the 8 characters C needs, and the font lacks their glyphs. Leap-C adds both, using symbol-shift positions that V2 leaves unmapped and that match the Spectrum-family legends where they exist:
@@ -608,6 +622,8 @@ The V2 key map cannot produce the 8 characters C needs, and the font lacks their
 | Character | `[` | `]` | `{` | `}` | `\|` | `~` | `^` | `\` |
 
 Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 B HOME (estimate).
+
+**As built (v0.7, Phase 5; owner confirmation of the baseline mapping, 2026-10-20).** The mapping above, in the platform's symbol-shift table (delta D7); SYMBOL SHIFT + A and S no longer give V2's error-navigation codes, which nothing in Leap-C handled. Every character of C's basic source character set is typed through the keyboard matrix and read back from the screen in the tests. The glyphs (delta D8) are drawn in the columns of the letters, like the rest of the font; `\` is the mirror of `/`, `|` a solid bar (the gap of `!` tells them apart), `{` and `}` braces with a centre point. Measured cost: +61 B HOME (the 8 glyphs 64 B and their table entries 16 B, less 19 B of V2's error-navigation decoding), inside the platform's budget.
 
 ### 6.3 Compile and run behaviour
 
@@ -620,6 +636,8 @@ Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 
 **Compile speed target:** ≤ 25 ms per source line on average over the qualification corpus. V2's compiler measures about 18 ms per line.
 
 **Memory report:** after a successful compile the shell reports image size and free heap. `FREE` reports the same.
+
+**As built (v0.7, Phase 5).** `RUN` compiles (`CC_PROGRAM` through the HOME trampoline `SH_COMPILE`, chunk 6 paged out) and runs the program (`RT_RUN`) on a cleared screen. When it ends its screen stays until a key. A compile error shows `ERROR n LINE m` on the status row and puts the cursor on the line, with its text in the edit buffer. A runtime error shows `RUNTIME ERROR n LINE m` over the program's screen and BREAK `BREAK LINE m`, with the cursor on the line where the definition of the function that failed starts (§5.9; without `LINE` when unknown). A key then returns to the editor with the source intact, the paging, the stack and the AY as before the run, the border white and the screen redrawn. Phase 6 replaces the numbers with `ERROR n: message` and adds the exit status, the image size and the free heap.
 
 ---
 

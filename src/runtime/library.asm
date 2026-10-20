@@ -601,7 +601,7 @@ LIB_INP:
     ld   b, h
     ld   c, l
     in   a, (c)
-    jp   LIB_RETA
+    jr   LIB_RETA
 
 ; int point(int x, int y) -- 1 if the pixel at (x, y) is set, else 0 (also off the screen)
 LIB_POINT:
@@ -615,10 +615,10 @@ LIB_POINT:
     ld   b, l
     ld   c, e
     call GFX_READ_PIXEL
-    jp   LIB_RETA
+    jr   LIB_RETA
 LIB_RET0:
     xor  a
-    jp   LIB_RETA
+    jr   LIB_RETA
 
 ; int attr(int row, int col) -- the attribute of the cell (row 0-23, column 0-31); 0 outside
 LIB_ATTRF:
@@ -631,7 +631,7 @@ LIB_ATTRF:
     call GFX_CELL_ATTR_ADDR            ; C: outside
     jr   c, LIB_RET0
     ld   a, (hl)
-    jp   LIB_RETA
+    jr   LIB_RETA
 
 ; ============================================================================
 ; char *gets(char *buf, int max) -- a line typed at the keyboard: printable characters (at most

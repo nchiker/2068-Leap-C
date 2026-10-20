@@ -70,15 +70,14 @@ RST_CMPLT:
     ld   a, d
     rla                                ; signs differ: DE < HL <=> DE is negative
     ret
-; RST $30 is reserved for the optional size template set (LDL/STL, spec.md 5.6): it stops the
-; machine until then
+; RST $30 LEX_NEXT -- the compiler's next token (src/compiler/lexer.asm), its most frequent call
+; (Phase 5, owner decision: 60 call sites, 2 B each; spec.md 2.3). Generated code never uses it:
+; the optional size template set (spec.md 5.6) would call its helpers instead.
     ORG $0030
-RST_UNASSIGNED:
-    di
-    halt
-; Helpers in the page-zero padding (Phase 2 shrink; nothing falls through into them). $0030-$0032
-; stay free for a three-byte RST $30 vector.
-    ORG $0033
+RST_LEX_NEXT:
+    jp   LEX_NEXT
+; Helpers in the page-zero padding (Phase 2 shrink; nothing falls through into them)
+    ASSERT $ == $0033
 ; RT_MODU -- HL = DE % HL, unsigned (src/runtime/helpers.asm). Destroys: AF, BC, DE
 RT_MODU:
     call RT_DIVU
@@ -133,8 +132,9 @@ COMP_PLATFORM_BEGIN:
     INCLUDE "kernel/graphics/graphics.asm"
     INCLUDE "kernel/math/math.asm"
     INCLUDE "kernel/interrupt/interrupt.asm"
-    INCLUDE "kernel/bank/bank.asm"
     INCLUDE "rom/v2_ay_beep.asm"
+    INCLUDE "kernel/bank/bank.asm"             ; (after the beep: AY_BEEP_TABLE then stays within a
+                                               ; 256-byte page, so AY_BEEP_PERIOD has its short form)
 COMP_PLATFORM_END:
 
 ; ---------------------------------------------------------------- compiler
@@ -183,6 +183,21 @@ CX_LIBFIND:
     call LEAPC_EXROM_LIBFIND
     push af
     call BANK_PAGE_EXROM_OUT
+    pop  af
+    ret
+; ============================================================================
+; SH_COMPILE -- the EXROM shell's RUN: compile the program with chunk 6 paged out (bank rule 3:
+; the compiler writes the image there), then page the EXROM back in for the shell
+; In:  BANK_EXROM_DEPTH 1 (the shell's)
+; Out: as CC_PROGRAM: NC compiled (RUN_MAIN), C error (CC_ERRNUM, CC_ERRLINE); BANK_EXROM_DEPTH
+;      1 again
+; Destroys: AF, BC, DE, HL (IX kept)
+; ============================================================================
+SH_COMPILE:
+    call BANK_PAGE_EXROM_OUT
+    call CC_PROGRAM
+    push af
+    call BANK_PAGE_EXROM_IN
     pop  af
     ret
 COMP_TRAMP_END:
