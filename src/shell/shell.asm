@@ -15,9 +15,12 @@
 ;   - the view keeps the whole cursor line on the screen when the lines above it wrap onto more
 ;     than one row each (V2 always showed the 20 lines above it, which could push it off);
 ;   - RUN compiles (SH_COMPILE in HOME: chunk 6 paged out) and runs (RT_RUN); a compile error, a
-;     runtime error or BREAK comes back to the editor on the line, with a report on the status row;
-;   - LIST never splits a line across two pages.
-; Phase 6 adds the error texts, the run reports and FREE; Phase 7 adds SAVE, LOAD and VERIFY.
+;     runtime error or BREAK comes back to the editor on the line; every outcome is reported on
+;     rows 22-23 (Phase 6: the error's message from the diagnostics, src/shell/diag.asm; the exit
+;     status, the image's size and the free heap);
+;   - LIST never splits a line across two pages;
+;   - FREE (Phase 6) reports the source's size, the room left, the last image and the heap.
+; Phase 7 adds SAVE, LOAD and VERIFY.
 ;
 ; The shell runs with the EXROM paged in (BANK_EXROM_DEPTH 1): chunk-6 RAM is invisible to it.
 ; It calls HOME directly (the platform, LEX_KEYWORD, RT_RUN) and compiles through SH_COMPILE.
@@ -71,31 +74,26 @@ SH_REENTER:
     jr   SH_REENTER                    ; the typed line stays in the buffer (V2 D9b)
 
 ; ============================================================================
-; SH_DISPATCH -- run the command on the append line: RUN, LIST or NEW, in any case, alone on the
-; line apart from spaces (V2_DISPATCH)
+; SH_DISPATCH -- run the command on the append line: RUN, LIST, FREE or NEW, in any case, alone on
+; the line apart from spaces (V2_DISPATCH)
 ; Out: NC: a command ran (the line is not stored). C: not a command
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 SH_DISPATCH:
     ld   de, SH_KW_RUN
     call SH_MATCH
-    jr   nc, .run
+    jr   nc, SH_RUN
     ld   de, SH_KW_LIST
     call SH_MATCH
-    jr   nc, .list
+    jp   nc, SH_LIST
+    ld   de, SH_KW_FREE
+    call SH_MATCH
+    jp   nc, SH_FREE
     ld   de, SH_KW_NEW
     call SH_MATCH
     ret  c
     call MEM_INIT                      ; NEW: an empty line store
     call SH_RESET_EDIT
-    or   a
-    ret
-.list:
-    call SH_LIST
-    or   a
-    ret
-.run:
-    call SH_RUN
     or   a
     ret
 
@@ -135,72 +133,98 @@ SH_MATCH:
     ret
 
 ; ============================================================================
-; SH_RUN -- RUN: compile the program and, if it compiles, run it (spec.md 1, 6.3)
-; A compile error puts the cursor on its line and reports "ERROR n LINE m". The program runs on a
-; cleared screen; when it ends the screen stays until a key. A runtime error reports "RUNTIME
-; ERROR n" and BREAK "BREAK", with " LINE m" and the cursor on the line where the definition of
-; the function that failed starts, where known (spec.md 5.9). Phase 6 adds the error texts and
-; the reports (exit status, image size, free heap).
-; Destroys: AF, BC, DE, HL, IX
+; SH_RUN -- RUN: compile the program and, if it compiles, run it (spec.md 1, 6.3); then the report
+; on rows 22 and 23 (SH_REPORT) until a key:
+;   a compile error  "ERROR n: MESSAGE" / "LINE m": the cursor on the line, its text loaded;
+;   a runtime error  "RUNTIME ERROR n: MESSAGE" / "LINE m": the line where the definition of the
+;                    function that failed starts, the cursor on it (no line when unknown, spec.md 5.9);
+;   BREAK            "BREAK" / "LINE m", the same;
+;   the end          "EXIT n" / "IMAGE i B  HEAP h B": main's exit status, the image's code and
+;                    static data, the heap the program had (SH_MEMORY).
+; While it compiles, the status row shows COMPILING (a long program takes seconds: about 13 ms a line).
+; The program runs on a cleared screen; the report is drawn over its last two rows. The messages
+; are the diagnostics' (src/shell/diag.asm): they run once SH_COMPILE has paged the EXROM back in,
+; and read only the compiler's error cells, never chunk 6 (bank rule 3)
+; Out: carry clear. Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 SH_RUN:
+    ld   hl, SH_MSG_COMPILING
+    call SH_STATUS_ROW
     call SH_COMPILE                    ; HOME: CC_PROGRAM with chunk 6 = RAM
+.ccdone:                               ; (the test harness reads the compile's result here)
+    ld   de, SH_REPORT_BUF
     jr   nc, .compiled
-    ld   hl, (CC_ERRLINE)
+    ld   hl, SH_MSG_ERROR              ; "ERROR "
+    call SH_APPEND
     ld   a, (CC_ERRNUM)
-    ld   de, SH_MSG_ERROR
-    jr   .report
+    ld   c, a                          ; (a compile error's message key is its number)
+    call DG_APPEND                     ; "n: MESSAGE"
+    ld   hl, (CC_ERRLINE)
+    jr   .line
 .compiled:
+    push de
+    call SH_IMAGE                      ; the image's size, for the report and FREE
     call GFX_CLS
     call RT_RUN                        ; A = 0 (HL = the exit status), or A = the runtime error
-    ld   b, a
-    xor  a
-    ld   (KBD_KEYHIT), a               ; a key the program left (BREAK) does not end the wait
-    or   b
-    jr   z, SH_WAIT_KEY                ; it ended: its screen stays until a key
-    ld   hl, (RT_ERRLINE)
-    ld   de, SH_MSG_RUNTIME
-    cp   RTE_BREAK
-    jr   nz, .report
-    ld   de, SH_MSG_BREAK
-    xor  a                             ; (no number)
-.report:                               ; A = the error (0: none), DE = the text, HL = the line (0: unknown)
-    ld   (SH_ERR_LINE), hl
-    ex   de, hl
-    ld   de, SH_STATUS_BUF
-    push af
-    call SH_APPEND
-    pop  af
+.rtdone:
+    pop  de
     or   a
-    jr   z, .line
-    ld   l, a
-    ld   h, 0
-    ld   a, ' '
-    ld   (de), a
-    inc  de
+    jr   nz, .failed
+    push hl
+    ld   hl, SH_TXT_EXIT               ; "EXIT n"
+    call SH_APPEND
+    pop  hl
     call SH_APPEND_NUM
-.line:
-    ld   hl, (SH_ERR_LINE)
+    call SH_MEMORY                     ; "IMAGE i B  HEAP h B"
+    jr   SH_REPORT
+.failed:                               ; A = the runtime error
+    ld   b, a
+    ld   hl, SH_MSG_BREAK
+    cp   RTE_BREAK
+    jr   z, .brk
+    ld   hl, SH_MSG_RUNTIME            ; "RUNTIME ERROR "
+    call SH_APPEND
+    ld   a, b
+    add  a, DG_RT
+    ld   c, a                          ; (a runtime error's message key)
+    ld   a, b
+    call DG_APPEND                     ; "n: MESSAGE"
+    jr   .rtline
+.brk:
+    call SH_APPEND                     ; "BREAK"
+.rtline:
+    ld   hl, (RT_ERRLINE)
+.line:                                 ; HL = the line (0: unknown): "LINE m", the cursor on it
+    ld   (SH_ERR_LINE), hl
+    ld   de, SH_STATUS_BUF
+    xor  a
+    ld   (de), a
     ld   a, h
     or   l
-    jr   z, .show
-    push de
+    jr   z, SH_REPORT
     call SH_JUMP_TO_LINE               ; the cursor on the line, its text in the edit buffer
-    pop  de
-    ld   hl, SH_TXT_LINE
+    ld   de, SH_STATUS_BUF
+    ld   hl, SH_TXT_LINE               ; "LINE "
     call SH_APPEND
     ld   hl, (SH_ERR_LINE)
     call SH_APPEND_NUM
-.show:
-    ld   hl, SH_STATUS_BUF
-    ; falls into SH_SHOW_MESSAGE
+    ; falls into SH_REPORT
 
 ; ============================================================================
-; SH_SHOW_MESSAGE -- show the text at HL on the status row and wait for a key; the next redraw is a
-; full one (V2_SHOW_MESSAGE)
+; SH_REPORT -- a report: the text in SH_REPORT_BUF on row 22 and SH_STATUS_BUF's on the status row,
+; both in the status bar's colours; then wait for a key, and the next redraw is a full one. A key
+; pressed before (during a compile, or left by the program: BREAK) does not end the report
+; SH_SHOW_MESSAGE -- the text at HL on the status row, the same (V2_SHOW_MESSAGE)
 ; SH_WAIT_KEY -- wait for a key
 ; Out: carry clear. Destroys: AF, BC, DE, HL
 ; ============================================================================
+SH_REPORT:
+    xor  a
+    ld   (KBD_KEYHIT), a
+    ld   hl, SH_REPORT_BUF
+    ld   a, 22
+    call SH_BAR_ROW
+    ld   hl, SH_STATUS_BUF
 SH_SHOW_MESSAGE:
     xor  a
     ld   (V2_REDRAW_SCOPE), a
@@ -211,29 +235,55 @@ SH_WAIT_KEY:
     ret
 
 ; ============================================================================
-; SH_STATUS_ROW -- the text at HL on row 23 in the status bar's colours: white on black, with V2's
-; red, green and blue swatch in columns 29-31 (V2_STATUS_SET_BAR_ATTR). The bitmap is cleared
-; without touching the attributes, against flicker
-; Destroys: AF, BC, DE, HL
+; SH_STATUS_ROW -- the text at HL on row 23 in the status bar's colours, with V2's red, green and
+; blue swatch in columns 29-31 (V2_STATUS_SET_BAR_ATTR)
+; SH_BAR_ROW -- the text at HL on screen row A, white on black (paper 0, ink 7). The bitmap is
+; cleared without touching the attributes first, against flicker. The text fits the row
+; Out: HL -> the attribute after the row's. Destroys: AF, BC, DE, HL
 ; ============================================================================
 SH_STATUS_ROW:
-    push hl
     ld   a, 23
+    call SH_BAR_ROW
+    dec  hl
+    ld   (hl), $08                     ; paper 1 (blue)
+    dec  hl
+    ld   (hl), $20                     ; paper 4 (green)
+    dec  hl
+    ld   (hl), $10                     ; paper 2 (red)
+    ret
+SH_BAR_ROW:
+    push hl
+    push af
     call SH_CLEAR_ROW
+    pop  af
     pop  hl
-    ld   bc, 23 * 256
+    push af
+    ld   b, a
+    ld   c, 0
     call GFX_PRINT_STRING
-    ld   hl, ATTR_ADDR + 23 * 32
-    ld   b, 29
+    pop  af
+    call SH_ATTR_ROW
+    ld   b, 32
 .bar:
-    ld   (hl), $07                     ; paper 0, ink 7
+    ld   (hl), $07
     inc  hl
     djnz .bar
-    ld   (hl), $10                     ; paper 2 (red)
-    inc  hl
-    ld   (hl), $20                     ; paper 4 (green)
-    inc  hl
-    ld   (hl), $08                     ; paper 1 (blue)
+    ret
+
+; ============================================================================
+; SH_ATTR_ROW -- HL = the first attribute of screen row A (0-23)
+; Destroys: F, DE
+; ============================================================================
+SH_ATTR_ROW:
+    ld   l, a
+    ld   h, 0
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl                        ; row * 32
+    ld   de, ATTR_ADDR
+    add  hl, de
     ret
 
 ; ============================================================================
@@ -243,7 +293,7 @@ SH_STATUS_ROW:
 ; ============================================================================
 SH_DRAW_STATUS:
     ld   de, SH_STATUS_BUF
-    ld   hl, SH_TXT_LINE + 1           ; "LINE "
+    ld   hl, SH_TXT_LINE               ; "LINE "
     call SH_APPEND
     ld   hl, (CUR_EDIT_INDEX)
     inc  hl
@@ -315,6 +365,107 @@ SH_LIST:
     call GFX_CLS
     xor  a
     ld   (SH_DRAW_ROW), a
+    ret
+
+; ============================================================================
+; SH_FREE -- FREE (spec.md 6.1): "SOURCE s B  FREE f B" (the source's size in the line store and the
+; room left for it) / "IMAGE i B  HEAP h B" (SH_MEMORY: the last image compiled, and the heap a
+; program would have now); then a key
+; Out: carry clear. Destroys: AF, BC, DE, HL
+; ============================================================================
+SH_FREE:
+    ld   de, SH_REPORT_BUF
+    ld   hl, SH_TXT_SOURCE             ; "SOURCE s B"
+    call SH_APPEND
+    ld   hl, (PROG_END)
+    push hl
+    ld   bc, PROG_AREA_START
+    or   a
+    sbc  hl, bc
+    call SH_APPEND_BYTES
+    ld   hl, SH_TXT_FREE               ; "  FREE f B": the line store's ceiling (MEM_LINE_STORE)
+    call SH_APPEND
+    pop  bc
+    ld   hl, (VARS_START)
+    or   a
+    sbc  hl, bc
+    call SH_APPEND_BYTES
+    call SH_MEMORY
+    jp   SH_REPORT
+
+; ============================================================================
+; SH_MEMORY -- the memory report in SH_STATUS_BUF: "IMAGE i B  HEAP h B". The image is the last
+; compile's (SH_IMAGE); the heap is what RT_RUN gives a program with the source as it is: from the
+; source's end (made even) to LIB_HEAP_END, less its first block's 2-byte header: the largest block
+; malloc() can return (0 when the source leaves no room)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+SH_MEMORY:
+    ld   de, SH_STATUS_BUF
+    ld   hl, SH_TXT_IMAGE              ; "IMAGE i B"
+    call SH_APPEND
+    ld   hl, (SH_IMAGE_SIZE)
+    call SH_APPEND_BYTES
+    ld   hl, SH_TXT_HEAP               ; "  HEAP h B"
+    call SH_APPEND
+    push de
+    ld   hl, (PROG_END)
+    inc  hl
+    res  0, l
+    ex   de, hl
+    ld   hl, LIB_HEAP_END - 2
+    or   a
+    sbc  hl, de
+    pop  de
+    jr   nc, SH_APPEND_BYTES
+    ld   hl, 0
+    ; falls into SH_APPEND_BYTES
+
+; ============================================================================
+; SH_APPEND_BYTES -- append the decimal text of HL and " B" at DE
+; Out: DE -> the NUL written after it. Destroys: AF, BC, HL
+; ============================================================================
+SH_APPEND_BYTES:
+    call SH_APPEND_NUM
+    ld   hl, SH_TXT_B
+    jp   SH_APPEND
+
+; ============================================================================
+; SH_IMAGE -- SH_IMAGE_SIZE = the size of the image just compiled: the code and static data in the
+; four image regions, from the compiler's limits (IMG_LIM: per region [low][high]; the code lies
+; below low, the data from high up, so the region's free bytes are high - low). Region 4 reserved
+; by #pragma hires is [high][high] (spec.md 3.2): only its data counts. (Any other region with
+; high = low is full; region 4 full of code is E_TOOBIG.)
+; Destroys: AF, BC, DE, HL, IX
+; ============================================================================
+SH_IMG_BYTES    EQU (LEAPC_IMG1_END - LEAPC_IMG1_BASE) + (LEAPC_IMG2_END - LEAPC_IMG2_BASE) + (LEAPC_IMG3_END - LEAPC_IMG3_BASE) + (LEAPC_IMG4_END - LEAPC_IMG4_BASE)
+SH_IMAGE:
+    ld   ix, IMG_LIM
+    ld   hl, SH_IMG_BYTES
+    ld   b, IMG_REGIONS
+.region:
+    push hl
+    ld   e, (ix + 0)
+    ld   d, (ix + 1)                   ; DE = low
+    ld   l, (ix + 2)
+    ld   h, (ix + 3)                   ; HL = high
+    or   a
+    sbc  hl, de                        ; the region's free bytes
+    jr   nz, .sub
+    ld   a, b
+    dec  a
+    jr   nz, .sub
+    ld   hl, -LEAPC_IMG4_BASE          ; region 4 reserved: its bytes below the data are free
+    add  hl, de
+.sub:
+    ex   de, hl
+    pop  hl
+    or   a
+    sbc  hl, de
+    ld   de, 4
+    add  ix, de
+    djnz .region
+    ld   (SH_IMAGE_SIZE), hl
     ret
 
 ; ============================================================================
@@ -861,15 +1012,7 @@ SH_RD_CLEAR_ROWS:
     call SH_CLEAR_ROW
     pop  bc
     pop  af
-    ld   l, a
-    ld   h, 0
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl                        ; row * 32
-    ld   de, ATTR_ADDR
-    add  hl, de
+    call SH_ATTR_ROW
     ld   b, 32
 .attr:
     ld   (hl), %00111000               ; paper 7, ink 0
@@ -1103,9 +1246,17 @@ CHIME_REGS:
 ; ---------------------------------------------------------------- texts
 SH_KW_RUN:      DB "RUN", 0
 SH_KW_LIST:     DB "LIST", 0
+SH_KW_FREE:     DB "FREE", 0
 SH_KW_NEW:      DB "NEW", 0
 SH_MSG_FULL:    DB "PROGRAM FULL", 0
+SH_MSG_COMPILING: DB "COMPILING", 0
 SH_MSG_RUNTIME: DB "RUNTIME "
-SH_MSG_ERROR:   DB "ERROR", 0
+SH_MSG_ERROR:   DB "ERROR ", 0
 SH_MSG_BREAK:   DB "BREAK", 0
-SH_TXT_LINE:    DB " LINE ", 0
+SH_TXT_LINE:    DB "LINE ", 0
+SH_TXT_EXIT:    DB "EXIT ", 0
+SH_TXT_IMAGE:   DB "IMAGE ", 0
+SH_TXT_HEAP:    DB "  HEAP ", 0
+SH_TXT_SOURCE:  DB "SOURCE ", 0
+SH_TXT_FREE:    DB "  FREE ", 0
+SH_TXT_B:       DB " B", 0

@@ -52,6 +52,9 @@ COMP_XSHELL_END:
 COMP_XKEYWORDS_BEGIN:
     INCLUDE "src/shell/highlight.asm"
 COMP_XKEYWORDS_END:
+COMP_XDIAG_BEGIN:
+    INCLUDE "src/shell/diag.asm"
+COMP_XDIAG_END:
 
 ; ---------------------------------------------------------------- compiler parts run through a HOME
 ; trampoline (bank rule 3: they never touch chunk 6)

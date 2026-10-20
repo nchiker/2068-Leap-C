@@ -170,6 +170,8 @@ SH_LINE_COUNT:  DEFS 2              ; lines in the source at the last full redra
 SH_ERR_LINE:    DEFS 2              ; SH_RUN: the source line of the error being reported (0: unknown)
 SH_HEIGHTS:     DEFS SH_VIEW_MAX    ; SH_VIEW: the screen rows of each line above the cursor line
 SH_STATUS_BUF:  DEFS 33             ; the status row's text (32 characters and the NUL)
+SH_REPORT_BUF:  DEFS 33             ; Phase 6: a report's first row (row 22: SH_REPORT)
+SH_IMAGE_SIZE:  DEFS 2              ; Phase 6: the size of the last image compiled (SH_IMAGE; FREE)
 
 LEAPC_CELLS_END:
     ASSERT LEAPC_CELLS_END <= LEAPC_CELLS_LIMIT

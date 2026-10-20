@@ -85,17 +85,21 @@ class Shell:
         self.boot_sp = self.m.regs()["SP"]
 
     def _wait(self, maxi):
-        """Run to the next key wait; returns the status-row message shown on the way, or None.
+        """Run to the next key wait; returns the message shown on the way: a status-row message's
+        text (SH_SHOW_MESSAGE), or a report's two rows (SH_REPORT, Phase 6) as a tuple; else None.
         With count_cls set, the whole-screen clears on the way (GFX_CLS) are counted in self.cls."""
         m, S = self.m, self.S
         msg = None
-        stops = [S("SH_SHOW_MESSAGE"), S("IO_READ_KEY")] + ([S("GFX_CLS")] if self.count_cls else [])
+        stops = [m.xsym("SH_SHOW_MESSAGE"), m.xsym("SH_REPORT"), S("IO_READ_KEY")] + ([S("GFX_CLS")] if self.count_cls else [])
         pc = m.run_to(stops, maxi)
         while self.count_cls and pc == S("GFX_CLS"):
             self.cls += 1
             m.cmd("cpu-step")
             pc = m.run_to(stops, maxi)
-        if pc == S("SH_SHOW_MESSAGE"):
+        if pc == S("SH_REPORT"):
+            msg = tuple(m.read(S(b), 33).split(b"\0")[0].decode("latin-1") for b in ("SH_REPORT_BUF", "SH_STATUS_BUF"))
+            pc = m.run_to([S("IO_READ_KEY")], maxi)
+        elif pc == S("SH_SHOW_MESSAGE"):
             msg = m.read(m.regs()["HL"], 33).split(b"\0")[0].decode("latin-1")
             pc = m.run_to([S("IO_READ_KEY")], maxi)
         if pc != S("IO_READ_KEY"):
@@ -122,8 +126,12 @@ class Shell:
     def press(self, ch, maxi=60_000_000):
         """`ch` typed on the keyboard matrix: held until the ISR accepts it (debounce), released, then
         on to the next key wait."""
+        return self.press_code(matrix_keys(ch), maxi, ch)
+
+    def press_code(self, codes, maxi=60_000_000, what=None):
+        """ZEsarUX key events `codes` held until the ISR accepts the key, released, then on to the next
+        key wait (Z_ENTER: ENTER on the matrix)."""
         m, S = self.m, self.S
-        codes = matrix_keys(ch)
         for c in codes:
             m.cmd("send-keys-event %d 1" % c)
         try:
@@ -132,7 +140,7 @@ class Shell:
             for c in reversed(codes):
                 m.cmd("send-keys-event %d 0" % c)
         if pc != S("IO_LATCH_AND_CLEAR"):
-            raise RuntimeError("key %r not accepted (PC=%04X)" % (ch, pc))
+            raise RuntimeError("key %r not accepted (PC=%04X)" % (what or codes, pc))
         return self._wait(maxi)
 
     def run_break(self, after=1_500_000, maxi=60_000_000):
@@ -142,8 +150,8 @@ class Shell:
         m.write(S("KBD_LASTK"), ENTER)
         m.write(S("KBD_KEYHIT"), 0xFF)
         m.cmd("cpu-step")
-        pc = m.run_to([S("IO_READ_KEY"), S("SH_SHOW_MESSAGE")], after)
-        if pc in (S("IO_READ_KEY"), S("SH_SHOW_MESSAGE")):
+        pc = m.run_to([S("IO_READ_KEY"), m.xsym("SH_SHOW_MESSAGE"), m.xsym("SH_REPORT")], after)
+        if pc in (S("IO_READ_KEY"), S("SH_SHOW_MESSAGE"), S("SH_REPORT")):
             raise RuntimeError("the program ended before BREAK (PC=%04X)" % pc)
         running = m.read(S("RUNNING"), 1)[0]
         for c in (Z_CAPS, Z_SPACE):
@@ -660,9 +668,7 @@ def _sane(sh, store):
     rg = m.regs()
     st = dict(editor=sh.in_editor(), sp=rg["SP"] == sh.boot_sp, depth=m.read(S("BANK_EXROM_DEPTH"), 1)[0] == 1,
               running=m.read(S("RUNNING"), 1)[0] == 0, source=sh.store() == store)
-    st["ay"] = exectest.ay_regs(m)[8:11] == [0, 0, 0]          # (a probe routine: SP and PC put back)
-    m.setreg("SP", rg["SP"])
-    m.setreg("PC", rg["PC"])
+    st["ay"] = exectest.ay_regs(m)[8:11] == [0, 0, 0]          # (a probe routine: the registers put back)
     return all(st.values()), st
 
 
@@ -681,8 +687,8 @@ def run_typed(sh):
     finally:
         memguard.arm(sh.m, False)
     ok, st = _sane(sh, PROG_OK)
-    return expect(out[0] == "49" and wait and ok and sh.rows()[23] == "LINE 10/9", "out=%r wait=%s state=%r" % (
-        out[:2], wait, st))
+    return expect(out[0] == "49" and out[22].startswith("EXIT 3") and wait and ok and sh.rows()[23] == "LINE 10/9",
+                  "out=%r wait=%s state=%r" % (out[:2] + out[22:], wait, st))
 
 
 @case("D4-typed-run-path", "a compile error: the cursor on the failing line with its text loaded, ERROR n LINE m")
@@ -692,7 +698,7 @@ def run_compile_error(sh):
         sh.type(t)
     msg = sh.type("run")
     sh.key(ord(" "))
-    return expect(msg == "ERROR 20 LINE 3" and sh.index() == 2 and sh.edit_line() == "    int x = 2 3;"
+    return expect(msg == ("ERROR 20: SYNTAX ERROR", "LINE 3") and sh.index() == 2 and sh.edit_line() == "    int x = 2 3;"
                   and sh.in_editor() and sh.cursor_cell() == (2, 0), "msg=%r index=%d edit=%r cursor=%r" % (
                       msg, sh.index(), sh.edit_line(), sh.cursor_cell()))
 
@@ -702,16 +708,16 @@ def run_error_at_end(sh):
     sh.load(["int main(void)", "{", "    return 1;"], 3)
     msg = sh.type("run")
     sh.key(ord(" "))
-    return expect(msg == "ERROR 20 LINE 3" and sh.index() == 2 and sh.edit_line() == "    return 1;",
+    return expect(msg == ("ERROR 20: SYNTAX ERROR", "LINE 3") and sh.index() == 2 and sh.edit_line() == "    return 1;",
                   "msg=%r index=%d edit=%r" % (msg, sh.index(), sh.edit_line()))
 
 
-@case("run-no-main", "RUN without main: ERROR 71 (no main function)")
+@case("run-no-main", "RUN without main: ERROR 71: NO MAIN FUNCTION")
 def run_no_main(sh):
     sh.load(["int f(void) { return 1; }"], 1)
     msg = sh.type("run")
     sh.key(ord(" "))
-    return expect(msg is not None and msg.startswith("ERROR 71") and sh.in_editor(), "msg=%r" % msg)
+    return expect(msg is not None and msg[0] == "ERROR 71: NO MAIN FUNCTION" and sh.in_editor(), "msg=%r" % (msg,))
 
 
 @case("run-runtime-error", "a runtime error: RUNTIME ERROR n LINE m, the cursor on the failing function's line, the "
@@ -724,7 +730,7 @@ def run_runtime_error(sh):
     out = sh.rows()[0]
     sh.key(ord(" "))
     ok, st = _sane(sh, src)
-    return expect(msg == "RUNTIME ERROR 4 LINE 1" and out == "hi" and sh.index() == 0 and ok,
+    return expect(msg == ("RUNTIME ERROR 4: BAD ARGUMENT", "LINE 1") and out == "hi" and sh.index() == 0 and ok,
                   "msg=%r out=%r index=%d state=%r" % (msg, out, sh.index(), st))
 
 
@@ -742,7 +748,8 @@ def run_stack_overflow(sh):
     msg2 = sh.type("run") if sh.index() == 2 else "cursor at %d" % sh.index()
     wait = sh.in_run_wait()
     sh.key(ord(" "))
-    return expect(msg == "RUNTIME ERROR 1 LINE 1" and at == (0, src[0]) and msg2 is None and wait and sh.in_editor(),
+    return expect(msg == ("RUNTIME ERROR 1: STACK OVERFLOW", "LINE 1") and at == (0, src[0]) and msg2[0] == "EXIT 5"
+                  and wait and sh.in_editor(),
                   "msg=%r at %r then %r wait=%s store=%r" % (msg, at, msg2, wait, sh.store()))
 
 
@@ -759,7 +766,7 @@ def run_break_loop(sh):
         memguard.arm(sh.m, False)
     sh.key(ord(" "))
     ok, st = _sane(sh, src)
-    return expect(running and msg == "BREAK LINE 1" and sh.index() == 0 and ok, "running=%s msg=%r index=%d state=%r" % (
+    return expect(running and msg == ("BREAK", "LINE 1") and sh.index() == 0 and ok, "running=%s msg=%r index=%d state=%r" % (
         running, msg, sh.index(), st))
 
 
@@ -772,7 +779,7 @@ def run_break_beep(sh):
     msg, running = sh.run_break(after=600_000)
     sh.key(ord(" "))
     ok, st = _sane(sh, src)
-    return expect(running and msg == "BREAK LINE 1" and ok, "msg=%r state=%r" % (msg, st))
+    return expect(running and msg == ("BREAK", "LINE 1") and ok, "msg=%r state=%r" % (msg, st))
 
 
 @case("run-break-pause", "BREAK during pause(): BREAK, the editor")
@@ -783,7 +790,7 @@ def run_break_pause(sh):
     msg, running = sh.run_break(after=600_000)
     sh.key(ord(" "))
     ok, st = _sane(sh, src)
-    return expect(running and msg == "BREAK LINE 1" and ok, "msg=%r state=%r" % (msg, st))
+    return expect(running and msg == ("BREAK", "LINE 1") and ok, "msg=%r state=%r" % (msg, st))
 
 
 @case("u6-colour-state-restored", "a program's border, colours and hi-res mode do not follow it into the editor (the "

@@ -1,6 +1,6 @@
 # 2068-Leap-C — Specification
 
-**Version 0.7, 2026-10-20** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6, 2026-10-20). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.8, 2026-10-20** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6-v0.7, 2026-10-20). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
@@ -13,6 +13,8 @@
 **Changes in v0.6 (Phase 4, as built; `docs/milestones/M4.md`):** the memory map is final (§3.1: baseline layout A, the RAM each region holds, the layout guard); the region rules as built (§3.2: code and data in the image regions, `#pragma hires`, the stack's floor, the heap's bounds); `#pragma hires` (§4.8); the limits measured (§4.10, with the capacity table); `ENTER`'s stack check (§5.3); the platform deltas D5 and D6 (§2.1); runtime-error lines in code continued from image region 3 into region 4 (§5.9).
 
 **Changes in v0.7 (Phase 5, as built; `docs/milestones/M5.md`):** the editor and shell (§6.1), the C punctuation's keys and glyphs, confirmed by the owner (§6.2), RUN's recovery as built in Phase 5 (§6.3), RST `$30` given to the compiler's `LEX_NEXT` by owner decision (§2.3, §5.3, §5.6), the platform deltas D7 and D8 (§2.1).
+
+**Changes in v0.8 (Phase 6, as built; `docs/milestones/M6.md`):** the compile/run workflow (§6.3): the reports on rows 22-23 (compile errors and runtime errors with their messages, BREAK, the exit status, the image's size and the free heap), the error messages (§5.9, §6.3, from `include/leapc_errors.inc`), `FREE` (§6.1), the compile speed measured through `RUN`.
 
 **What is fixed and what is tuned:**
 
@@ -564,7 +566,9 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 | 4 | invalid library argument (where checked) |
 | 5 | BREAK |
 
-The shell shows `RUNTIME ERROR n` with the source line of the failing function's call site where available. The line mapping comes from a function → line table the compiler emits: one record per function definition in the image's static data, `[link][address][line where the definition starts]`, newest first, from `RUN_FNLINES` (as built in Phase 2: 6 B per function).
+The shell shows `RUNTIME ERROR n` with the source line of the failing function's call site where available.
+
+**As built (v0.8):** the shell's report is `RUNTIME ERROR n: MESSAGE` with the messages `1: STACK OVERFLOW`, `2: OUT OF HEAP`, `3: HI-RES IN USE`, `4: BAD ARGUMENT`; BREAK is reported as `BREAK` (§6.3). The line mapping comes from a function → line table the compiler emits: one record per function definition in the image's static data, `[link][address][line where the definition starts]`, newest first, from `RUN_FNLINES` (as built in Phase 2: 6 B per function).
 
 **As built (v0.5):** every error records an address in the failing code (`RT_ERRPC`); at the end, `RT_ERRLOC` takes the newest record of the table that starts at most 8 KB before it, and `RT_ERRLINE` is the line where that function's definition starts (0 if none). The address is:
 
@@ -610,7 +614,8 @@ These come from V2's full-screen editor and shell glue, adapted:
 - **The view** shows up to 20 lines above the cursor's line (V2), fewer when they wrap onto more rows than there are above it: the cursor's line is always whole on the screen (V2 could push it off the screen).
 - **Redraw.** Typing redraws only the cursor's line, or, when the line starts or stops wrapping onto another row, that line and the ones below it (V2 redrew the whole screen then); UP and DOWN near the top redraw only the two lines involved; LEFT and RIGHT move only the cursor. A key clears the whole screen only when the view moves (measured: no typed key clears it in any of the test scenarios). Typing costs 47 kT per key on V2's 10-line typing scenario (V2: 72 kT) and at most V2's cost in all of V2's scenarios (`docs/milestones/M5.md` §6).
 - **Keyword highlighting.** A line not being edited shows its C keywords in bold as typed, from the compiler's own keyword table (no copy in the EXROM). Not keywords: identifiers that contain one (`int1`, `_if`), case variants (`INT`), and the text of string literals, character constants and comments. Each line is scanned on its own: a line inside a `/* ... */` comment begun on an earlier line is highlighted as code.
-- **Commands** are recognised only on the append line (the empty line after the last), alone on the line apart from spaces, in any case; anything else is stored as source. Phase 5 builds `RUN`, `LIST` and `NEW`; `FREE` and the reports come in Phase 6, `SAVE`, `LOAD` and `VERIFY` in Phase 7.
+- **Commands** are recognised only on the append line (the empty line after the last), alone on the line apart from spaces, in any case; anything else is stored as source. Phase 5 builds `RUN`, `LIST` and `NEW`; Phase 6 `FREE` and the reports (§6.3); `SAVE`, `LOAD` and `VERIFY` come in Phase 7.
+- **`FREE`** (v0.8) reports on rows 22-23 `SOURCE s B  FREE f B` (the source's size in the line store, and the room left for it: up to `VARS_START`, the line store's ceiling) and `IMAGE i B  HEAP h B` (the image of the last successful compile, 0 before any; the heap a program would have with the source as it is). A key returns to the editor as it was.
 - **`LIST`** shows the source a page (23 rows) at a time with keywords bold; a line that does not fit starts the next page; a key shows the next page, BREAK ends the listing.
 
 ### 6.2 C punctuation (baseline mapping; physical legends need owner confirmation)
@@ -637,7 +642,34 @@ Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 
 
 **Memory report:** after a successful compile the shell reports image size and free heap. `FREE` reports the same.
 
-**As built (v0.7, Phase 5).** `RUN` compiles (`CC_PROGRAM` through the HOME trampoline `SH_COMPILE`, chunk 6 paged out) and runs the program (`RT_RUN`) on a cleared screen. When it ends its screen stays until a key. A compile error shows `ERROR n LINE m` on the status row and puts the cursor on the line, with its text in the edit buffer. A runtime error shows `RUNTIME ERROR n LINE m` over the program's screen and BREAK `BREAK LINE m`, with the cursor on the line where the definition of the function that failed starts (§5.9; without `LINE` when unknown). A key then returns to the editor with the source intact, the paging, the stack and the AY as before the run, the border white and the screen redrawn. Phase 6 replaces the numbers with `ERROR n: message` and adds the exit status, the image size and the free heap.
+**As built (v0.7, Phase 5).** `RUN` compiles (`CC_PROGRAM` through the HOME trampoline `SH_COMPILE`, chunk 6 paged out) and runs the program (`RT_RUN`) on a cleared screen. When it ends its screen stays until a key. A compile error shows `ERROR n LINE m` on the status row and puts the cursor on the line, with its text in the edit buffer. A runtime error shows `RUNTIME ERROR n LINE m` over the program's screen and BREAK `BREAK LINE m`, with the cursor on the line where the definition of the function that failed starts (§5.9; without `LINE` when unknown). A key then returns to the editor with the source intact, the paging, the stack and the AY as before the run, the border white and the screen redrawn. Phase 6 replaced these reports (v0.8, below).
+
+**As built (v0.8, Phase 6).** `RUN` shows `COMPILING` on the status row while it compiles. Every outcome ends with a report on rows 22 and 23 in the status bar's colours (white on black, row 23 with its swatch), drawn over whatever is on the screen (the editor after a compile error, the program's screen otherwise: its rows 0-21 stay), until a key; the key is not typed, and a key pressed before the report (during the compile, or BREAK) does not end it. Then the editor is redrawn with the source intact.
+
+| Outcome | Row 22 | Row 23 | Cursor |
+|---|---|---|---|
+| compile error | `ERROR n: MESSAGE` | `LINE m` | on line m, its text in the edit buffer (the append line when m is past the last line) |
+| runtime error | `RUNTIME ERROR n: MESSAGE` | `LINE m`, or nothing when unknown (§5.9) | on line m, where the definition of the function that failed starts |
+| BREAK | `BREAK` | `LINE m` | as for a runtime error |
+| the program ends | `EXIT n` (main's value or `exit()`'s, signed; 0 for a void `main`) | `IMAGE i B  HEAP h B` | as before `RUN` |
+
+- **The image's size** is its code and static data in the four image regions (§3.2): from the compiler's limits after the compile, each region's bytes less the free bytes between its code and its data; region 4 reserved by `#pragma hires` counts only the data placed there before the pragma.
+- **The free heap** is the largest block `malloc()` can return in that run: from the end of the source, made even, to `LIB_HEAP_END`, less the block's 2-byte header (`malloc(h)` succeeds and `malloc(h + 1)` returns NULL; tested).
+- **The messages** come from a word-compressed table in the EXROM (the diagnostics, 640 B: `src/shell/diag.asm`), built from `include/leapc_errors.inc` by `tools/gen_diag.py`. They run after the compile's trampoline (`SH_COMPILE`) has paged the EXROM back in, read only the compiler's error cells, and never touch chunk 6. Every message fits the report row with its number.
+
+| Group | Number: message |
+|---|---|
+| not supported | `1: NOT SUPPORTED` |
+| lexical | `10: BAD CHARACTER`; `11: UNTERMINATED COMMENT`; `12: UNTERMINATED STRING`; `13: BAD CHARACTER CONSTANT`; `14: BAD ESCAPE`; `15: BAD NUMBER`; `16: NUMBER TOO LARGE`; `17: STRING TOO LONG` |
+| declaration | `20: SYNTAX ERROR`; `21: REDECLARED`; `22: ALREADY DEFINED`; `23: UNDECLARED IDENTIFIER`; `24: BAD TYPE SPECIFIERS`; `25: BAD DECLARATOR`; `26: BAD STORAGE CLASS`; `27: BAD PARAMETER`; `28: BAD INITIALISER`; `29: BAD ARRAY SIZE` |
+| type | `40: TYPE MISMATCH`; `41: INCOMPLETE TYPE`; `42: TYPE TOO LARGE` |
+| expression | `50: CONSTANT REQUIRED`; `51: BAD OPERAND TYPE`; `52: NO SUCH MEMBER`; `53: NOT AN LVALUE`; `54: ASSIGNMENT TO CONST`; `55: WRONG ARGUMENT COUNT` |
+| statement | `70: UNDEFINED FUNCTION`; `71: NO MAIN FUNCTION`; `72: MISPLACED BREAK`; `73: MISPLACED CONTINUE`; `74: MISPLACED CASE`; `75: DUPLICATE CASE`; `76: UNDEFINED LABEL` |
+| limit | `90: NESTING TOO DEEP`; `91: FRAME TOO LARGE`; `92: TOO MANY PARAMETERS` |
+| memory | `100: OUT OF MEMORY`; `101: PROGRAM TOO BIG` |
+
+`17: STRING TOO LONG` needs a line longer than the editor makes (a guard). **Compile speed** measured through `RUN` over the corpus: **13.41 ms per line** (10,536 lines; 13.40 ms per line through the direct path), against the target of 25.
+
 
 ---
 

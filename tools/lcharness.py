@@ -14,6 +14,7 @@ Phase 5); test hooks are called directly.
 """
 import os
 import re
+import socket
 import struct
 import subprocess
 import sys
@@ -39,6 +40,42 @@ UNKNOWN = "\u2591"         # screen_rows: a cell that is no glyph
 BOLD_MARK = "\u2022"       # screen_rows(marks=True): the next character is bold
 
 
+class _QuickAckSocket:
+    """A socket that acknowledges every segment at once (TCP_QUICKACK, re-armed around each recv: Linux
+    clears it). ZEsarUX writes a reply and its prompt separately; with Nagle on its side and delayed
+    ACKs on ours, the prompt waited for our ACK: 41 ms for every command with a reply (measured,
+    Phase 6), 0.04 ms with this."""
+
+    def __init__(self, sock):
+        self._s = sock
+
+    def recv(self, n):
+        self._quick()
+        data = self._s.recv(n)
+        self._quick()
+        return data
+
+    def _quick(self):
+        if hasattr(socket, "TCP_QUICKACK"):
+            try:
+                self._s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+            except OSError:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self._s, name)
+
+
+class ZRCP(ZRCPClient):
+    """ts2068-debug's ZRCP client with the socket's delayed ACKs and Nagle off (_QuickAckSocket)."""
+
+    def connect(self, *args, **kw):
+        super().connect(*args, **kw)
+        if self._sock is not None and not isinstance(self._sock, _QuickAckSocket):
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self._sock = _QuickAckSocket(self._sock)
+
+
 class ZEsarUXProcess(_ZProcess):
     """ts2068-debug's ZEsarUX launcher (the same arguments) with FAST_ARGS."""
 
@@ -49,6 +86,12 @@ class ZEsarUXProcess(_ZProcess):
             args += ["--romfile", os.path.abspath(self.romfile)]
         self._proc = subprocess.Popen(args, cwd=str(self.install_dir), stdout=subprocess.DEVNULL,
                                       stderr=subprocess.DEVNULL)
+
+
+class InExrom(int):
+    """A breakpoint address in the EXROM (Machine.xsym): it stops only while the EXROM is paged in.
+    Chunk 6 is EXROM or RAM, so an EXROM label's address is also an address of a program's code in
+    image region 1, where a plain PC breakpoint would fire while the program runs (Phase 6)."""
 
 
 def load_syms(*paths):
@@ -87,6 +130,10 @@ class Machine:
     # ------------------------------------------------------------- low level
     def sym(self, n):
         return self.S[n]
+
+    def xsym(self, n):
+        """An EXROM label as a breakpoint address that ignores image region 1 (InExrom)."""
+        return InExrom(self.S[n])
 
     def cmd(self, line, timeout=None):
         return self.c.command(line, timeout=timeout)
@@ -138,11 +185,16 @@ class Machine:
                 raise
 
     def set_bps(self, addrs):
-        """Arm breakpoints 1..n at the given PCs; clear 1..8 beyond."""
+        """Arm breakpoints 1..n at the given PCs; clear 1..8 beyond. An InExrom address stops only
+        with the EXROM paged in (BANK_EXROM_DEPTH nonzero)."""
         self._enable_bp()
         for i in range(1, 9):
             if i <= len(addrs):
-                self.cmd("set-breakpoint %d PC=%04XH" % (i, addrs[i - 1]))
+                a = addrs[i - 1]
+                if isinstance(a, InExrom):
+                    self.cmd("set-breakpoint %d PC=%04XH and PEEK(%04XH)<>0" % (i, a, self.S["BANK_EXROM_DEPTH"]))
+                else:
+                    self.cmd("set-breakpoint %d PC=%04XH" % (i, a))
             else:
                 self.cmd("set-breakpoint %d" % i)
 
@@ -165,9 +217,12 @@ class Machine:
     def start(self, boot_max=20_000_000):
         if not os.path.exists(self.rom):
             raise FileNotFoundError(self.rom)
+        with socket.socket() as probe:                  # another emulator on the port would take the commands
+            if probe.connect_ex(("127.0.0.1", self.port)) == 0:
+                raise RuntimeError("port %d is in use (an emulator left running?)" % self.port)
         self.proc = ZEsarUXProcess(ZESARUX, port=self.port, romfile=self.rom)
         self.proc.start()
-        self.c = ZRCPClient(port=self.port, timeout=60)
+        self.c = ZRCP(port=self.port, timeout=60)
         self.c.connect(retries=100)
         self.cmd("enter-cpu-step")
         self.cmd("reset-cpu")

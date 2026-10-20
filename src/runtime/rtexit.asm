@@ -59,7 +59,8 @@ RT_RUN:
 .done:
     pop  ix
     ld   a, (RT_ERRNUM)
-    ret
+.leave:                                ; (the test harness reads the run's result here: HOME, whatever
+    ret                                ; the caller's paging)
 .main:                                 ; every end of the program returns from here (RUN_SP)
     ld   (RUN_SP), sp
     ld   hl, RT_STATE                  ; no error, no BREAK, rand() as after srand(1), the print

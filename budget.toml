@@ -126,7 +126,7 @@ ranges = [["COMP_XKEYWORDS_BEGIN", "COMP_XKEYWORDS_END"]]
 id = "xdiag"
 title = "Compiler diagnostics (message texts, error reporting)"
 budget = 650
-ranges = []
+ranges = [["COMP_XDIAG_BEGIN", "COMP_XDIAG_END"]]
 
 [[exrom.component]]
 id = "xcomp"
@@ -580,3 +580,16 @@ uses the compiler's keyword table in HOME (LEX_KEYWORD, called with the EXROM pa
 and its table), so the EXROM holds no keyword list. 109 B return to the EXROM reserve (339 -> 448 B, floor 256 B).
 The shell (xshell) measures 1,592 B of its 2,432 B: the rest stays with it for Phase 6 (FREE, the run reports) and
 Phase 7 (SAVE, LOAD, VERIFY)."""
+
+[[ledger]]
+id = "L36"
+date = "2026-10-20"
+milestone = "Phase 6"
+bank = "exrom"
+component = "xdiag"
+delta = -10
+reason = """The compiler diagnostics measure 640 B (src/shell/diag.asm): DG_APPEND (85 B) and the message table that
+tools/gen_diag.py builds from include/leapc_errors.inc (555 B: the 70 distinct words once, each of the 44 messages as
+its word numbers, a key only where the numbering jumps). Raw texts with their numbers would take 733 B. The shell
+(xshell) measures 1,846 B of its 2,432 B after Phase 6's reports, FREE and COMPILING (+254 B): 586 B stay with it for
+Phase 7 (SAVE, LOAD, VERIFY). 10 B return to the EXROM reserve (448 -> 458 B, floor 256 B)."""

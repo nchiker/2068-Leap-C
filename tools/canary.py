@@ -16,7 +16,8 @@ declaration cases (tests/decl) are compiled only (CC_PROGRAM: E_NOMAIN is expect
 Writes build/canary.json (one record per case) and prints a summary; exit status 1 on any hit,
 violation or failure.
 
-Usage: canary.py [--workers 4] [--port 10800] [--only SUBSTR]
+Usage: canary.py [--workers N] [--port 10800] [--only SUBSTR]   (N: the CPUs less one, at most 8;
+make test runs the same checks as tasks of tools/run_tests.py's pool)
 """
 import argparse
 import glob
@@ -40,51 +41,83 @@ def corpus(only=None):
     return [c for c in cases if not only or only in c]
 
 
-def worker(port, paths, outq):
+def check(m, p):
+    """One corpus case with the canary and the invariants: a record dict(case, ok, msg, stack_lows,
+    canary, violation)."""
     import c2src
     import exectest
-    import memguard
+    rel = os.path.relpath(p, ROOT)
+    rec = dict(case=rel)
+    if rel.split(os.sep)[1] == "decl":
+        lines = c2src.lines_of(open(p, encoding="latin-1").read())
+        r = exectest.compile_and_run(m, lines, run=False, invariants=True, canary=True)
+        msgs = []
+        if not r.compile_ok:
+            msgs.append("compile did not return")
+        msgs += ["banking invariant violated: " + v for v in r.violation]
+        msgs += ["canary: the %s wrote %s %s-%s (%d bytes)" % (h["phase"], h["span"], h["first"],
+                                                               h["last"], h["bytes"])
+                 for h in r.canary_hits if not h.get("allowed")]
+        rec.update(ok=not msgs, msg="; ".join(msgs), stack_lows=r.stack_lows,
+                   canary=r.canary_hits, violation=r.violation)
+    else:
+        ok, msg, info = exectest.check_case(m, p, guards=True)
+        rec.update(ok=ok, msg=msg, stack_lows=info["stack_lows"] if info else {},
+                   canary=info["canary"] if info else [], violation=info["violation"] if info else [])
+    return rec
+
+
+def check_all(m, paths, restart):
+    """check() over paths; a harness failure fails the case and restarts the emulator (restart())."""
+    for p in paths:
+        try:
+            rec = check(m, p)
+        except Exception as e:                       # a harness failure: restart the emulator
+            rec = dict(case=os.path.relpath(p, ROOT), ok=False, msg="harness: %r" % e)
+            m = restart()
+        yield rec
+
+
+def summary(recs, wall):
+    bad = [r for r in recs if not r["ok"]]
+    lows = {ph: [r["stack_lows"][ph] for r in recs if r.get("stack_lows", {}).get(ph) is not None]
+            for ph in ("compile", "run")}
+    allowed = [r["case"] for r in recs for h in r.get("canary", []) if h.get("allowed")]
+    s = dict(cases=len(recs), failures=len(bad), wall_s=round(wall, 1),
+             stack_low_compile="$%04X" % min(lows["compile"]) if lows["compile"] else None,
+             stack_low_run="$%04X" % min(lows["run"]) if lows["run"] else None,
+             hires_display_writes=sorted(set(allowed)))
+    line = ("canary: %d cases (%d declaration cases compiled only), %d failures; lowest stack byte: compile %s, "
+            "run %s; display file 2 written in hi-res mode by %d cases; %.0f s" % (
+                len(recs), sum(1 for r in recs if os.sep + "decl" + os.sep in r["case"]), len(bad),
+                s["stack_low_compile"], s["stack_low_run"], len(set(allowed)), wall))
+    return s, line
+
+
+def worker(port, paths, outq):
     from lcharness import Machine
-    m = Machine(os.path.join(ROOT, "build"), port)
-    m.start()
+    box = [Machine(os.path.join(ROOT, "build"), port)]
+    box[0].start()
+
+    def restart():
+        try:
+            box[0].stop()
+        except Exception:
+            pass
+        box[0] = Machine(os.path.join(ROOT, "build"), port)
+        box[0].start()
+        return box[0]
     try:
-        for p in paths:
-            rel = os.path.relpath(p, ROOT)
-            rec = dict(case=rel)
-            try:
-                if rel.split(os.sep)[1] == "decl":
-                    lines = c2src.lines_of(open(p, encoding="latin-1").read())
-                    r = exectest.compile_and_run(m, lines, run=False, invariants=True, canary=True)
-                    msgs = []
-                    if not r.compile_ok:
-                        msgs.append("compile did not return")
-                    msgs += ["banking invariant violated: " + v for v in r.violation]
-                    msgs += ["canary: the %s wrote %s %s-%s (%d bytes)" % (h["phase"], h["span"], h["first"],
-                                                                           h["last"], h["bytes"])
-                             for h in r.canary_hits if not h.get("allowed")]
-                    rec.update(ok=not msgs, msg="; ".join(msgs), stack_lows=r.stack_lows,
-                               canary=r.canary_hits, violation=r.violation)
-                else:
-                    ok, msg, info = exectest.check_case(m, p, guards=True)
-                    rec.update(ok=ok, msg=msg, stack_lows=info["stack_lows"] if info else {},
-                               canary=info["canary"] if info else [], violation=info["violation"] if info else [])
-            except Exception as e:                       # a harness failure: restart the emulator
-                rec.update(ok=False, msg="harness: %r" % e)
-                try:
-                    m.stop()
-                except Exception:
-                    pass
-                m = Machine(os.path.join(ROOT, "build"), port)
-                m.start()
+        for rec in check_all(box[0], paths, restart):
             outq.put(rec)
     finally:
-        m.stop()
+        box[0].stop()
         outq.put(None)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=max(1, min(8, (os.cpu_count() or 4) - 1)))
     ap.add_argument("--port", type=int, default=10800)
     ap.add_argument("--only")
     ap.add_argument("--json", default=os.path.join(ROOT, "build", "canary.json"))
@@ -109,19 +142,10 @@ def main():
         p.join()
     recs.sort(key=lambda r: r["case"])
     bad = [r for r in recs if not r["ok"]]
-    lows = {ph: [r["stack_lows"][ph] for r in recs if r.get("stack_lows", {}).get(ph) is not None]
-            for ph in ("compile", "run")}
-    allowed = [r["case"] for r in recs for h in r.get("canary", []) if h.get("allowed")]
-    summary = dict(cases=len(recs), failures=len(bad), wall_s=round(time.time() - t0, 1),
-                   stack_low_compile="$%04X" % min(lows["compile"]) if lows["compile"] else None,
-                   stack_low_run="$%04X" % min(lows["run"]) if lows["run"] else None,
-                   hires_display_writes=sorted(set(allowed)))
+    s, line = summary(recs, time.time() - t0)
     with open(a.json, "w") as f:
-        json.dump(dict(summary=summary, cases=recs), f, indent=1)
-    print("canary: %d cases (%d declaration cases compiled only), %d failures; lowest stack byte: compile %s, "
-          "run %s; display file 2 written in hi-res mode by %d cases; %.0f s" % (
-              len(recs), sum(1 for r in recs if os.sep + "decl" + os.sep in r["case"]), len(bad),
-              summary["stack_low_compile"], summary["stack_low_run"], len(set(allowed)), summary["wall_s"]))
+        json.dump(dict(summary=s, cases=recs), f, indent=1)
+    print(line)
     return 1 if bad else 0
 
 

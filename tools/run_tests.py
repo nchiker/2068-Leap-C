@@ -38,10 +38,18 @@ Phase 5 (suite `shell`, tools/shelltest.py): the editor and its commands driven 
 (the ISR's latch and the real key matrix), the C punctuation's keys and glyphs, keyword highlighting,
 RUN with its error and BREAK recovery, the typing cost per key and the selective-redraw oracle.
 
-Usage: run_tests.py [--port N] [--only SUBSTR] [--suite boot,lexer,decl,exec,bench,shell] [--json OUT]"""
+Phase 6 (suite `e2e`, tools/e2etest.py): the compile/run workflow: typed programs RUN from the editor,
+the whole corpus through the shell's RUN path, the diagnostics and the reports. Suite `canary`: the RAM
+canary and banking invariants over the corpus (tools/canary.py), as tasks of the same pool.
+
+Every suite runs as tasks on a pool of emulators (--workers, default the CPUs less one, at most 8).
+
+Usage: run_tests.py [--port N] [--only SUBSTR] [--workers N]
+                    [--suite boot,lexer,decl,exec,bench,shell,e2e,canary] [--json OUT]"""
 import argparse
 import glob
 import json
+import multiprocessing as mp
 import os
 import sys
 import time
@@ -58,6 +66,8 @@ import helperbench      # noqa: E402
 import memguard         # noqa: E402
 import stmtbench        # noqa: E402
 import shelltest        # noqa: E402
+import e2etest          # noqa: E402
+import canary           # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
@@ -439,209 +449,143 @@ def phase4_builtins(m):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=10760)
-    ap.add_argument("--only")
-    ap.add_argument("--json", default=os.path.join(ROOT, "build", "test_results.json"))
-    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench,shell")
-    a = ap.parse_args()
-    suites = a.suite.split(",")
-    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[])
+# ---------------------------------------------------------------- tasks (Phase 6: run in parallel)
+# make test runs every suite as tasks on a pool of workers, each with its own ZEsarUX (port base + its
+# number), reusing it from task to task while the image (production or test) stays the same. A task
+# returns its rows per suite, its failure count, its output lines and its measurements; the main
+# process merges them into the report and build/test_results.json as before. Measurements are T-states
+# of the emulated machine, which the host's load does not change.
+SHARDS = dict(decl=3, exec=8, corpus=8, canary=8)
+
+
+def _shard(items, k, n):
+    return items[k::n]
+
+
+def exec_cases(only):
+    cases = []
+    for d in EXEC_DIRS:
+        cases += sorted(glob.glob(os.path.join(ROOT, "tests", d, "**", "*.c"), recursive=True))
+    return [c for c in cases if not only or only in c]
+
+
+def t_boot(m, arg, only, suites):
+    m.restore()                                 # (the worker's emulator may have run other tasks)
+    checks = boot_checks(m)
+    out = ["%s boot: %-38s %s %s" % (arg, n, "PASS" if ok else "FAIL", d if not ok else "") for n, ok, d in checks]
+    out.append("%s boot: cold start to idle prompt %d T-states" % (arg, m.boot["tstates"]))
+    return dict(rows={"boot": [dict(image=arg, boot_tstates=m.boot["tstates"],
+                                    checks=[dict(name=n, ok=ok, detail=d) for n, ok, d in checks])]},
+                failed=sum(not ok for _, ok, _ in checks), out=out)
+
+
+def t_decl(m, arg, only, suites):
+    k, n = arg
+    cases = sorted(glob.glob(os.path.join(ROOT, "tests", "decl", "**", "*.c"), recursive=True))
+    cases = _shard([c for c in cases if not only or only in c], k, n)
+    rows, out, extra = [], [], {}
+    for c in cases:
+        ok, msg, info = decltest.check_case(m, c)
+        rel = os.path.relpath(c, ROOT)
+        rows.append(dict(case=rel, ok=ok, msg=msg, info=info))
+        if not ok:
+            out.append("decl: FAIL %s: %s" % (rel, msg))
+    if k == 0 and "bench" in suites and not only:
+        extra["decl_ws"] = declbench.measure(m)
+    return dict(rows={"decl": rows}, failed=sum(not r["ok"] for r in rows), out=out, extra=extra)
+
+
+def t_exec(m, arg, only, suites):
+    k, n = arg
+    rows, out = [], []
+    for c in _shard(exec_cases(only), k, n):
+        ok, msg, info = exectest.check_case(m, c)
+        rel = os.path.relpath(c, ROOT)
+        rows.append(dict(case=rel, ok=ok, msg=msg, info=info))
+        if not ok:
+            out.append("exec: FAIL %s: %s" % (rel, msg))
+    return dict(rows={"exec": rows}, failed=sum(not r["ok"] for r in rows), out=out)
+
+
+def t_exec_builtins(m, arg, only, suites):
+    """The built-in executable checks and the measurements (helpers, ISR, spike workloads)."""
+    S = m.sym
+    rows, out, extra, failed = [], [], {}, 0
+
+    def add(name, ok, msg, group):
+        rows.append(dict(case=name, ok=ok, msg=msg, info=None, group=group))
+        if not ok:
+            out.append("exec: FAIL %s: %s" % (name, msg))
+    if "bench" in suites:
+        extra["helpers"] = helperbench.measure(m)
+        for r in extra["helpers"]:
+            failed += not r["ok"]
+            out.append("helper: %-58s %s %4s T %d B site %s" % (
+                r["name"], "PASS" if r["ok"] else "FAIL", r.get("tstates"), r.get("site_bytes", 0), r["detail"]))
+    # the machine is sane after a stack overflow: a second program compiles and runs in the same
+    # machine state (no snapshot restore in between)
+    ov = c2src.lines_of(open(os.path.join(ROOT, "tests", "run", "stack_overflow.c")).read())
+    r1 = exectest.compile_and_run(m, ov, audit=False)
+    r2 = exectest.compile_and_run(m, ["int f(int x) { return x * 3; }", "int main(void) { return f(14); }"],
+                                  restore=False)
+    ok = (r1.ran and r1.a == 1 and r1.sp == 0xFF02 and r1.depth == 0 and r2.ran and r2.a == 0
+          and r2.hl == 42 and not r2.audit)
+    add("(built-in) recovery after a stack overflow", ok, "" if ok else "overflow run a=%s sp=%04X; next run hl=%s a=%s %s" % (
+        r1.a, r1.sp, getattr(r2, "hl", None), getattr(r2, "a", None), r2.audit), "run")
+    # the function -> line table (spec.md 5.9): one record per defined function, [link][address][line]
+    src = ["int f(void) { return 1; }", "", "static", "int g(int x)", "{", "    return x;", "}",
+           "int main(void) { return f() + g(1); }"]
+    r = exectest.compile_and_run(m, src)
+    recs, a_ = [], m.w16(S("RUN_FNLINES"))
+    while a_ and len(recs) < 10:
+        recs.append((m.w16(a_ + 2), m.w16(a_ + 4)))
+        a_ = m.w16(a_)
+    fn = {e.name: e.val for e in r.globals if e.kind == 2}
+    want = sorted([(fn["f"], 1), (fn["g"], 3), (fn["main"], 8)])
+    ok = r.ran and r.hl == 2 and sorted(recs) == want
+    add("(built-in) the function -> line table", ok, "" if ok else "records %r, expected %r" % (recs, want), "run")
+    # every run starts rand() afresh (RT_RUN clears its state LIB_RND: srand(1)'s sequence)
+    m.restore()
+    m.write(S("LIB_RND"), b"\x34\x12")
+    r2 = exectest.compile_and_run(m, ["int main(void) { return 0; }"], restore=False)
+    ok2 = r2.ran and m.w16(S("LIB_RND")) == 0
+    add("(built-in) rand() starts afresh in every run", ok2, "" if ok2 else "LIB_RND %04X" % m.w16(S("LIB_RND")), "run")
+    for name, ok, msg in phase4_builtins(m):
+        add(name, ok, msg, "mem")
+        if "IM 1" in name:
+            out.append("measured: %s" % msg)
+    for name, ok, msg in phase3_builtins(m):
+        add(name, ok, msg, "rt")
+        if "ISR" in name or "name search" in name:
+            out.append("measured: %s" % msg)
+            extra["isr" if "ISR" in name else "libfind"] = msg
+    if "bench" in suites:
+        extra["spike"] = stmtbench.measure(m)
+        for r in extra["spike"]:
+            failed += not r["ok"]
+            if "bytes" not in r:
+                out.append("spike: FAIL %s" % r)
+                continue
+            out.append("spike: %-20s %s %3d B (spike %3d) %7d T (spike %7d)" % (
+                r["name"], "PASS" if r["ok"] else "FAIL", r["bytes"], r["spike_bytes"], r["tstates"], r["spike_tstates"]))
+    failed += sum(not r["ok"] for r in rows)
+    return dict(rows={"exec": rows}, failed=failed, out=out, extra=extra)
+
+
+def t_lexer(m, arg, only, suites):
+    rows, bench, out = [], [], []
     failed = 0
-    t_start = time.time()
-
-    # ---- boot tests on both images
-    for name, build in (("production", "build"), ("test", "build/test")):
-        if "boot" not in suites:
-            break
-        m = Machine(os.path.join(ROOT, build), a.port)
-        try:
-            m.start()
-            checks = boot_checks(m)
-            results["boot"][name] = dict(boot_tstates=m.boot["tstates"],
-                                         checks=[dict(name=n, ok=ok, detail=d) for n, ok, d in checks])
-            for n, ok, d in checks:
-                print("%s boot: %-38s %s %s" % (name, n, "PASS" if ok else "FAIL", d if not ok else ""))
-                failed += not ok
-            print("%s boot: cold start to idle prompt %d T-states" % (name, m.boot["tstates"]))
-        finally:
-            m.stop()
-
-    # ---- declaration cases on the production image
-    if "decl" in suites:
-        m = Machine(os.path.join(ROOT, "build"), a.port)
-        try:
-            m.start()
-            cases = sorted(glob.glob(os.path.join(ROOT, "tests", "decl", "**", "*.c"), recursive=True))
-            if a.only:
-                cases = [c for c in cases if a.only in c]
-            npass = nerr = 0
-            for c in cases:
-                ok, msg, info = decltest.check_case(m, c)
-                rel = os.path.relpath(c, ROOT)
-                results["decl"].append(dict(case=rel, ok=ok, msg=msg, info=info))
-                npass += ok
-                if info and info["error"]:
-                    nerr += ok
-                if not ok:
-                    failed += 1
-                    print("decl: FAIL %s: %s" % (rel, msg))
-            print("decl: %d/%d cases pass (%d declaration cases, %d error cases)" % (
-                npass, len(cases), npass - nerr, nerr))
-            if "bench" in suites and not a.only:
-                results["decl_ws"] = declbench.measure(m)
-                for r in results["decl_ws"]:
-                    print("workspace: %-26s %5.1f B each   (%s)" % (r["what"], r["bytes_each"], r["detail"]))
-        finally:
-            m.stop()
-
-    # ---- executable cases on the production image (M1.3)
-    if "exec" in suites:
-        m = Machine(os.path.join(ROOT, "build"), a.port)
-        S = None
-        try:
-            m.start()
-            S = m.sym
-            cases = []
-            for d in EXEC_DIRS:
-                cases += sorted(glob.glob(os.path.join(ROOT, "tests", d, "**", "*.c"), recursive=True))
-            if a.only:
-                cases = [c for c in cases if a.only in c]
-            counts = {}
-            lines = tstates = 0
-            for c in cases:
-                ok, msg, info = exectest.check_case(m, c)
-                rel = os.path.relpath(c, ROOT)
-                results["exec"].append(dict(case=rel, ok=ok, msg=msg, info=info))
-                group = rel.split(os.sep)[1]
-                n, p = counts.get(group, (0, 0))
-                counts[group] = (n + 1, p + ok)
-                if ok and info and not info["error"]:
-                    lines += info["lines"]
-                    tstates += info["compile_t"]
-                if not ok:
-                    failed += 1
-                    print("exec: FAIL %s: %s" % (rel, msg))
-            if "bench" in suites and not a.only:
-                results["helpers"] = helperbench.measure(m)
-                for r in results["helpers"]:
-                    failed += not r["ok"]
-                    print("helper: %-58s %s %4s T %d B site %s" % (
-                        r["name"], "PASS" if r["ok"] else "FAIL", r.get("tstates"), r.get("site_bytes", 0),
-                        r["detail"]))
-            if not a.only:
-                # built-in: the machine is sane after a stack overflow -- a second program compiles
-                # and runs in the same machine state (no snapshot restore in between)
-                ov = c2src.lines_of(open(os.path.join(ROOT, "tests", "run", "stack_overflow.c")).read())
-                r1 = exectest.compile_and_run(m, ov, audit=False)
-                r2 = exectest.compile_and_run(m, ["int f(int x) { return x * 3; }", "int main(void) { return f(14); }"],
-                                              restore=False)
-                ok = (r1.ran and r1.a == 1 and r1.sp == 0xFF02 and r1.depth == 0 and r2.ran and r2.a == 0
-                      and r2.hl == 42 and not r2.audit)
-                msg = "" if ok else "overflow run a=%s sp=%04X; next run hl=%s a=%s %s" % (
-                    r1.a, r1.sp, getattr(r2, "hl", None), getattr(r2, "a", None), r2.audit)
-                results["exec"].append(dict(case="(built-in) recovery after a stack overflow", ok=ok, msg=msg,
-                                            info=None))
-                n, p = counts.get("run", (0, 0))
-                counts["run"] = (n + 1, p + ok)
-                if not ok:
-                    failed += 1
-                    print("exec: FAIL recovery after a stack overflow: " + msg)
-            if not a.only:
-                # built-in: the function -> line table (spec.md 5.9): one record per defined
-                # function, [link][address][line of the definition's first token]
-                src = ["int f(void) { return 1; }", "", "static", "int g(int x)", "{", "    return x;", "}",
-                       "int main(void) { return f() + g(1); }"]
-                r = exectest.compile_and_run(m, src)
-                recs, a_ = [], m.w16(S("RUN_FNLINES"))
-                while a_ and len(recs) < 10:
-                    recs.append((m.w16(a_ + 2), m.w16(a_ + 4)))
-                    a_ = m.w16(a_)
-                fn = {e.name: e.val for e in r.globals if e.kind == 2}
-                want = sorted([(fn["f"], 1), (fn["g"], 3), (fn["main"], 8)])
-                ok = r.ran and r.hl == 2 and sorted(recs) == want
-                msg = "" if ok else "records %r, expected %r" % (recs, want)
-                # built-in: every run starts rand() afresh (RT_RUN clears its state LIB_RND: srand(1)'s sequence)
-                m.restore()
-                m.write(S("LIB_RND"), b"\x34\x12")
-                r2 = exectest.compile_and_run(m, ["int main(void) { return 0; }"], restore=False)
-                ok2 = r2.ran and m.w16(S("LIB_RND")) == 0
-                for name, okk, mm in (("(built-in) the function -> line table", ok, msg),
-                                      ("(built-in) rand() starts afresh in every run", ok2,
-                                       "" if ok2 else "LIB_RND %04X" % m.w16(S("LIB_RND")))):
-                    results["exec"].append(dict(case=name, ok=okk, msg=mm, info=None))
-                    n, p_ = counts.get("run", (0, 0))
-                    counts["run"] = (n + 1, p_ + okk)
-                    if not okk:
-                        failed += 1
-                        print("exec: FAIL %s: %s" % (name, mm))
-            if not a.only:
-                for name, ok, msg in phase4_builtins(m):
-                    results["exec"].append(dict(case=name, ok=ok, msg=msg, info=None))
-                    n, p_ = counts.get("mem", (0, 0))
-                    counts["mem"] = (n + 1, p_ + ok)
-                    if not ok:
-                        failed += 1
-                        print("exec: FAIL %s: %s" % (name, msg))
-                    if "IM 1" in name:
-                        print("measured: %s" % msg)
-            if not a.only:
-                for name, ok, msg in phase3_builtins(m):
-                    results["exec"].append(dict(case=name, ok=ok, msg=msg, info=None))
-                    n, p_ = counts.get("rt", (0, 0))
-                    counts["rt"] = (n + 1, p_ + ok)
-                    if not ok:
-                        failed += 1
-                        print("exec: FAIL %s: %s" % (name, msg))
-                    if "ISR" in name or "name search" in name:
-                        print("measured: %s" % msg)
-                        results["isr" if "ISR" in name else "libfind"] = msg
-            if "bench" in suites and not a.only:
-                results["spike"] = stmtbench.measure(m)
-                for r in results["spike"]:
-                    failed += not r["ok"]
-                    if "bytes" not in r:
-                        print("spike: FAIL %s" % r)
-                        continue
-                    print("spike: %-20s %s %3d B (spike %3d) %7d T (spike %7d)" % (
-                        r["name"], "PASS" if r["ok"] else "FAIL", r["bytes"], r["spike_bytes"], r["tstates"],
-                        r["spike_tstates"]))
-            for g, (n, p) in sorted(counts.items()):
-                print("exec %-8s %d/%d cases pass" % (g + ":", p, n))
-            if lines:
-                results["compile_speed"] = dict(lines=lines, tstates=tstates, t_per_line=tstates / lines,
-                                                ms_per_line=tstates / lines / 3528.0)
-                print("compile speed: %d lines in %d T = %.0f T/line (%.2f ms/line at 3.528 MHz)" % (
-                    lines, tstates, tstates / lines, tstates / lines / 3528.0))
-        finally:
-            m.stop()
-
-    # ---- lexer cases and throughput on the test image
-    if "lexer" not in suites and "bench" not in suites:
-        cases = []
-    m = Machine(os.path.join(ROOT, "build", "test"), a.port)
-    try:
-        if "lexer" not in suites and "bench" not in suites:
-            raise StopIteration
-        m.start()
+    if "lexer" in suites:
         cases = sorted(glob.glob(os.path.join(ROOT, "tests", "lexer", "**", "*.c"), recursive=True))
-        if a.only:
-            cases = [c for c in cases if a.only in c]
-        if "lexer" not in suites:
-            cases = []
-        npass = 0
-        for c in cases:
+        for c in [c for c in cases if not only or only in c]:
             ok, msg, info = check_lexer_case(m, c)
             rel = os.path.relpath(c, ROOT)
-            results["lexer"].append(dict(case=rel, ok=ok, msg=msg, info=info))
-            npass += ok
+            rows.append(dict(case=rel, ok=ok, msg=msg, info=info))
             if not ok:
-                failed += 1
-                print("lexer: FAIL %s: %s" % (rel, msg))
-        if not a.only and "lexer" in suites:
-            # built-in case: a truly empty line store (no records) gives one EOF token, line 1, at a
-            # line start (a .c file always has at least its expectation line)
+                out.append("lexer: FAIL %s: %s" % (rel, msg))
+        if not only:
+            # a truly empty line store (no records) gives one EOF token, line 1, at a line start (a .c
+            # file always has at least its expectation line)
             m.restore()
             m.put_store(b"")
             m.write(TEST_AREA + 2, 0)
@@ -649,67 +593,297 @@ def main():
             toks, err = decode_dump(m.read(TEST_DUMP_DATA, m.w16(TEST_AREA) - TEST_DUMP_DATA))
             ok = (r["ok"] and err is None and len(toks) == 1 and
                   toks[0].key() == (clex.TK["TK_EOF"], clex.TF_BOL, 1, None, None))
-            results["lexer"].append(dict(case="(built-in) empty line store", ok=ok, msg="" if ok else repr(toks),
-                                         info=None))
-            npass += ok
-            cases.append("(built-in) empty line store")
+            rows.append(dict(case="(built-in) empty line store", ok=ok, msg="" if ok else repr(toks), info=None))
             if not ok:
-                failed += 1
-                print("lexer: FAIL empty line store: %r %s" % (toks, err))
-            # built-in raw-record cases: line-store contents the editor and c2src.py never produce
-            # (lines over 127 characters, bytes outside 32-126); the lexer must still be safe
+                out.append("lexer: FAIL empty line store: %r %s" % (toks, err))
+            # raw-record cases: line-store contents the editor and c2src.py never produce (lines over 127
+            # characters, bytes outside 32-126); the lexer must still be safe
             for name, lines, want in RAW_CASES:
                 ok, msg = check_raw_case(m, lines, want)
-                results["lexer"].append(dict(case="(built-in raw) " + name, ok=ok, msg=msg, info=None))
-                cases.append("(built-in raw) " + name)
-                npass += ok
+                rows.append(dict(case="(built-in raw) " + name, ok=ok, msg=msg, info=None))
                 if not ok:
-                    failed += 1
-                    print("lexer: FAIL raw %s: %s" % (name, msg))
-        if "lexer" in suites:
-            print("lexer: %d/%d cases pass" % (npass, len(cases)))
-        for b in sorted(glob.glob(os.path.join(ROOT, "tests", "bench", "*.c"))):
-            if "bench" not in suites:
-                break
-            lines = c2src.lines_of(open(b, encoding="latin-1").read())
-            recs = c2src.records(lines)
-            # correctness of the sample first (full dump against the reference)
-            ok, msg, info = check_lexer_case(m, b, ref_only=True) if os.path.basename(b).startswith("lex") else (True, "", {})
-            m.restore()
-            m.put_store(recs)
-            r = m.call("TEST_LEX_COUNT", maxi=50_000_000, t0="TEST_LEX_COUNT.t0", t1="TEST_LEX_COUNT.t1")
-            ntok = m.w16(TEST_AREA + 3)
-            errn = m.read(m.sym("CC_ERRNUM"), 1)[0]
-            text_bytes = sum(len(l) + 1 for l in lines)
-            row = dict(sample=os.path.relpath(b, ROOT), ok=ok and r["ok"] and errn == 0, msg=msg,
-                       lines=len(lines), text_bytes=text_bytes, store_bytes=len(recs), tokens=ntok,
-                       tstates=r["tstates"],
-                       t_per_byte=r["tstates"] / text_bytes if r["tstates"] else None,
-                       t_per_token=r["tstates"] / ntok if r["tstates"] else None,
-                       t_per_line=r["tstates"] / len(lines) if r["tstates"] else None)
-            results["bench"].append(row)
-            failed += not row["ok"]
-            print("bench %s: %s %d lines, %d text bytes, %d tokens, %s T = %.1f T/byte, %.0f T/token, "
-                  "%.0f T/line (%.2f ms/line at 3.528 MHz)" % (
-                      row["sample"], "PASS" if row["ok"] else "FAIL " + msg, row["lines"], text_bytes, ntok,
-                      r["tstates"], row["t_per_byte"] or 0, row["t_per_token"] or 0, row["t_per_line"] or 0,
-                      (row["t_per_line"] or 0) / 3528.0))
-    except StopIteration:
-        pass
-    finally:
-        m.stop()
-    # ---- the shell (Phase 5): the editor, the C punctuation, RUN, typing cost, the redraw oracle
+                    out.append("lexer: FAIL raw %s: %s" % (name, msg))
+        failed += sum(not r["ok"] for r in rows)
+    for b in sorted(glob.glob(os.path.join(ROOT, "tests", "bench", "*.c"))) if "bench" in suites else []:
+        lines = c2src.lines_of(open(b, encoding="latin-1").read())
+        recs = c2src.records(lines)
+        ok, msg, info = check_lexer_case(m, b, ref_only=True) if os.path.basename(b).startswith("lex") else (True, "", {})
+        m.restore()
+        m.put_store(recs)
+        r = m.call("TEST_LEX_COUNT", maxi=50_000_000, t0="TEST_LEX_COUNT.t0", t1="TEST_LEX_COUNT.t1")
+        ntok = m.w16(TEST_AREA + 3)
+        errn = m.read(m.sym("CC_ERRNUM"), 1)[0]
+        text_bytes = sum(len(l) + 1 for l in lines)
+        row = dict(sample=os.path.relpath(b, ROOT), ok=ok and r["ok"] and errn == 0, msg=msg,
+                   lines=len(lines), text_bytes=text_bytes, store_bytes=len(recs), tokens=ntok,
+                   tstates=r["tstates"],
+                   t_per_byte=r["tstates"] / text_bytes if r["tstates"] else None,
+                   t_per_token=r["tstates"] / ntok if r["tstates"] else None,
+                   t_per_line=r["tstates"] / len(lines) if r["tstates"] else None)
+        bench.append(row)
+        failed += not row["ok"]
+        out.append("bench %s: %s %d lines, %d text bytes, %d tokens, %s T = %.1f T/byte, %.0f T/token, "
+                   "%.0f T/line (%.2f ms/line at 3.528 MHz)" % (
+                       row["sample"], "PASS" if row["ok"] else "FAIL " + msg, row["lines"], text_bytes, ntok,
+                       r["tstates"], row["t_per_byte"] or 0, row["t_per_token"] or 0, row["t_per_line"] or 0,
+                       (row["t_per_line"] or 0) / 3528.0))
+    return dict(rows={"lexer": rows, "bench": bench}, failed=failed, out=out)
+
+
+def _case_task(module, prefix, suite):
+    def task(m, arg, only, suites):
+        name = arg
+        title, fn = [(c[1], c[-1]) for c in module.CASES if c[0] == name][0]
+        sh = getattr(m, "_shell", None) or shelltest.Shell(m)
+        m._shell = sh
+        sh.measured = None
+        try:
+            ok, detail = fn(sh)
+        except Exception as e:                      # noqa: BLE001 -- a case that crashes fails
+            ok, detail = False, "%s: %s" % (type(e).__name__, e)
+        extra = {"typing": sh.measured} if getattr(sh, "measured", None) else {}
+        return dict(rows={suite: [dict(case=name, title=title, ok=ok, detail=detail)]}, failed=int(not ok),
+                    out=["%s: %-34s %s %s" % (prefix, name, "PASS" if ok else "FAIL", detail if not ok else "")],
+                    extra=extra)
+    return task
+
+
+t_shell = _case_task(shelltest, "shell", "shell")
+t_e2e = _case_task(e2etest, "e2e", "e2e")
+
+
+def t_corpus(m, arg, only, suites):
+    k, n = arg
+    sh = getattr(m, "_shell", None) or shelltest.Shell(m)
+    m._shell = sh
+    out = []
+    rows = e2etest.run_corpus(m, sh, _shard(e2etest.corpus([only] if only else None), k, n), out=out.append)
+    return dict(rows={"e2e_corpus": rows}, failed=sum(not r["ok"] for r in rows), out=out)
+
+
+def t_canary(m, arg, only, suites):
+    k, n = arg
+    out = []
+    box = [m]
+
+    def restart():
+        box[0].stop()
+        box[0].start()
+        return box[0]
+    rows = []
+    for rec in canary.check_all(m, _shard(canary.corpus(only), k, n), restart):
+        rows.append(rec)
+        if not rec["ok"]:
+            out.append("canary: FAIL %s: %s" % (rec["case"], rec["msg"]))
+    return dict(rows={"canary": rows}, failed=sum(not r["ok"] for r in rows), out=out)
+
+
+TASKS = dict(boot=t_boot, decl=t_decl, exec=t_exec, execb=t_exec_builtins, lexer=t_lexer, shell=t_shell,
+             e2e=t_e2e, corpus=t_corpus, canary=t_canary)
+HEAVY = ("typing-cost", "redraw-oracle")
+
+
+def plan(suites, only):
+    """The tasks, the longest first: (kind, image, arg)."""
+    t = []
     if "shell" in suites:
-        nfail, rows, typing = shelltest.run_all(a.port, [a.only] if a.only else None)
-        results["shell"] = rows
-        if typing:
-            results["typing"] = typing
-        failed += nfail
+        sc = [n for n, _, _ in shelltest.CASES if not only or only in n]
+        t += [("shell", "build", c) for c in sc if c in HEAVY]
+    if "canary" in suites:
+        t += [("canary", "build", (k, SHARDS["canary"])) for k in range(SHARDS["canary"])]
+    if "e2e" in suites:
+        t += [("corpus", "build", (k, SHARDS["corpus"])) for k in range(SHARDS["corpus"])]
+    if "exec" in suites:
+        t += [("exec", "build", (k, SHARDS["exec"])) for k in range(SHARDS["exec"])]
+        if not only:
+            t.append(("execb", "build", None))
+    if "decl" in suites:
+        t += [("decl", "build", (k, SHARDS["decl"])) for k in range(SHARDS["decl"])]
+    if "lexer" in suites or "bench" in suites:
+        t.append(("lexer", "build/test", None))
+    if "e2e" in suites:
+        t += [("e2e", "build", n) for n, _, _, _ in e2etest.CASES if not only or only in n]
+    if "shell" in suites:
+        t += [("shell", "build", c) for c in sc if c not in HEAVY]
+    if "boot" in suites:
+        t += [("boot", "build", "production"), ("boot", "build/test", "test")]
+    return t
+
+
+def worker(port, tasks, results, only, suites):
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))  # (the finally below stops the emulator)
+    m = None
+    try:
+        while True:
+            item = tasks.get()
+            if item is None:
+                break
+            idx, (kind, image, arg) = item
+            t0 = time.time()
+            try:
+                if m is None or m.build != os.path.abspath(os.path.join(ROOT, image)):
+                    if m is not None:
+                        m.stop()
+                    m = Machine(os.path.join(ROOT, image), port)
+                    m.start()
+                r = TASKS[kind](m, arg, only, suites)
+            except Exception as e:                  # noqa: BLE001 -- a task that crashes fails; new emulator
+                r = dict(rows={}, failed=1, out=["%s: TASK FAILED %r: %s: %s" % (kind, arg, type(e).__name__, e)])
+                try:
+                    m.stop()
+                except Exception:                   # noqa: BLE001
+                    pass
+                m = None
+            r["kind"], r["wall"], r["idx"] = kind, time.time() - t0, idx
+            results.put(r)
+    finally:
+        if m is not None:
+            m.stop()
+        results.put(None)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=10760)
+    ap.add_argument("--only")
+    ap.add_argument("--json", default=os.path.join(ROOT, "build", "test_results.json"))
+    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench,shell,e2e,canary")
+    ap.add_argument("--workers", type=int, default=max(1, min(8, (os.cpu_count() or 4) - 1)))
+    a = ap.parse_args()
+    suites = a.suite.split(",")
+    t_start = time.time()
+    tasks = plan(suites, a.only)
+    nw = max(1, min(a.workers, len(tasks)))
+    tq, rq = mp.Queue(), mp.Queue()
+    for i, t in enumerate(tasks):
+        tq.put((i, t))
+    for _ in range(nw):
+        tq.put(None)
+    ps = [mp.Process(target=worker, args=(a.port + w, tq, rq, a.only, suites), daemon=True) for w in range(nw)]
+    for p in ps:
+        p.start()
+    print("run_tests: %d tasks on %d emulators" % (len(tasks), nw), flush=True)
+    done, got = 0, []
+    try:
+        while done < nw:
+            r = rq.get()
+            if r is None:
+                done += 1
+                continue
+            got.append(r)
+            for l in r["out"]:
+                if "FAIL" in l:
+                    print(l, flush=True)
+        for p in ps:
+            p.join()
+    finally:                                        # never leave workers (and their emulators) behind
+        for p in ps:
+            if p.is_alive():
+                p.terminate()
+    got.sort(key=lambda r: r["idx"])
+    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[])
+    failed = sum(r["failed"] for r in got)
+    extra = {}
+    canary_rows = []
+    walls = {}
+    for r in got:
+        walls[r["kind"]] = walls.get(r["kind"], 0) + r["wall"]
+        extra.update(r.get("extra") or {})
+        for suite, rows in r["rows"].items():
+            if suite == "boot":
+                for b in rows:
+                    results["boot"][b["image"]] = dict(boot_tstates=b["boot_tstates"], checks=b["checks"])
+            elif suite == "canary":
+                canary_rows += rows
+            else:
+                results[suite] += rows
+    results.update(extra)
+    # ---- the report, suite by suite
+    for r in got:
+        if r["kind"] == "boot":
+            for l in r["out"]:
+                print(l)
+    if "decl" in suites:
+        dr = results["decl"]
+        nerr = sum(1 for x in dr if x["ok"] and x["info"] and x["info"]["error"])
+        print("decl: %d/%d cases pass (%d declaration cases, %d error cases)" % (
+            sum(x["ok"] for x in dr), len(dr), sum(x["ok"] for x in dr) - nerr, nerr))
+        for w in results.get("decl_ws", []):
+            print("workspace: %-26s %5.1f B each   (%s)" % (w["what"], w["bytes_each"], w["detail"]))
+    if "exec" in suites:
+        for r in got:
+            if r["kind"] == "execb":
+                for l in r["out"]:
+                    if not l.startswith("exec: FAIL"):
+                        print(l)
+        counts = {}
+        lines = tstates = 0
+        for x in results["exec"]:
+            g = x.get("group") or x["case"].split(os.sep)[1]
+            n, p_ = counts.get(g, (0, 0))
+            counts[g] = (n + 1, p_ + x["ok"])
+            if x["ok"] and x["info"] and not x["info"]["error"]:
+                lines += x["info"]["lines"]
+                tstates += x["info"]["compile_t"]
+        for g, (n, p_) in sorted(counts.items()):
+            print("exec %-8s %d/%d cases pass" % (g + ":", p_, n))
+        if lines:
+            results["compile_speed"] = dict(lines=lines, tstates=tstates, t_per_line=tstates / lines,
+                                            ms_per_line=tstates / lines / 3528.0)
+            print("compile speed: %d lines in %d T = %.0f T/line (%.2f ms/line at 3.528 MHz)" % (
+                lines, tstates, tstates / lines, tstates / lines / 3528.0))
+    if "lexer" in suites or "bench" in suites:
+        for r in got:
+            if r["kind"] == "lexer":
+                for l in r["out"]:
+                    if l.startswith("bench"):
+                        print(l)
+        if "lexer" in suites:
+            print("lexer: %d/%d cases pass" % (sum(x["ok"] for x in results["lexer"]), len(results["lexer"])))
+    if "shell" in suites:
+        sr = results["shell"]
+        print("shell: %d/%d cases pass" % (sum(x["ok"] for x in sr), len(sr)))
+        for k, v in (results.get("typing") or {}).items():
+            print("measured: keys %-16s %2d keys, mean %7d T, max %7d T, %d screen clears%s" % (
+                k, v["keys"], v["mean"], v["max"], v["cls_keys"],
+                ("   (V2: mean %d T, max %d T)" % (v["v2_mean"], v["v2_max"])) if "v2_mean" in v else ""))
+    if "e2e" in suites:
+        er, cr = results["e2e"], results["e2e_corpus"]
+        typed = [x for x in er if x["case"].startswith("typed-")]
+        print("e2e: %d/%d workflow cases pass (%d typed programs)" % (sum(x["ok"] for x in er), len(er), len(typed)))
+        s = e2etest.summarise_corpus(cr)
+        results["e2e_summary"] = s
+        print("e2e: corpus through the shell's RUN: %d/%d pass; compile speed through RUN %s ms per line (%d lines, "
+              "%d T); compile errors reported through RUN: %d numbers %s" % (
+                  sum(x["ok"] for x in cr), len(cr), "%.2f" % s["ms_per_line"] if s["ms_per_line"] else "-",
+                  s["lines"], s["tstates"], len(s["errors"]), s["errors"]))
+        if not a.only:
+            # every compile error class positions the cursor on its line through RUN (project_plan.md 8):
+            # each number reported by a passing case (the corpus, and STRING TOO LONG's own case)
+            seen = set(s["errors"]) | ({17} if any(x["ok"] for x in er if x["case"] == "diag-string-too-long") else set())
+            missing = sorted(n for k, n in e2etest.gen_diag.messages() if k == "E" and n not in seen)
+            results["e2e_summary"]["errors_missing"] = missing
+            if missing:
+                failed += 1
+                print("e2e: FAIL compile errors never reported through RUN with the cursor checked: %s" % missing)
+            else:
+                print("e2e: every compile error number (%d) reported through RUN with the cursor on its line" % len(seen))
+    if "canary" in suites:
+        canary_rows.sort(key=lambda r: r["case"])
+        cs, line = canary.summary(canary_rows, walls.get("canary", 0))
+        results["canary"] = cs
+        with open(os.path.join(ROOT, "build", "canary.json"), "w") as f:
+            json.dump(dict(summary=cs, cases=canary_rows), f, indent=1)
+        print(line.replace("; %.0f s" % walls.get("canary", 0), "; %.0f s of emulator time" % walls.get("canary", 0)))
     results["failed"] = failed
     results["wall_s"] = round(time.time() - t_start, 1)
+    results["task_wall_s"] = {k: round(v, 1) for k, v in walls.items()}
     with open(a.json, "w") as f:
         json.dump(results, f, indent=1)
-    print("TOTAL: %s (%d failures), %.0f s" % ("PASS" if not failed else "FAIL", failed, results["wall_s"]))
+    print("task time per kind (s): %s" % ", ".join("%s %.0f" % kv for kv in sorted(walls.items())))
+    print("TOTAL: %s (%d failures), %.0f s on %d emulators" % ("PASS" if not failed else "FAIL", failed,
+                                                               results["wall_s"], nw))
     return 1 if failed else 0
 
 

@@ -128,19 +128,50 @@ def press_break(m, down):
         m.cmd("send-keys-event %d %d" % (code, 1 if down else 0))
 
 
+def call_safe(m, routine, maxi=100_000):
+    """Call a routine (name or address) from wherever the machine stopped and put every register
+    back: the call's stack is 64 bytes below the live one, so a stopped shell's frames (just below
+    $FF00) and its registers survive (Phase 6). Returns True when it returned."""
+    from lcharness import STOP_ADDR
+    rg = m.regs()
+    sp = (rg["SP"] - 64) & 0xFFFF
+    m.write(STOP_ADDR, b"\x18\xFE")
+    m.write(sp, struct.pack("<H", STOP_ADDR))
+    m.setreg("SP", sp)
+    m.setreg("PC", m.sym(routine) if isinstance(routine, str) else routine)
+    ok = m.run_to([STOP_ADDR], maxi) == STOP_ADDR
+    for r in ("AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC"):
+        if r in rg:
+            m.setreg(r, rg[r])
+    return ok
+
+
 def ay_regs(m):
     """The 16 AY registers, read back by a probe routine run in the emulator (port $F5 selects,
-    $F6 reads), as V2's AY tests do."""
-    from lcharness import RET_SLOT, STOP_ADDR
+    $F6 reads), as V2's AY tests do. The machine's registers are kept (call_safe)."""
     code = bytes([0x21, AY_OUT & 255, AY_OUT >> 8,  # ld hl,AY_OUT
                   0x0E, 0xF6, 0xAF,                 # ld c,$F6 / xor a
                   0xD3, 0xF5, 0xED, 0x40, 0x70,     # lp: out ($F5),a / in b,(c) / ld (hl),b
                   0x23, 0x3C, 0xFE, 0x10, 0x20, 0xF5,   # inc hl / inc a / cp 16 / jr nz,lp
                   0xC9])                            # ret
     m.write(AY_PROBE, code)
-    r = m.call(AY_PROBE, maxi=10_000)
-    assert r["ok"], "AY probe did not return"
+    assert call_safe(m, AY_PROBE, maxi=10_000), "AY probe did not return"
     return list(m.read(AY_OUT, 16))
+
+
+def read_chunk6(m):
+    """Chunk 6 as RAM ($C000-$DFFF), whatever the paging: with the EXROM paged in (the shell) it is
+    paged out for the read and back in (ZRCP reads what is mapped); the registers are kept."""
+    S = m.sym
+    depth = m.read(S("BANK_EXROM_DEPTH"), 1)[0]
+    if not depth:
+        return m.read(0xC000, 0x2000)
+    m.write(S("BANK_EXROM_DEPTH"), 1)
+    assert call_safe(m, "BANK_PAGE_EXROM_OUT"), "BANK_PAGE_EXROM_OUT did not return"
+    data = m.read(0xC000, 0x2000)
+    assert call_safe(m, "BANK_PAGE_EXROM_IN"), "BANK_PAGE_EXROM_IN did not return"
+    m.write(S("BANK_EXROM_DEPTH"), depth)
+    return data
 
 
 STACK_CANARY = (0xF400, 0xFF00)          # region 3 and the stack: below RET_SLOT
@@ -148,7 +179,7 @@ CANARY = 0xA5
 
 
 def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=True, depth=0, keys=None,
-                    brk=None, stack_canary=False, invariants=False, canary=False):
+                    brk=None, stack_canary=False, invariants=False, canary=False, shell=None):
     """restore=False: keep the machine as the previous run left it (recovery tests). depth=1: run
     with the EXROM paged in, as the shell does (RT_RUN pages it out and back). keys: the keyboard
     feed (parse_keys). brk: ("at", symbol, n) or ("after", n): BREAK pressed then.
@@ -156,6 +187,8 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
     the case with res.violation. canary: the RAM canary (memguard.Canary): res.canary_hits (the
     compile's and the run's) and res.stack_lows."""
     from lcharness import STOP_ADDR
+    if shell is not None:
+        return shell_run(m, shell, lines, maxi, audit, keys, brk, stack_canary, invariants)
     S = m.sym
     res = Result()
     res.audit = []
@@ -205,6 +238,155 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
         assert (mem.w(lim), mem.w(lim + 2)) == (0xF400, 0xF800), "stacklow: image region 3 is in use"
         m.write(STACK_CANARY[0], bytes([CANARY]) * (STACK_CANARY[1] - STACK_CANARY[0]))
     m.setreg("IX", SENTINEL_IX)
+    pc, pressed = run_loop(m, res, funcs, STOP_ADDR, maxi, audit, keys, brk, start=lambda st, n: call_to(m, "RT_RUN", st, n))
+    res.run_t = m.tstates()
+    res.ran = pc == STOP_ADDR
+    if invariants:
+        if not res.ran:
+            res.violation += ["run: " + v for v in memguard.fired(m)]
+        memguard.arm(m, False)
+    if stack_canary:
+        d = m.read(STACK_CANARY[0], STACK_CANARY[1] - STACK_CANARY[0])
+        res.stack_low = next((STACK_CANARY[0] + i for i, x in enumerate(d) if x != CANARY), None)
+    if pressed:
+        press_break(m, False)
+    rg = m.regs()
+    res.ix = rg.get("IX")
+    res.hl = rg["HL"]
+    res.a = rg["A"] if "A" in rg else (rg.get("AF", 0) >> 8)
+    res.sp = rg["SP"]
+    res.depth = m.read(S("BANK_EXROM_DEPTH"), 1)[0]
+    res.pc = pc
+    res.rtline = m.w16(S("RT_ERRLINE"))
+    res.src_ok = m.read(S("PROG_AREA_START"), len(src0)) == src0 and \
+        m.w16(S("PROG_END")) == S("PROG_AREA_START") + len(src0)
+    if guard and res.ran:                       # (with the EXROM paged in, chunk 6 reads as the EXROM)
+        rg = m.regs()
+        paged = m.read(S("BANK_EXROM_DEPTH"), 1)[0]
+        guard.run_stack_low()
+        if paged:
+            m.write(S("BANK_EXROM_DEPTH"), 1)
+            assert m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)["ok"]
+        res.canary_hits += [dict(h, phase="run") for h in guard.after_run()]
+        if paged:
+            assert m.call("BANK_PAGE_EXROM_IN", maxi=100_000)["ok"]
+            m.write(S("BANK_EXROM_DEPTH"), paged)
+        for r_ in ("SP", "PC"):
+            m.setreg(r_, rg[r_])
+    res.mem = Mem(m)
+    return res
+
+
+
+
+def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants):
+    """compile_and_run's shell path (Phase 6): the source injected, the editor on the append line,
+    `run` typed and ENTER through the ISR's latch; the compile and the run are the shell's own
+    (SH_COMPILE from paging depth 1, RT_RUN from SH_RUN). After the run, the program's screen and
+    memory are kept in res.rows and res.mem (the report then overwrites rows 22-23). Then the
+    report (res.report: the texts of rows 22 and 23, as built and as shown) and a key back to the
+    editor (res.after)."""
+    S = m.sym
+    res = Result()
+    res.audit, res.violation, res.canary_hits, res.stack_lows = [], [], [], {}
+    res.report = res.after = res.rows = res.ayregs = None
+    res.ran = res.forced_break = False
+    res.stack_low = None
+    sh.load(lines, len(lines))
+    base = S("PROG_AREA_START")
+    src0 = m.read(base, m.w16(S("PROG_END")) - base)
+    for ch in "run":
+        sh.key(ord(ch))
+    m.write(S("KBD_LASTK"), 13)
+    m.write(S("KBD_KEYHIT"), 0xFF)
+    m.cmd("cpu-step")
+    pc = m.run_to([S("SH_COMPILE")], 60_000_000)
+    assert pc == S("SH_COMPILE"), "RUN did not reach SH_COMPILE (PC=%04X)" % pc
+    memguard.arm(m, invariants)
+    m.tstates_reset()
+    pc = m.run_to([m.xsym("SH_RUN.ccdone")], 60_000_000)
+    res.compile_ok = pc == S("SH_RUN.ccdone")
+    res.compile_t = m.tstates()
+    if invariants and not res.compile_ok:
+        res.violation = ["compile: " + v for v in memguard.fired(m)]
+    mem = Mem(m)
+    res.errnum = mem.b(S("CC_ERRNUM"))
+    res.errline = mem.w(S("CC_ERRLINE"))
+    res.globals = chain(mem, mem.w(S("SYM_GLO")))
+    res.code_end = mem.w(S("CG_PC"))
+    res.limits = memguard.limits(m)
+    res.mem = mem
+    if not res.compile_ok:
+        memguard.arm(m, False)
+        return res
+    if not res.errnum:
+        funcs = sorted(((alloc_order(e.val), e) for e in res.globals if e.kind == 2 and e.flags & 8 and e.val >= 0x6000),
+                       key=lambda t: t[0])
+        pc = m.run_to([S("RT_RUN")], 10_000_000)
+        assert pc == S("RT_RUN"), "SH_RUN did not reach RT_RUN (PC=%04X)" % pc
+        rg = m.regs()
+        res.sp_expected = rg["SP"]              # (at RT_RUN's `ret`: the run's end, in HOME)
+        if stack_canary:
+            lim = res.limits[2]                 # region 3 [low][high] must be [base][end]: unused
+            assert lim == (0xF400, 0xF800), "stacklow: image region 3 is in use"
+            m.write(STACK_CANARY[0], bytes([CANARY]) * (rg["SP"] - STACK_CANARY[0]))
+        m.setreg("IX", SENTINEL_IX)
+        end = S("RT_RUN.leave")                 # (SH_RUN.rtdone is in the EXROM: chunk 6)
+        pc, pressed = run_loop(m, res, funcs, end, maxi, audit, keys, brk,
+                               start=lambda st, n: m.run_to([end] + st, n))
+        res.run_t = m.tstates()
+        res.ran = pc == end
+        if invariants:
+            if not res.ran:
+                res.violation += ["run: " + v for v in memguard.fired(m)]
+            memguard.arm(m, False)
+        if not res.ran and pc not in (S("RT_BREAKREQ"),):
+            press_break(m, True)                # the program goes on: BREAK, so the shell can report
+            pressed = res.forced_break = True
+            pc = m.run_to([end], 20_000_000)
+        if stack_canary:
+            d = m.read(STACK_CANARY[0], res.sp_expected - STACK_CANARY[0])
+            res.stack_low = next((STACK_CANARY[0] + i for i, x in enumerate(d) if x != CANARY), None)
+        if pressed:
+            press_break(m, False)
+        rg = m.regs()
+        res.ix, res.hl, res.sp, res.pc = rg.get("IX"), rg["HL"], rg["SP"], pc
+        res.a = rg["A"] if "A" in rg else (rg.get("AF", 0) >> 8)
+        res.depth = m.read(S("BANK_EXROM_DEPTH"), 1)[0]
+        res.rtline = m.w16(S("RT_ERRLINE"))
+        res.src_ok = m.read(base, len(src0)) == src0 and m.w16(S("PROG_END")) == base + len(src0)
+        if pc != end:
+            return res
+        res.rows = m.screen_rows()
+        mem = Mem(m)                            # the memory after the run, before the report
+        scr = m.read(0x4000, 0x2000)            # the screen, the system variables, the Leap-C cells
+        for p in range(0x20):
+            mem.pages[0x40 + p] = scr[p << 8:(p + 1) << 8]
+        c6 = read_chunk6(m)
+        for p in range(0x20):
+            mem.pages[0xC0 + p] = c6[p << 8:(p + 1) << 8]
+        res.ayregs = ay_regs(m)
+        res.mem = mem
+    else:
+        memguard.arm(m, False)
+    # the report, then a key back to the editor
+    pc = m.run_to([m.xsym("SH_REPORT")], 60_000_000)
+    assert pc == S("SH_REPORT"), "no report (PC=%04X)" % pc
+    built = tuple(m.read(S(b), 33).split(b"\0")[0].decode("latin-1") for b in ("SH_REPORT_BUF", "SH_STATUS_BUF"))
+    pc = m.run_to([S("IO_READ_KEY")], 60_000_000)
+    assert pc == S("IO_READ_KEY"), "no key wait after the report (PC=%04X)" % pc
+    shown = tuple(m.screen_rows()[22:24])
+    res.report = dict(built=built, shown=shown, wait=m.w16(m.regs()["SP"]) == S("SH_WAIT_KEY") + 3)
+    sh.key(ord(" "))
+    res.after = dict(editor=sh.in_editor(), index=sh.index(), edit=sh.edit_line(),
+                     depth=m.read(S("BANK_EXROM_DEPTH"), 1)[0], running=m.read(S("RUNNING"), 1)[0],
+                     source=m.read(base, len(src0)) == src0)
+    return res
+
+def run_loop(m, res, funcs, end, maxi, audit, keys, brk, start):
+    """Run the program to `end` (the run's return), feeding keys, pressing BREAK, auditing every
+    LEAVE (shared by the direct and the shell paths). start(stops, n) starts it. Returns (pc, pressed)."""
+    S = m.sym
     stops = [S("RT_RUN.back")] + ([S("RST_LEAVE")] if audit else [])
     keyq = list(keys or [])
     res.keys_left = None
@@ -216,15 +398,15 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
     res.breakreq = []
     m.tstates_reset()
     if brk and brk[0] == "after":
-        pc = call_to(m, "RT_RUN", stops, brk[1])
-        if pc not in stops and pc != STOP_ADDR:
+        pc = start(stops, brk[1])
+        if pc not in stops and pc != end:
             press_break(m, True)
             pressed = True
-            pc = m.run_to([STOP_ADDR] + stops, maxi)
+            pc = m.run_to([end] + stops, maxi)
     else:
-        pc = call_to(m, "RT_RUN", stops, maxi)
+        pc = start(stops, maxi)
     hits = 0
-    while pc != STOP_ADDR and pc in stops:
+    while pc != end and pc in stops:
         rg = m.regs()
         if brk and pc == S("RT_BREAKREQ"):
             res.breakreq.append(dict(pc=m.w16(rg["SP"] + 12), running=m.read(S("RUNNING"), 1)[0],
@@ -264,47 +446,70 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
                 res.audit.append("SP after main %04X, RUN_SP %04X" % (rg["SP"], m.w16(S("RUN_SP"))))
             stops = [s for s in stops if s != S("RT_RUN.back")]
         m.cmd("cpu-step")
-        pc = m.run_to([STOP_ADDR] + stops, maxi)
-    res.run_t = m.tstates()
-    res.ran = pc == STOP_ADDR
-    if invariants:
-        if not res.ran:
-            res.violation += ["run: " + v for v in memguard.fired(m)]
-        memguard.arm(m, False)
-    if stack_canary:
-        d = m.read(STACK_CANARY[0], STACK_CANARY[1] - STACK_CANARY[0])
-        res.stack_low = next((STACK_CANARY[0] + i for i, x in enumerate(d) if x != CANARY), None)
-    if pressed:
-        press_break(m, False)
-    rg = m.regs()
-    res.ix = rg.get("IX")
-    res.hl = rg["HL"]
-    res.a = rg["A"] if "A" in rg else (rg.get("AF", 0) >> 8)
-    res.sp = rg["SP"]
-    res.depth = m.read(S("BANK_EXROM_DEPTH"), 1)[0]
-    res.pc = pc
-    res.rtline = m.w16(S("RT_ERRLINE"))
-    res.src_ok = m.read(S("PROG_AREA_START"), len(src0)) == src0 and \
-        m.w16(S("PROG_END")) == S("PROG_AREA_START") + len(src0)
-    if guard and res.ran:                       # (with the EXROM paged in, chunk 6 reads as the EXROM)
-        rg = m.regs()
-        paged = m.read(S("BANK_EXROM_DEPTH"), 1)[0]
-        guard.run_stack_low()
-        if paged:
-            m.write(S("BANK_EXROM_DEPTH"), 1)
-            assert m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)["ok"]
-        res.canary_hits += [dict(h, phase="run") for h in guard.after_run()]
-        if paged:
-            assert m.call("BANK_PAGE_EXROM_IN", maxi=100_000)["ok"]
-            m.write(S("BANK_EXROM_DEPTH"), paged)
-        for r_ in ("SP", "PC"):
-            m.setreg(r_, rg[r_])
-    res.mem = Mem(m)
-    return res
+        pc = m.run_to([end] + stops, maxi)
+    return pc, pressed
 
 
-def check_case(m, path, guards=False):
-    """guards: run with the banking invariants and the RAM canary (memguard; tools/canary.py)."""
+def expected_report(m, res, lines):
+    """The report the shell must show after shell_run (rows 22 and 23), from the compile's and the
+    run's results: gen_diag's message texts, the image's size from the compiler's limits and the heap
+    from the source's end (spec.md 6.3)."""
+    import gen_diag
+    S = m.sym
+    if res.errnum:
+        return (gen_diag.report("E", res.errnum), "LINE %d" % res.errline if res.errline else "")
+    if res.a:
+        line = "LINE %d" % res.rtline if res.rtline else ""
+        return (gen_diag.report("RT", res.a), line)
+    ex = res.hl - 65536 if res.hl & 0x8000 else res.hl
+    return ("EXIT %d" % ex, "IMAGE %d B  HEAP %d B" % (image_size(res.limits), heap_free(m.w16(S("PROG_END")))))
+
+
+def image_size(limits):
+    """The image's bytes from the compiler's limits [(low, high)] per region (as SH_IMAGE)."""
+    total = 0
+    for k, ((base, end), (low, high)) in enumerate(zip(REGIONS, limits)):
+        used = (end - base) - (high - low)
+        if k == 3 and low == high:              # region 4 reserved by #pragma hires: its data only
+            used = end - high
+        total += used
+    return total
+
+
+def heap_free(prog_end):
+    """The largest block malloc() can return with the source ending at prog_end (as SH_MEMORY)."""
+    return max(0, 0xBFFE - ((prog_end + 1) & ~1) - 2)
+
+
+def check_report(m, res, lines):
+    """The shell path's report and the editor after it (Phase 6)."""
+    msgs = []
+    if res.report is None:
+        return ["no report"]
+    want = expected_report(m, res, lines)
+    if res.report["built"] != want:
+        msgs.append("report %r, expected %r" % (res.report["built"], want))
+    if res.report["shown"] != res.report["built"]:
+        msgs.append("rows 22-23 show %r, not the report %r" % (res.report["shown"], res.report["built"]))
+    if not res.report["wait"]:
+        msgs.append("the report does not wait in SH_WAIT_KEY")
+    a = res.after
+    line = res.errline if res.errnum else (res.rtline if res.a else 0)
+    if not (a["editor"] and a["depth"] == 1 and not a["running"] and a["source"]):
+        msgs.append("after the report: %r" % a)
+    if line:
+        text = lines[line - 1][:127] if line <= len(lines) else ""
+        want_index = line - 1 if line <= len(lines) else len(lines)
+        if a["index"] != want_index or a["edit"] != text:
+            msgs.append("the cursor on line %d %r, expected line %d %r" % (a["index"] + 1, a["edit"], line, text))
+    elif a["index"] != len(lines) or a["edit"] != "":
+        msgs.append("the cursor moved to line %d %r" % (a["index"] + 1, a["edit"]))
+    return msgs
+
+def check_case(m, path, guards=False, shell=None, invariants=None):
+    """guards: run with the banking invariants and the RAM canary (memguard; tools/canary.py).
+    shell (Phase 6): through the shell's real RUN path (shell_run); the report and the editor after
+    it are checked too (check_report). invariants: arm the banking invariants (default: guards)."""
     text, exp = parse_case(path)
     lines = c2src.lines_of(text)
     keys = [k for k, _ in exp]
@@ -334,7 +539,9 @@ def check_case(m, path, guards=False):
     run = run or "stacklow" in keys
     res = compile_and_run(m, lines, maxi=maxi, audit="noaudit" not in keys, run=run, depth=depth,
                           keys=kfeed, brk=brk, stack_canary="stacklow" in keys and not guards,
-                          invariants=guards, canary=guards)
+                          invariants=guards if invariants is None else invariants, canary=guards, shell=shell)
+    if shell is not None:
+        depth = 1                               # (the shell runs programs from paging depth 1)
     msgs = []
     if res.violation:
         msgs.append("banking invariant violated: " + ", ".join(res.violation))
@@ -363,7 +570,7 @@ def check_case(m, path, guards=False):
         else:
             if res.depth != depth:
                 msgs.append("paging depth %d after the run, expected %d" % (res.depth, depth))
-            if res.sp != 0xFF02:
+            if res.sp != (res.sp_expected if shell is not None else 0xFF02):
                 msgs.append("SP %04X after the run" % res.sp)
             if res.ix != SENTINEL_IX:
                 msgs.append("IX %04X after the run, expected %04X" % (res.ix, SENTINEL_IX))
@@ -394,7 +601,7 @@ def check_case(m, path, guards=False):
                 msgs.append("the run wrote the stack down to %s, below $%04X" % (
                     "$%04X" % res.stack_low if res.stack_low is not None else None, lo))
         if k == "screen":
-            rows = rows or m.screen_rows()
+            rows = rows or (res.rows if shell is not None else m.screen_rows())
             n, _, text = body.partition(" ")
             if rows[int(n)] != text.rstrip():
                 msgs.append("screen row %s %r, expected %r" % (n, rows[int(n)], text.rstrip()))
@@ -402,7 +609,7 @@ def check_case(m, path, guards=False):
             if res.rtline != int(toks[0]):
                 msgs.append("runtime error line %d, expected %s" % (res.rtline, toks[0]))
         elif k == "ay":
-            ayr = ayr or ay_regs(m)
+            ayr = ayr or (res.ayregs if shell is not None else ay_regs(m))
             for t in toks:
                 r_, v = t.split("=")
                 if ayr[int(r_)] != int(v, 0):
@@ -430,6 +637,8 @@ def check_case(m, path, guards=False):
                 msgs.append("BREAK was not deferred (NOBRK %s)" % [r_["nobrk"] for r_ in req])
         elif k == "cell":
             got = res.mem.b(m.sym(toks[0]))
+            if shell is not None and toks[0] == "BANK_EXROM_DEPTH":
+                toks[1] = str(depth)            # (the caller's depth again: the shell's)
             if got != int(toks[1], 0):
                 msgs.append("%s = $%02X, expected %s" % (toks[0], got, toks[1]))
         elif k == "mem":
@@ -472,7 +681,9 @@ def check_case(m, path, guards=False):
                         name, end - e.val, res.mem.bytes(e.val, max(0, min(end - e.val, 64))).hex(), n))
     if not exp:
         msgs.append("no expectations in the case")
-    info = dict(error=got_err, compile_t=res.compile_t, lines=len(lines),
+    if shell is not None:
+        msgs += check_report(m, res, lines)
+    info = dict(error=got_err, compile_t=res.compile_t, lines=len(lines), report=getattr(res, "report", None),
                 run_t=getattr(res, "run_t", None), code=res.code_end,
                 stack_low=getattr(res, "stack_low", None), stack_lows=res.stack_lows,
                 canary=res.canary_hits, violation=res.violation)
