@@ -127,8 +127,10 @@ COMP_PAGE0_END:
 
 ; ---------------------------------------------------------------- retained platform (spec.md 2.1)
 COMP_PLATFORM_BEGIN:
+    DEFINE MEM_NO_LINE_EDIT                     ; (MEM_LINE_INSERT, MEM_LINE_DELETE_RANGE: in the EXROM, D11)
     INCLUDE "kernel/memory/memory.asm"
     INCLUDE "kernel/io/io.asm"
+    DEFINE GFX_NO_EDITOR_TEXT                   ; (GFX_PUTCHAR_BOLD, GFX_PRINT_STRING: in the EXROM, D12)
     INCLUDE "kernel/graphics/graphics.asm"
     INCLUDE "kernel/math/math.asm"
     INCLUDE "kernel/interrupt/interrupt.asm"
@@ -173,18 +175,41 @@ CX_FOLD:
     call LEAPC_EXROM_FOLD
     jp   BANK_PAGE_EXROM_OUT
 ; ============================================================================
-; CX_LIBFIND -- the library function named NM: the trampoline to LIB_FIND in the EXROM
-; (src/compiler/libnames.asm; bank rule 3: it reads only the source and its own table)
-; Out: Z: HL = its address, D = its signature, E = its parameter list. NZ: not a library name
-; Destroys: AF, BC, DE, HL
+; CX_XCALL -- call an EXROM-resident compiler routine (bank rule 3: it never touches chunk 6) with the
+; EXROM paged in, through the depth count
+; In:  BC = the routine's EXROM entry (LEAPC_EXROM_*); its own inputs in DE, HL, IX and the cells (A
+;      and F do not survive the paging)
+; Out: the routine's AF, BC, DE, HL, IX
+; A compile error inside it leaves through CC_ERROR, which pages the EXROM out (src/compiler/cerror.asm)
 ; ============================================================================
-CX_LIBFIND:
-    call BANK_PAGE_EXROM_IN
-    call LEAPC_EXROM_LIBFIND
+CX_XCALL:
+    call BANK_PAGE_EXROM_IN            ; (keeps BC, DE, HL)
+    call .go
     push af
     call BANK_PAGE_EXROM_OUT
     pop  af
     ret
+.go:
+    push bc
+    ret
+; LEX_KEYWORD -- keyword or identifier (src/compiler/keywords.asm XK_KEYWORD; Phase 8, ledger L42)
+; In:  TOK_BUF / TOK_LEN = the identifier. Out: A = TK_KW_FIRST + index for a C89 keyword, else
+;      TK_IDENT. Destroys: AF, BC, DE, HL
+LEX_KEYWORD:
+    ld   bc, LEAPC_EXROM_KEYWORD
+    jr   CX_XCALL
+; TY_EQUAL -- are types HL and DE compatible (src/compiler/tyequal.asm XT_EQUAL; Phase 8, ledger L42)?
+; Out: Z: compatible. Errors: E_NESTING. Destroys: AF, BC, DE, HL
+TY_EQUAL:
+    ld   bc, LEAPC_EXROM_TYEQUAL
+    jr   CX_XCALL
+; LIB_BIND -- declare the undeclared identifier NM if it names a library function (spec.md 7.1;
+; src/compiler/libnames.asm XL_BIND; Phase 8, ledger L42)
+; In:  NM_PTR, NM_LEN. Out: Z: IX = the new file-scope entry, C = NS_ORD. NZ: not a library name
+; Errors: E_NOMEM. Destroys: AF, BC, DE, HL, IX
+LIB_BIND:
+    ld   bc, LEAPC_EXROM_LIBBIND
+    jr   CX_XCALL
 ; ============================================================================
 ; SH_COMPILE -- the EXROM shell's RUN: compile the program with chunk 6 paged out (bank rule 3:
 ; the compiler writes the image there), then page the EXROM back in for the shell
@@ -235,8 +260,10 @@ COMP_RTEXIT_BEGIN:
 COMP_RTEXIT_END:
 COMP_LIBRARY_BEGIN:
     INCLUDE "src/runtime/library.asm"
-    INCLUDE "src/runtime/libbind.asm"
 COMP_LIBRARY_END:
+COMP_FLOAT_BEGIN:
+    INCLUDE "src/runtime/float.asm"
+COMP_FLOAT_END:
 
 ; ---------------------------------------------------------------- tape block I/O (spec.md 2.2, 8.3; Phase 7)
 ; The platform's STORAGE_SEND_BLOCK and STORAGE_RECEIVE_BLOCK (platform delta D9: the header logic stays in

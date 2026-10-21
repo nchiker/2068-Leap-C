@@ -11,14 +11,19 @@
 ; CC_ERROR_AT -- the same at the line in HL
 ; In:  A = error number (include/leapc_errors.inc); TOK_LINE (CC_ERROR) or HL (CC_ERROR_AT)
 ; Out: does not return to its caller: CC_ERRNUM = A, CC_ERRLINE = the line, SP = CC_SP, carry
-;      set, then `ret` (to the instruction after the compile entry's guarded call)
-; Destroys: everything except A
+;      set, then `ret` (to the instruction after the compile entry's guarded call); the EXROM paged
+;      out (BANK_EXROM_DEPTH 0, the compiler's own paging state: an error can come from an EXROM-
+;      resident compiler part, Phase 8)
+; Destroys: everything (the error is in CC_ERRNUM)
 ; ============================================================================
 CC_ERROR:
     ld   hl, (TOK_LINE)
 CC_ERROR_AT:
     ld   (CC_ERRNUM), a
     ld   (CC_ERRLINE), hl
+    xor  a
+    ld   (BANK_EXROM_DEPTH), a
+    out  (PORT_BANK_HOME), a           ; chunk 6 = RAM
     ld   sp, (CC_SP)
     scf
     ret

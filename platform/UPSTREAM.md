@@ -20,9 +20,9 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `include/hardware.inc` | ports, screen geometry | both | pristine |
 | `include/keys.inc` | key codes | EXROM | pristine |
 | `include/sysvars.inc` | platform system variables | both | **delta D1** |
-| `kernel/memory/memory.asm` | line store, fill, shift, cold init | HOME | **deltas D2, D5** |
+| `kernel/memory/memory.asm` | line store, fill, shift, cold init (the editor's insert and range delete: EXROM) | both | **deltas D2, D5, D11** |
 | `kernel/io/io.asm` | keyboard | HOME | **delta D7** |
-| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font | HOME | **deltas D6, D8** |
+| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font (the editor's bold and string output: EXROM) | both | **deltas D6, D8, D12** |
 | `kernel/math/math.asm` | 16-bit negate, absolute value, signed compare | HOME | **delta D3** |
 | `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | pristine |
 | `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | pristine |
@@ -30,8 +30,8 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `kernel/storage/storage.asm` | tape: block I/O (HOME), header logic (EXROM) | both | **delta D9** |
 | `rom/exrom_editor.asm` | editor engine | EXROM | pristine |
 | `rom/exrom_sound.asm` | `SOUND` register write | EXROM | pristine |
-| `rom/exrom_format.asm` | integer formatting; float formatting (FP component) | EXROM | pristine |
-| `rom/exrom_calc.asm` | FP calculator (optional component, `spec.md` §4.9) | EXROM | pristine |
+| `rom/exrom_format.asm` | integer formatting (V2's float formatting not assembled) | EXROM | **delta D10** |
+| `rom/exrom_calc.asm` | FP calculator: **not assembled since Phase 8**; kept as the reference the float core (`src/runtime/fpcore.asm`, `spec.md` §4.9) was re-engineered from | — | pristine |
 
 **Not vendored:**
 
@@ -45,7 +45,7 @@ The V2 shell (`rom/exrom_v2_shell.asm` at the tag) is adapted into `src/shell/sh
 
 ## Configuration
 
-The modules are assembled in V2's production configuration (`include/leapc_rom.inc`): `V2_PRODUCTION`, `V2_COMPACT_SYSVARS`, `V2_MAINT_AY_BEEP`, `V2_MAINT_SHARED_WAIT`, `V2_MAINT_AYB_PERIOD_HOME`, `V2_MAINT_SOUND0`, `V2_FAST_REDRAW` and `STORAGE_VERSIONED`.
+The modules are assembled in V2's production configuration (`include/leapc_rom.inc`): `V2_PRODUCTION`, `V2_COMPACT_SYSVARS`, `V2_MAINT_AY_BEEP`, `V2_MAINT_SHARED_WAIT`, `V2_MAINT_AYB_PERIOD_HOME`, `V2_MAINT_SOUND0`, `V2_FAST_REDRAW` and `STORAGE_VERSIONED`; Leap-C's own conditionals select the deltas D9-D12 (`STORAGE_BLOCKS_ONLY`/`STORAGE_NO_BLOCKS`, `LEAPC_FP_CORE`, `MEM_NO_LINE_EDIT`/`MEM_LINE_EDIT_ONLY`, `GFX_NO_EDITOR_TEXT`/`GFX_EDITOR_TEXT_ONLY`).
 
 ## Deltas
 
@@ -60,6 +60,9 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D7 | `kernel/io/io.asm` | `KEY_ASCII_TABLE_SYMBOL`: SYMBOL SHIFT + A S D F G give `~ \| \ { }`, + U Y give `] [`, + H gives `^` (zeros before). `IO_DECODE_KEY` no longer turns SYMBOL SHIFT + A/S into `KEY_NEXT_ERROR`/`KEY_PREV_ERROR` (−19 B) | Phase 5: the C punctuation key map (`spec.md` §6.2, owner-approved baseline). V2's error-navigation codes had no handler in Leap-C (the editor engine passes them to the shell's navigation hook, which ignores them) |
 | D8 | `kernel/graphics/graphics.asm` | `PUNCT_CHAR_TABLE`: 8 entries for `[ ] { } \| ~ ^ \` (font indices 86-93) and the entries reordered by their frequency in C (each keeps its V2 font index); `FONT_TABLE`: the 8 glyphs (64 B); `GFX_CLEAR_ROW_TEXT` deleted (16 B); the file header's glyph count | Phase 5: the C characters' glyphs (`spec.md` §6.2). The table is scanned linearly for every punctuation character drawn, so C's frequent ones first make the editor's redraw faster (measured with the typing cost). `GFX_CLEAR_ROW_TEXT` was V2's status-bar clear; the Leap-C shell clears rows itself (6 kT instead of 23 kT) and nothing else calls it |
 | D9 | `kernel/storage/storage.asm` | Conditional assembly only (no instruction changes): `IFNDEF STORAGE_NO_BLOCKS` around `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK`, `IFNDEF STORAGE_BLOCKS_ONLY` around the rest (`STORAGE_VERSION_WORD` onwards), and a comment. HOME defines `STORAGE_BLOCKS_ONLY` and assembles the block I/O (331 B, byte for byte the vendored routines); the EXROM defines `STORAGE_NO_BLOCKS` and names its trampolines' callers `STORAGE_SEND_BLOCK` / `STORAGE_RECEIVE_BLOCK` (`src/shell/tape.asm`) | Phase 7 (`spec.md` §8.3, `docs/milestones/M7.md`, ledger L37-L38): the data blocks move with chunk 6 paged out, so `tape_save` / `tape_load` reach any address; the header logic stays in the EXROM |
+| D10 | `rom/exrom_format.asm` | Conditional assembly only: `IFNDEF LEAPC_FP_CORE` around V2's float formatting (`BASIC_FLOAT_TO_STRING_EXROM`, 236 B) | Phase 8 (`spec.md` §4.9, ledger L43): Leap-C's float core has its own formatter (`XF_FTOA`, V2's exact fixed-point method with a precision); the integer formatting stays |
+| D11 | `kernel/memory/memory.asm` | Conditional assembly only: `IFNDEF MEM_NO_LINE_EDIT` around `MEM_LINE_INSERT` and `MEM_LINE_DELETE_RANGE` (144 B), `IFNDEF MEM_LINE_EDIT_ONLY` around the rest (after the format constants) | Phase 8 (ledger L44-L45): the EXROM editor is their only caller, so the EXROM assembles them (`MEM_LINE_EDIT_ONLY`) and HOME does not (`MEM_NO_LINE_EDIT`): 144 B of HOME for the float work |
+| D12 | `kernel/graphics/graphics.asm` | Conditional assembly only: `IFNDEF GFX_NO_EDITOR_TEXT` around `GFX_PUTCHAR_BOLD` and `GFX_PRINT_STRING` (32 B), `IFNDEF GFX_EDITOR_TEXT_ONLY` around the rest | Phase 8 (ledger L44-L45): the same for the editor's bold keywords and string output; they call HOME's `GFX_CHAR_SETUP` and `GFX_PUTCHAR`, exported to the EXROM |
 
 ## Names the platform expects from Leap-C
 

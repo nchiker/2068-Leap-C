@@ -17,6 +17,8 @@
 ; Integer constants: decimal, 0x hex, 0 octal, character constants; 0-65535. Type: int if the value
 ; is at most 32767 and there is no u/U suffix, otherwise unsigned int (TF_UNSIGNED). A decimal
 ; constant above 32767 is unsigned int here (C89 would make it long, which Leap-C does not have).
+; Floating constants (Phase 8): digits with a point or an exponent, or a point and digits; the float
+; core converts them (src/runtime/fpcore.asm XF_ATOF, through CX_FOLD) into TOK_BUF (TK_FNUM).
 ;
 ; Errors (include/leapc_errors.inc) go through CC_ERROR at TOK_LINE: the line of the token, or of
 ; the start of an unterminated comment.
@@ -83,12 +85,15 @@ LEX_NEWLINE:
 ; ============================================================================
 ; LEX_NEXT -- scan the next token
 ; In:  LEX_PTR, LEX_LINE, LEX_BOLP, LEX_MODE
-; Out: A = TOK_KIND; TOK_LINE, TOK_FLAGS; TOK_VAL or TOK_BUF/TOK_LEN; LEX_PTR past the token
+; Out: A = TOK_KIND; TOK_LINE, TOK_FLAGS; TOK_VAL or TOK_BUF/TOK_LEN; LEX_PTR past the token;
+;      TOK_PLINE = the previous token's line
 ; Errors: CC_ERROR (does not return) with E_BADCHAR, E_COMMENT, E_STRING, E_CHARCONST, E_ESCAPE,
 ;      E_NUMBER, E_RANGE, E_NOTSUP, E_TOOLONG
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 LEX_NEXT:
+    ld   hl, (TOK_LINE)
+    ld   (TOK_PLINE), hl
     ld   hl, (LEX_PTR)
 .skip:
     ld   a, (hl)
@@ -277,7 +282,7 @@ LEX_NEXT:
 .num_acc:
     ld   b, 255
     call LEX_ACCUM                    ; DE = value; Z: no digits; C: above 65535
-    jp   c, LEX_E_RANGE
+    jr   c, .num_big
     jr   nz, .num_ok
     ld   a, c
     cp   16
@@ -297,7 +302,7 @@ LEX_NEXT:
     or   $20
 .num_l:
     cp   'l'
-    jr   z, .num_float                ; long suffix: not supported
+    jr   z, .num_notsup               ; long suffix: not supported
     cp   'e'
     jr   nz, .num_end
     ld   a, c
@@ -308,7 +313,8 @@ LEX_NEXT:
     cp   '_'
     jr   z, .num_bad
     call LEX_DIGIT
-    jr   nc, .num_bad
+    ld   e, E_NUMBER                  ; an alphanumeric follows: 08.5 and 09e1 are decimal floating
+    jr   nc, .num_scan                ; constants after all
     ld   a, (TOK_VAL + 1)
     and  $80                          ; above 32767: unsigned int
     jr   z, .num_t
@@ -323,9 +329,32 @@ LEX_NEXT:
 .num_bad:
     ld   a, E_NUMBER
     jp   CC_ERROR
-.num_float:
+.num_notsup:
     ld   a, E_NOTSUP
     jp   CC_ERROR
+.num_big:                             ; above 65535: a floating constant after all (digits, then . or e)?
+    ld   e, E_RANGE
+.num_scan:                            ; E = the error if not
+    ld   hl, (TOK_PTR)
+.nb:
+    ld   a, (hl)
+    inc  hl
+    sub  '0'
+    cp   10
+    jr   c, .nb
+    add  a, '0'
+    cp   '.'
+    jr   z, .num_float
+    or   $20
+    cp   'e'
+    ld   a, e
+    jp   nz, CC_ERROR
+.num_float:                           ; a floating constant from its first character (Phase 8)
+    ld   hl, (TOK_PTR)
+    ld   a, FOP_ATOF
+    call CX_FOLD                      ; TOK_BUF = its value, HL -> after it (E_NUMBER, E_RANGE)
+    ld   a, TK_FNUM
+    jp   .done
 
 ; ---- punctuators ----
 .punct:
@@ -412,8 +441,7 @@ LEX_NEXT:
     sub  '0'
     cp   10
     jr   nc, .p_done
-    ld   a, E_NOTSUP                  ; .5: floating constant
-    jp   CC_ERROR
+    jp   .num_float                   ; .5: floating constant
 
 ; ============================================================================
 ; LEX_BEGIN -- a token starts at HL: record its position, line and line-start flag
@@ -560,84 +588,9 @@ LEX_E_BADCHAR:
 LEX_E_STRING:
     ld   a, E_STRING
     jp   CC_ERROR
-LEX_E_RANGE:
-    ld   a, E_RANGE
-    jp   CC_ERROR
 LEX_E_TOOLONG:
     ld   a, E_TOOLONG
     jp   CC_ERROR
-
-; ============================================================================
-; LEX_KEYWORD -- keyword or identifier
-; In:  TOK_BUF / TOK_LEN = the identifier
-; Out: A = TK_KW_FIRST + index for a C89 keyword, else TK_IDENT
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-LEX_KEYWORD:
-    ld   a, (TOK_BUF)
-    sub  'a'
-    cp   LEX_KW_LETTERS
-    jr   nc, .ident                   ; keywords start with a-w
-    ld   hl, LEX_KW_INDEX
-    add  a, l
-    ld   l, a
-    jr   nc, .idx
-    inc  h
-.idx:
-    ld   c, (hl)                      ; C = index of the letter's first keyword
-    inc  hl
-    ld   a, (hl)
-    sub  c
-    jr   z, .ident
-    ld   b, a                         ; B = keywords with this letter
-    ld   hl, LEX_KW_TABLE
-    ld   a, c
-    or   a
-    jr   z, .try
-    ld   d, c
-.skip:
-    call .next
-    dec  d
-    jr   nz, .skip
-.try:                                 ; HL -> entry [n][characters 2..n+1], C = its index
-    ld   a, (TOK_LEN)
-    dec  a
-    cp   (hl)
-    jr   nz, .no
-    push hl
-    push bc
-    ld   b, a
-    ld   de, TOK_BUF + 1
-.cmp:
-    inc  hl
-    ld   a, (de)
-    cp   (hl)
-    jr   nz, .differ
-    inc  de
-    djnz .cmp
-    pop  bc
-    pop  hl
-    ld   a, c
-    add  a, TK_KW_FIRST
-    ret
-.differ:
-    pop  bc
-    pop  hl
-.no:
-    call .next
-    inc  c
-    djnz .try
-.ident:
-    ld   a, TK_IDENT
-    ret
-.next:                                ; HL -> the entry after HL's
-    ld   a, (hl)
-    inc  a
-    add  a, l
-    ld   l, a
-    ret  nc
-    inc  h
-    ret
 
 ; ============================================================================
 ; Tables
@@ -663,19 +616,3 @@ LEX_ESC_TABLE:
     DB   'n', 10, 't', 9, 'r', 13, $5C, $5C, $27, $27, '"', '"', '?', '?'
     DB   'a', 7, 'b', 8, 'f', 12, 'v', 11, 0
 
-; keywords: index of the first keyword starting with each letter a..w, then the count (for x)
-LEX_KW_LETTERS EQU 23
-LEX_KW_INDEX:
-    ;    a  b  c  d  e  f   g   h   i   j   k   l   m   n   o   p   q   r   s   t   u   v   w   x
-    DB   0, 1, 2, 6, 9, 12, 14, 15, 15, 17, 17, 17, 18, 18, 18, 18, 18, 18, 20, 26, 27, 29, 31, 32
-; keyword entries in TK_* order: [length - 1][characters after the first]
-    MACRO LEX_KW name
-    DB   .len - 1
-    DB   name + 1?
-    ENDM
-LEX_KW_TABLE:
-    DB 3,"uto", 4,"reak", 3,"ase", 3,"har", 4,"onst", 7,"ontinue", 6,"efault", 1,"o"
-    DB 5,"ouble", 3,"lse", 3,"num", 5,"xtern", 4,"loat", 2,"or", 3,"oto", 1,"f"
-    DB 2,"nt", 3,"ong", 7,"egister", 5,"eturn", 4,"hort", 5,"igned", 5,"izeof", 5,"tatic"
-    DB 5,"truct", 5,"witch", 6,"ypedef", 4,"nion", 7,"nsigned", 3,"oid", 7,"olatile", 4,"hile"
-LEX_KW_TABLE_END:

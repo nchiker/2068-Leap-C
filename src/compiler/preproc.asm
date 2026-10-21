@@ -107,114 +107,17 @@ PP_E_NESTING:
     jp   CC_ERROR
 
 ; ============================================================================
-; PP_DIRECTIVE -- (jumped to by PP_HOOK at a `#` that starts a line) the directive; then the
-; next token, as LEX_NEXT
-; Errors: E_NOTSUP (another directive or pragma, a function-like macro, another header), E_SYNTAX, E_REDEF
-;      (a macro defined again), E_NOMEM, the lexical errors of the line
+; PP_DIRECTIVE -- (jumped to by PP_HOOK at a `#` that starts a line) the directive (XP_DIRECTIVE in
+; the EXROM, src/compiler/directives.asm: Phase 8, ledger L42); then the next token, as LEX_NEXT
+; Errors: those of XP_DIRECTIVE
 ; Destroys: AF, BC, DE, HL (IX and NM kept: a directive can come between any two tokens)
 ; ============================================================================
 PP_DIRECTIVE:
-    ld   a, 1 << LM_EOL
-    ld   (LEX_MODE), a
-    rst  $30                          ; LEX_NEXT: the directive's name
-    cp   TK_EOL
-    jr   z, PP_END                     ; `#` alone
-    ld   hl, PP_DIRS
-PP_DISPATCH:                           ; the current token (A) names a record of the chain HL:
-    cp   TK_IDENT                      ; its handler (#if, #else: keywords)
-    jr   nz, PP_E_NOTSUP
-    call PP_FIND_IN
-    jr   nz, PP_E_NOTSUP
-    ld   de, PM_TEXT
-    add  hl, de
-    rst  $08                           ; LDI: the handler
-    jp   (hl)
-PP_E_NOTSUP:
-    jp   CC_E_NOTSUP
-PP_PRAGMA:                             ; #pragma NAME (PP_PRAGMAS; any other: not supported)
-    rst  $30                          ; LEX_NEXT
-    ld   hl, PP_PRAGMAS
-    jr   PP_DISPATCH
-PP_HIRES:                              ; #pragma hires (spec.md 3.2): image region 4, display file 2,
-    ld   hl, (IMG_LIM + 4 * 3 + 2)     ; is full from here on: its [low] = its [high]. What is already
-    ld   (IMG_LIM + 4 * 3), hl         ; there stays (mode(1) then refuses: LIB_MODE)
-    jr   PP_LINE_END
-PP_UNDEF:                              ; #undef NAME (not defined: nothing to do)
-    call PP_NAME
-    call PP_FIND
-    jr   nz, PP_LINE_END
-    inc  hl
-    inc  hl
-    ld   (hl), 0                       ; its name's length: never found again
-PP_LINE_END:                           ; the line must end here
-    rst  $30                          ; LEX_NEXT
-    cp   TK_EOL
-    jp   nz, CC_E_SYNTAX
-PP_END:
+    ld   bc, LEAPC_EXROM_DIRECTIVE
+    call CX_XCALL
     xor  a
     ld   (LEX_MODE), a
     jp   LEX_NEXT                      ; the token after the directive
-PP_DEFINE:                             ; #define NAME replacement
-    call PP_NAME
-    ld   hl, (LEX_PTR)
-    ld   a, (hl)
-    cp   '('
-    jr   z, PP_E_NOTSUP                ; a function-like macro
-    call PP_FIND
-    jp   z, CC_E_REDEF
-    ld   bc, PM_SIZE
-    call WS_GALLOC                     ; HL = the record
-    ld   de, (PP_MACROS)
-    ld   (PP_MACROS), hl
-    call SW_PUT                        ; [link]
-    ld   a, (TOK_LEN)
-    ld   (hl), a                       ; [name length]
-    inc  hl
-    ld   de, (TOK_PTR)
-    call SW_PUT                        ; [name]
-    ld   de, (LEX_PTR)
-    call SW_PUT                        ; [replacement]: the rest of the line
-.text:
-    rst  $30                          ; LEX_NEXT
-    cp   TK_EOL
-    jr   nz, .text
-    jr   PP_END
-PP_INCLUDE:                            ; #include <leap.h> or "leap.h"
-    ld   hl, (LEX_PTR)
-.blank:
-    ld   a, (hl)
-    inc  hl
-    cp   ' '
-    jr   z, .blank
-    ld   c, '>'
-    cp   '<'
-    jr   z, .header
-    ld   c, a
-    cp   '"'
-    jr   nz, PP_E_NOTSUP
-.header:
-    ld   de, PP_LEAPH
-    ld   b, PP_LEAPH_N
-.cmp:
-    ld   a, (de)
-    cp   (hl)
-    jp   nz, PP_E_NOTSUP
-    inc  hl
-    inc  de
-    djnz .cmp
-    ld   a, (hl)
-    cp   c
-    jp   nz, PP_E_NOTSUP               ; (the closing > or ")
-    inc  hl
-    ld   (LEX_PTR), hl
-    jr   PP_LINE_END
-
-; PP_NAME -- the next token: an identifier (TOK_BUF). Errors: E_SYNTAX. Destroys: AF, BC, DE, HL
-PP_NAME:
-    rst  $30                          ; LEX_NEXT
-    cp   TK_IDENT
-    ret  z
-    jp   CC_E_SYNTAX
 
 ; ============================================================================
 ; PP_EOL -- (jumped to by LEX_NEXT at a line end in a directive or a macro's replacement)
@@ -287,39 +190,3 @@ PP_FIND_IN:
 .none:
     inc  a                             ; NZ
     ret
-
-; the directive names, as records for PP_FIND_IN (the "replacement" is the handler)
-PP_DIRS:
-    DW   .undef
-    DB   6
-    DW   .n_define, PP_DEFINE
-.undef:
-    DW   .include
-    DB   5
-    DW   .n_undef, PP_UNDEF
-.include:
-    DW   .pragma
-    DB   7
-    DW   .n_include, PP_INCLUDE
-.pragma:
-    DW   0
-    DB   6
-    DW   .n_pragma, PP_PRAGMA
-.n_define:
-    DB   "define"
-.n_undef:
-    DB   "undef"
-.n_include:
-    DB   "include"
-.n_pragma:
-    DB   "pragma"
-; the pragmas (PP_PRAGMA)
-PP_PRAGMAS:
-    DW   0
-    DB   5
-    DW   .n_hires, PP_HIRES
-.n_hires:
-    DB   "hires"
-PP_LEAPH:
-    DB   "leap.h"
-PP_LEAPH_N      EQU $ - PP_LEAPH

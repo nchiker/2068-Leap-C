@@ -1,6 +1,15 @@
 --- a/kernel/memory/memory.asm
 +++ b/kernel/memory/memory.asm
-@@ -78,8 +78,8 @@
+@@ -66,6 +66,8 @@
+ LABEL_NAMELEN_SIZE  EQU 1
+ LABEL_POS_SIZE      EQU 2
+ 
++    IFNDEF MEM_LINE_EDIT_ONLY            ; Leap-C (delta D11): the EXROM assembles only MEM_LINE_INSERT
++                                         ; and MEM_LINE_DELETE_RANGE (and the constants above)
+ ; ============================================================================
+ ; MEM_COLD_INIT
+ ; Establishes the power-on invariant for every ROM-owned RAM byte.  Emulators
+@@ -78,8 +80,8 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  MEM_COLD_INIT:
@@ -11,7 +20,7 @@
      jr   MEM_FILL_ZERO
  
  ; ============================================================================
-@@ -92,8 +92,7 @@
+@@ -92,8 +94,7 @@
  ; inspection.
  ; In:  none
  ; Out: PROG_END = PROG_AREA_START; ARRAYS_END = PROG_END (no arrays
@@ -21,7 +30,7 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  MEM_INIT:
-@@ -114,39 +113,11 @@
+@@ -114,39 +115,11 @@
                                         ; never at cold boot; folding it
                                         ; in here actually closes that
                                         ; gap rather than widening it
@@ -66,3 +75,27 @@
      ret
  
      IFDEF FULL_ENGINE_PRESENT
+@@ -556,6 +529,9 @@
+     or   a
+     ret
+ 
++    ENDIF
++    IFNDEF MEM_NO_LINE_EDIT              ; Leap-C (delta D11): MEM_LINE_INSERT and MEM_LINE_DELETE_RANGE
++                                         ; are the editor's only, so they are assembled in the EXROM
+ ; ============================================================================
+ ; MEM_LINE_INSERT
+ ; Inserts a NEW statement at the given position, shifting whatever's
+@@ -702,6 +678,8 @@
+ ; Out: HL = free bytes
+ ; Destroys: AF, HL, DE
+ ; ============================================================================
++    ENDIF
++    IFNDEF MEM_LINE_EDIT_ONLY
+     IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (FREE() is computed VM-side)
+ MEM_FREE_BYTES:
+     ld   hl, (VARS_START)
+@@ -710,3 +688,4 @@
+     sbc  hl, de
+     ret
+     ENDIF
++    ENDIF

@@ -4,7 +4,7 @@
 ; One byte per kind (TOK_KIND). The numbering is part of the lexer's contract with the parser and
 ; with tools/clex.py (the host reference lexer), which mirrors it; change both together.
 ;
-;   $00-$04  EOF, identifier, number, string, end of line
+;   $00-$05  EOF, identifier, number, string, end of line, floating constant
 ;   $10-$1C  punctuators with no longer form
 ;   $20-$2D  operators that have an `op=` form; the `op=` token is the operator + TK_ASSIGN_OFS
 ;   $30-$35  doubled and other multi-character punctuators
@@ -20,6 +20,7 @@ TK_IDENT        EQU $01     ; TOK_BUF/TOK_LEN = name (first 31 characters)
 TK_NUM          EQU $02     ; TOK_VAL = value; TF_UNSIGNED, TF_CHARCONST
 TK_STR          EQU $03     ; TOK_BUF/TOK_LEN = decoded bytes (no terminator)
 TK_EOL          EQU $04     ; only when LEX_MODE has LM_EOL (preprocessor directive lines)
+TK_FNUM         EQU $05     ; floating constant (Phase 8): TOK_BUF = its value, 5 bytes (spec.md 4.9)
 
 ; punctuators with no longer form (order = LEX_PUNCT_CHARS)
 TK_LPAREN       EQU $10     ; (
@@ -85,11 +86,11 @@ TK_CONST        EQU $64
 TK_CONTINUE     EQU $65
 TK_DEFAULT      EQU $66
 TK_DO           EQU $67
-TK_DOUBLE       EQU $68     ; reserved: "not supported" (parser)
+TK_DOUBLE       EQU $68     ; double = float (Phase 8)
 TK_ELSE         EQU $69
 TK_ENUM         EQU $6A
 TK_EXTERN       EQU $6B
-TK_FLOAT        EQU $6C     ; reserved: "not supported" (parser)
+TK_FLOAT        EQU $6C     ; float (Phase 8)
 TK_FOR          EQU $6D
 TK_GOTO         EQU $6E
 TK_IF           EQU $6F

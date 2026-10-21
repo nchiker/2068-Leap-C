@@ -29,6 +29,8 @@ TOK_VAL:        DEFS 2              ; number / character constant value
 TOK_LEN:        DEFS 1              ; bytes in TOK_BUF (identifier or string literal)
 TOK_BUF:        DEFS TOK_BUF_LEN    ; identifier text or decoded string literal (no terminator)
 LEX_MODE:       DEFS 1              ; LM_* bits (include/leapc_tokens.inc)
+TOK_PLINE:      DEFS 2              ; Phase 8: the previous token's line (CC_EXPECT reports a missing
+                                    ; token there: a missing `;` belongs after the previous token)
 ; ---- preprocessor (Phase 2: src/compiler/preproc.asm) ----
 PP_MAX          EQU 8               ; macros nested in one expansion
 PP_LEVEL        EQU 9               ; bytes per PP_STACK level
@@ -147,6 +149,11 @@ LIB_FMT:        DEFS 2              ; printf: the next format character ...
 LIB_AP:         DEFS 2              ; ... and the next argument
 LIB_PTR:        DEFS 2              ; LIB_UTOA: the text
 LIB_NUM:        DEFS 7              ; printf: the text of a number (at most "-32768") or a character
+; ---- floating point (Phase 8: src/runtime/float.asm, src/runtime/fpcore.asm) ----
+F_ACC:          DEFS 6              ; the float accumulator (Sinclair 5-byte format; F_PUSH reads a
+                                    ; sixth byte as a stack slot's padding)
+F_OLD           EQU CALC_STACK + 35 ; postfix ++/--: the value before (the float core's working RAM
+                                    ; is the V2 calculator's system variables, CALC_STACK)
     ASSERT LIB_ROW == LIB_COL + 1 && LIB_OVERF == LIB_INVF + 1
 
 ; ---- editor engine selective redraw (platform rom/exrom_editor.asm, V2_FAST_REDRAW) ----

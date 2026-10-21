@@ -1,4 +1,4 @@
-// itoa with base 1 (or 0, or negative) is runtime error 4, not an endless loop.
+// itoa with base 1 is runtime error 4, not an endless loop (base 0: itoa_base0.c; negative: itoa_base_negative.c).
 // expect: rterror 4
 char s[20];
 int main(void)

@@ -30,7 +30,7 @@ import re
 import c2src
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASES = {0: "void", 1: "char", 2: "schar", 3: "int", 4: "uint"}
+BASES = {0: "void", 1: "char", 2: "schar", 3: "int", 4: "uint", 5: "float"}
 KINDS = {1: "obj", 2: "func", 3: "typedef", 4: "enumc", 0x10: "tag", 0x20: "member", 0x30: "label"}
 FLAGS = ["static", "extern", "const", "defined", "auto", "param", "enum", "noaddr"]
 NODE_H = 0x40
@@ -139,7 +139,7 @@ class Decoder:
         if h >> 8 < NODE_H:
             if h >> 8:
                 return 2
-            return {0: None, 1: 1, 2: 1, 3: 2, 4: 2}.get(h & 255)
+            return {0: None, 1: 1, 2: 1, 3: 2, 4: 2, 5: 5}.get(h & 255)
         k = self.mem.b(h)
         if k == 1:
             return 2

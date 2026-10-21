@@ -12,7 +12,16 @@
  ; as needed rather than up front. The quote character was added once
  ; PRINT "..." string literals made it a real blocker; most of the rest
  ; cover kernel/io's confirmed-confidence subset of SYMBOL SHIFT's
-@@ -103,7 +104,6 @@
+@@ -40,6 +41,8 @@
+ ; exact mistake, so both are always added together now.
+ ; ============================================================================
+ 
++    IFNDEF GFX_EDITOR_TEXT_ONLY          ; Leap-C (delta D12): the EXROM assembles only GFX_PUTCHAR_BOLD
++                                         ; and GFX_PRINT_STRING, the editor's text output
+     INCLUDE "include/hardware.inc"
+     INCLUDE "include/sysvars.inc"
+ 
+@@ -103,7 +106,6 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  GFX_CLS:
@@ -20,7 +29,7 @@
      ld   hl, SCREEN_ADDR
      ld   de, SCREEN_ADDR + 1
      ld   bc, 6144 - 1           ; bitmap is 6144 bytes ($4000-$57FF)
-@@ -140,24 +140,11 @@
+@@ -140,24 +142,11 @@
      ldir
      ret
  
@@ -50,7 +59,7 @@
  
  ; ============================================================================
  ; GFX_ROW_BASE_ADDR
-@@ -243,7 +230,6 @@
+@@ -243,7 +232,6 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  GFX_SCROLL_TEXT_UP:
@@ -58,7 +67,7 @@
      ld   hl, ATTR_ADDR + 32          ; row 1's attributes (linear memory
      ld   de, ATTR_ADDR               ; — the whole 22-row block moves in
      ld   bc, 22*32                   ; one shot, no per-row loop needed)
-@@ -297,7 +283,6 @@
+@@ -297,7 +285,6 @@
  ; ============================================================================
      IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (legacy builds keep it)
  GFX_SCROLL_TEXT_DOWN:
@@ -66,7 +75,26 @@
      ld   hl, ATTR_ADDR + 22*32 - 1   ; last byte of rows 0-21 (source)
      ld   de, ATTR_ADDR + 23*32 - 1   ; last byte of rows 1-22 (dest) —
      ld   bc, 22*32                   ; overlapping, dst > src, needs the
-@@ -1121,9 +1106,6 @@
+@@ -675,6 +662,9 @@
+     djnz .scanline_loop
+     ret
+ 
++    ENDIF
++    IFNDEF GFX_NO_EDITOR_TEXT            ; Leap-C (delta D12): GFX_PUTCHAR_BOLD and GFX_PRINT_STRING are
++                                         ; the EXROM editor's only, so they are assembled in the EXROM
+ ; ============================================================================
+ ; GFX_PUTCHAR_BOLD
+ ; Plots one character with a synthesized bold effect: each scanline
+@@ -742,6 +732,8 @@
+     inc  c
+     jr   .loop
+ 
++    ENDIF
++    IFNDEF GFX_EDITOR_TEXT_ONLY
+ ; ============================================================================
+ ; GFX_PRINT_STRING_ATTR
+ ; Prints a null-terminated string with BASIC-style attributes. At column 32
+@@ -1121,9 +1113,6 @@
  ; Destroys: AF, BC, DE, HL
  ; ============================================================================
  GFX_SET_MODE:
@@ -76,7 +104,7 @@
      ld   (GFX_MODE), a
      cp   1
      jr   z, .highres
-@@ -1210,35 +1192,8 @@
+@@ -1210,35 +1199,8 @@
      jr   c, .loop
      ret
  
@@ -114,7 +142,7 @@
  
  ; ============================================================================
  ; Pixel graphics: GFX_PIXEL_ADDR_SETUP / GFX_WRITE_PIXEL / GFX_READ_PIXEL /
-@@ -1640,30 +1595,41 @@
+@@ -1640,30 +1602,41 @@
  ; delimiters instead — mirrors the convention already proven working
  ; for the standalone quote check this replaced. ----
  PUNCT_CHAR_TABLE:
@@ -171,7 +199,7 @@
  
  ; Block-graphics (128-143) and UDG (144-164) character-code ranges —
  ; see GFX_CHAR_TO_FONT_OFFSET's .is_block_graphics/.is_udg. UDG_COUNT
-@@ -1891,6 +1857,22 @@
+@@ -1891,6 +1864,22 @@
      ; was added (see that table's header) — mapping and glyph always
      ; ship together per this project's established rule.
      DB   $70, $88, $08, $10, $20, $00, $20, $00
@@ -194,3 +222,8 @@
  
  ; ============================================================================
  ; Sprites — GFX_SPRITE_CAPTURE / GFX_SPRITE_DRAW (2026-08-19)
+@@ -2237,3 +2226,4 @@
+     ld   a, 1
+     ld   (SPRITE_XFER_DIR), a           ; nonzero = draw
+     jr   GFX_SPRITE_TRANSFER
++    ENDIF

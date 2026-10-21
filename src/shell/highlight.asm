@@ -85,7 +85,7 @@ SH_KW_MARK:
     ld   c, b
     ld   b, 0
     ldir
-    call LEX_KEYWORD                   ; HOME: TK_IDENT, or a keyword's token
+    call XK_KEYWORD                    ; TK_IDENT, or a keyword's token (src/compiler/keywords.asm)
     pop  hl                            ; HL -> the word
     pop  de                            ; DE -> the character after it
     cp   TK_IDENT

@@ -13,11 +13,18 @@
 ; ============================================================================
 ; XC_FOLD -- the value of `left op right` for constants (called through CX_FOLD)
 ; In:  A = operator token (TK_PLUS .. TK_GE), DE = left, HL = right, C bit 0 = 1: unsigned
-;      operation (division, modulus, >>, comparisons)
+;      operation (division, modulus, >>, comparisons). Phase 8: A = an operation of the float core
+;      (FOP_*: below TK_ASSIGN or from $80; src/runtime/fpcore.asm XF_OP), the compiler's floating
+;      constants
 ; Out: HL = the result (comparisons and && ||: 0 or 1)
 ; Destroys: AF, BC, DE
 ; ============================================================================
 XC_FOLD:
+    or   a
+    jp   m, XF_OP                      ; a float operation
+    cp   TK_ASSIGN
+    jp   c, XF_OP
+    ASSERT FOP_ATOF < TK_ASSIGN && FOP_ADD >= $80 && TK_GE < $80 && TK_PLUS > TK_ASSIGN
     ld   b, a
     cp   TK_PLUS
     jr   z, .add

@@ -275,10 +275,11 @@ STMT_END:
     jp   CC_EXPECT
 
 ; ============================================================================
-; DCL_AUTOINIT -- `= expression` after an automatic object's declarator (spec.md 4.7): the code of
-; `object = expression` (a const object too); arrays and structs: not supported
+; DCL_AUTOINIT -- `= expression` or `= { expression [,] }` (C89 6.5.7) after an automatic object's
+; declarator (spec.md 4.7): the code of `object = expression` (a const object too); arrays and
+; structs: not supported
 ; In:  IX = the object's entry (decl.asm DECLARE); current token `=`
-; Errors: E_NOTSUP, E_TYPE, the expression's errors
+; Errors: E_NOTSUP, E_TYPE, E_SYNTAX, the expression's errors
 ; Destroys: AF, BC, DE, HL, IX; NM
 ; ============================================================================
 DCL_AUTOINIT:
@@ -287,8 +288,16 @@ DCL_AUTOINIT:
     cp   TC_ARRAY
     jp   nc, CC_E_NOTSUP
     call CX_PRIMARY.found              ; X = the object; current token after `=`
+    cp   TK_LBRACE                     ; (braces: Phase 8)
+    push af
+    jr   nz, .plain
+    rst  $30                          ; LEX_NEXT
+.plain:
     call .assign
-    jp   CX_DISCARD
+    call CX_DISCARD
+    pop  af
+    ret  nz
+    jp   INIT_CLOSE
 .assign:                               ; (the held object under this frame's return address, as
     call CX_LVHOLD                     ; in CX_ASSIGN)
     call CX_HOLD

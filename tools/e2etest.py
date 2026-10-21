@@ -38,7 +38,7 @@ from lcharness import Machine, UNKNOWN                          # noqa: E402
 from shelltest import Shell, ENTER, Z_ENTER, expect             # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr", "lib", "rt", "mem")
+EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr", "lib", "rt", "mem", "float", "doc")
 CASES = []
 
 
@@ -50,7 +50,8 @@ def case(name, title, group):
 
 
 # ===================================================================== typed programs
-# (name, lines, screen rows {row: text} (the others blank), report row 22, keys during the run, matrix)
+# (name, lines, screen rows {row: text} (the others blank), report row 22 (or rows 22 and 23), keys during the
+# run, matrix)
 TYPED = [
     ("hello", ["int main(void)", "{", '    puts("HELLO, WORLD");', "    return 0;", "}"],
      {0: "HELLO, WORLD"}, "EXIT 0", None, True),
@@ -123,6 +124,14 @@ TYPED = [
      {0: "BEFORE"}, "RUNTIME ERROR 4: BAD ARGUMENT", None, False),
     ("compile-error", ["int main(void)", "{", "    int total = 0;", "    totl = 5;", "    return total;", "}"],
      None, "ERROR 23: UNDECLARED IDENTIFIER", None, False),
+    # Phase 8: floating point (the '.' typed on the matrix), its runtime error, a missing ';' reported at its line
+    ("float", ["float area(float r)", "{", "    return 3.14159 * r * r;", "}", "int main(void)", "{",
+               '    printf("%.2f %f", area(2), 1.0 / 8);', "    return area(1) * 100;", "}"],
+     {0: "12.57 0.125000"}, "EXIT 314", None, True),
+    ("float-error", ["int main(void)", "{", "    float z = 0;", '    puts("DIVIDE");', "    return 1 / z;", "}"],
+     {0: "DIVIDE"}, "RUNTIME ERROR 6: NUMBER TOO BIG", None, False),
+    ("missing-semi", ["int main(void)", "{", "    int x = 1", "    return x;", "}"],
+     None, ("ERROR 20: SYNTAX ERROR", "LINE 3"), None, False),
 ]
 
 
@@ -139,6 +148,8 @@ def type_program(sh, lines, matrix):
 
 
 def typed_case(name, lines, screen, report, keys, matrix):
+    report, row23 = report if isinstance(report, tuple) else (report, None)
+
     def fn(sh):
         m, S = sh.m, sh.S
         sh.boot()
@@ -167,6 +178,8 @@ def typed_case(name, lines, screen, report, keys, matrix):
                 bad.append("memory report %r, expected %r" % (msg[1], want))
         elif errline and msg[1] != "LINE %d" % errline:
             bad.append("line report %r (line %d)" % (msg[1], errline))
+        if row23 is not None and isinstance(msg, tuple) and msg[1] != row23:
+            bad.append("row 23 %r, expected %r" % (msg[1], row23))
         if rows[22:24] != list(msg or ("", "")):
             bad.append("rows 22-23 %r" % rows[22:24])
         if screen is not None:
@@ -187,7 +200,8 @@ def typed_case(name, lines, screen, report, keys, matrix):
 
 
 for _i, (_n, _l, _s, _r, _k, _mx) in enumerate(TYPED):
-    case("typed-%02d-%s" % (_i + 1, _n), "typed%s, RUN: %s" % (" on the keyboard matrix" if _mx else "", _r),
+    case("typed-%02d-%s" % (_i + 1, _n), "typed%s, RUN: %s" % (" on the keyboard matrix" if _mx else "",
+                                                               _r if isinstance(_r, str) else " / ".join(_r)),
          "typed")(typed_case(_n, _l, _s, _r, _k, _mx))
 
 

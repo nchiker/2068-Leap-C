@@ -18,7 +18,8 @@ TEST_E_FULL     EQU $FE                 ; dump buffer full (reported like an err
 ; TEST_LEX_DUMP -- lex the whole line store into a token dump
 ; In:  line store; TEST_LEX_MODE
 ; Out: records from TEST_DUMP_DATA to (TEST_DUMP_PTR):
-;        token: [kind][flags][line:2] + TK_NUM: [value:2]; TK_IDENT/TK_STR: [len][bytes]
+;        token: [kind][flags][line:2] + TK_NUM: [value:2]; TK_IDENT/TK_STR: [len][bytes];
+;               TK_FNUM: [5][its value's 5 bytes] (Phase 8)
 ;        error: [$FF][error number][line:2] (last record)
 ;      the token records end with the TK_EOF record unless an error record ends them
 ; Destroys: everything except IX, IY
@@ -83,10 +84,15 @@ TEST_LEX_DUMP:
 .text:
     cp   TK_IDENT
     jr   z, .copy
+    cp   TK_FNUM
+    ld   a, FLOAT_SIZE                 ; a floating constant: its 5 bytes (Phase 8)
+    jr   z, .bytes
+    ld   a, (TOK_KIND)
     cp   TK_STR
     jr   nz, .stored
 .copy:
     ld   a, (TOK_LEN)
+.bytes:
     ld   (hl), a
     inc  hl
     or   a

@@ -21,7 +21,7 @@ ranges = [["COMP_PAGE0_BEGIN", "COMP_PAGE0_END"], ["COMP_TRAMP_BEGIN", "COMP_TRA
 
 [[home.component]]
 id = "platform"
-title = "Retained platform (graphics, memory, keyboard, math, interrupt, bank, AY) + deltas"
+title = "Retained platform (graphics, memory, keyboard, math, interrupt, bank, AY) + deltas (the editor-only parts in the EXROM: D11, D12)"
 budget = 3800
 ranges = [["COMP_PLATFORM_BEGIN", "COMP_PLATFORM_END"]]
 
@@ -33,7 +33,7 @@ ranges = [["COMP_TAPE_BEGIN", "COMP_TAPE_END"]]
 
 [[home.component]]
 id = "lexer"
-title = "Compiler: lexer + source streaming + keyword table (+ compile error exit)"
+title = "Compiler: lexer + source streaming (+ compile error exit; the keyword table in the EXROM since Phase 8)"
 budget = 1100
 ranges = [["COMP_LEXER_BEGIN", "COMP_LEXER_END"]]
 
@@ -69,7 +69,7 @@ ranges = [["COMP_STMT_BEGIN", "COMP_STMT_END"]]
 
 [[home.component]]
 id = "preproc"
-title = "Compiler: preprocessor (object-like #define, #pragma hires)"
+title = "Compiler: preprocessor (the directive hook and macro expansion; the directives in the EXROM since Phase 8)"
 budget = 300
 ranges = [["COMP_PREPROC_BEGIN", "COMP_PREPROC_END"]]
 
@@ -81,9 +81,15 @@ ranges = [["COMP_HELPERS_BEGIN", "COMP_HELPERS_END"]]
 
 [[home.component]]
 id = "library"
-title = "Runtime: library (leap.h) and its compiler binding (LIB_BIND)"
+title = "Runtime: library (leap.h) (its compiler binding in the EXROM since Phase 8)"
 budget = 1300
 ranges = [["COMP_LIBRARY_BEGIN", "COMP_LIBRARY_END"]]
+
+[[home.component]]
+id = "float"
+title = "Runtime: floating point (F_OP and the trampoline to the float core, loads, stores, slots; Phase 8)"
+budget = 0
+ranges = [["COMP_FLOAT_BEGIN", "COMP_FLOAT_END"]]
 
 [[home.component]]
 id = "rtexit"
@@ -99,9 +105,9 @@ reserve_floor = 256
 
 [[exrom.component]]
 id = "xplatform"
-title = "Retained platform (editor engine, tape headers, integer formatting, sound)"
+title = "Retained platform (editor engine, tape headers, integer formatting, sound; the editor-only line edits and text output, D11 D12)"
 budget = 1340
-ranges = [["COMP_XPLATFORM_BEGIN", "BASIC_FLOAT_TO_STRING_EXROM"]]
+ranges = [["COMP_XPLATFORM_BEGIN", "COMP_XPLATFORM_END"]]
 
 [[exrom.component]]
 id = "xtape_block"
@@ -113,11 +119,11 @@ ranges = []
 id = "xshell"
 title = "Leap-C shell (entry points, editor glue, commands, messages, chime; the tape commands and the library's tape service)"
 budget = 2900
-ranges = [["COMP_XSHELL_BEGIN", "COMP_XCOMP_ENTRY"], ["COMP_XCOMP_ENTRY_END", "COMP_XSHELL_END"]]
+ranges = [["COMP_XSHELL_BEGIN", "COMP_XCOMP_ENTRY"], ["COMP_XCOMP_ENTRY_END", "COMP_XFP_ENTRY"], ["COMP_XFP_ENTRY_END", "COMP_XSHELL_END"]]
 
 [[exrom.component]]
 id = "xkeywords"
-title = "C keyword highlighting (the scanner; the keyword table is the lexer's, in HOME)"
+title = "C keyword highlighting (the scanner; the keyword table is the compiler's, in xcomp)"
 budget = 250
 ranges = [["COMP_XKEYWORDS_BEGIN", "COMP_XKEYWORDS_END"]]
 
@@ -129,15 +135,15 @@ ranges = [["COMP_XDIAG_BEGIN", "COMP_XDIAG_END"]]
 
 [[exrom.component]]
 id = "xcomp"
-title = "Compiler parts run through HOME trampolines (constant folding L5; the library's names L19)"
+title = "Compiler parts run through HOME trampolines (constant folding L5; the library's names L19; Phase 8: keywords, TY_EQUAL, the binding, the directives)"
 budget = 0
 ranges = [["COMP_XCOMP_ENTRY", "COMP_XCOMP_ENTRY_END"], ["COMP_XCOMP_BEGIN", "COMP_XCOMP_END"]]
 
 [[exrom.component]]
 id = "xfp"
-title = "FP calculator + float formatting (optional component, spec.md 4.9)"
+title = "The float core (the re-engineered FP calculator + float formatting, spec.md 4.9; Phase 8)"
 budget = 2165
-ranges = [["BASIC_FLOAT_TO_STRING_EXROM", "COMP_XPLATFORM_END"]]
+ranges = [["COMP_XFP_ENTRY", "COMP_XFP_ENTRY_END"], ["COMP_XFP_BEGIN", "COMP_XFP_END"]]
 
 # ---------------------------------------------------------------------------------------------
 # Ledger: every change to a base budget, with its measured reason. `delta` is added to the
@@ -659,3 +665,171 @@ matcher that accepts a quote after the word with FREE's first row shared as the 
 (SH_WORD, SH_QWORD, SH_SPACES, SH_SOURCE; +25 B) and the library's EXROM entry (3 B). Shrink pass first (the request type set once for the shell's commands, TAPE_DEST cleared
 by the only routine that sets it, cheaper zero tests: -10 B). The shell's remaining 586 B cover most of it;
 183 B come from the EXROM reserve (789 -> 582 B with L40, floor 256 B)."""
+
+[[ledger]]
+id = "L42"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "exrom"
+component = "xcomp"
+delta = 772
+reason = """Cold compiler code moved from HOME behind the trampoline CX_XCALL (page0): the keyword lookup and
+its table (XK_KEYWORD 83 B, LEX_KW_INDEX 24, LEX_KW_TABLE 166; the shell's highlighter calls it directly), TY_EQUAL
+(XT_EQUAL 137), the library's binding (XL_BIND 93; LIB_FIND, CX_LIBFIND's search, stays here), the directive
+processor (#define, #undef, #include, #pragma: XP_DIRECTIVE and the PP_* routines and tables 251 B, 238 B in HOME:
+a jump back to HOME is a 3-byte jp where a jr did; the macro hook and expansion stay in HOME), four entry jumps (+12, one replaced: -3) and the folding's float constants
+(XC_FOLD +9: a float operation code (FOP_*) dispatched to the float core, the compiler's floating constants and constant float expressions). 1,481 B; from the float core's 701 B (L43)."""
+
+[[ledger]]
+id = "L43"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "exrom"
+component = "xfp"
+delta = -701
+reason = """The float core (src/runtime/fpcore.asm, spec.md 4.9) replaces the V2 calculator (platform
+rom/exrom_calc.asm, 1,929 B: the RST $28 literal-stream interpreter, its stack operations, pi, add, subtract,
+multiply, divide, pack/unpack, FP_TO_INT) and V2's float formatting (rom/exrom_format.asm, 236 B, now behind
+FLOAT_FORMAT_V2: platform delta D10). Kept: the 5-byte format, the calculator's working RAM (CALC_STACK), its role
+as the ROMs' one numerical engine, V2's exact fixed-point formatting. New: direct calls per operation (XF_OP:
+A = FOP_*), a 40-bit mantissa rounded to nearest, comparison, negation, ++/--, the conversions both ways, decimal
+input with exact powers of ten (XF_ATOF 338 B), a precision for the output (XF_FTOA 211 B). It measures 1,464 B
+(+3 B entry): 701 B return to the EXROM reserve, which the moves of L42 use."""
+
+[[ledger]]
+id = "L44"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "exrom"
+component = "xplatform"
+delta = 173
+reason = """Platform deltas D11 and D12 (Phase 8): the editor's only callers of MEM_LINE_INSERT (57 B) and
+MEM_LINE_DELETE_RANGE (87 B, kernel/memory/memory.asm) and of GFX_PUTCHAR_BOLD (18 B) and GFX_PRINT_STRING (14 B,
+kernel/graphics/graphics.asm) are in the EXROM, so the EXROM assembles them (MEM_LINE_EDIT_ONLY,
+GFX_EDITOR_TEXT_ONLY) and HOME does not (MEM_NO_LINE_EDIT, GFX_NO_EDITOR_TEXT): +176 B here, -176 B in HOME's
+platform (L45); 3 B of the old budget were unused. From the EXROM reserve."""
+
+[[ledger]]
+id = "L45"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "platform"
+delta = -176
+reason = """D11 and D12 (L44): MEM_LINE_INSERT, MEM_LINE_DELETE_RANGE, GFX_PUTCHAR_BOLD and GFX_PRINT_STRING
+(176 B) assemble in the EXROM; the platform measures 3,124 B. Returned to the HOME reserve."""
+
+[[ledger]]
+id = "L46"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "lexer"
+delta = -227
+reason = """The keyword lookup and table move to the EXROM (L42: -276 B). Floating constants (+43 B with
+LEX_E_RANGE's 5 B now folded into the number scanner's error exit: digits then a point or an exponent, or a
+point then digits, converted by the float core through CX_FOLD into TOK_BUF; 08.5 and 09e1 as decimal floats)
+and the previous token's line for CC_EXPECT (+6 B). 863 B; the rest returns to the HOME reserve."""
+
+[[ledger]]
+id = "L47"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "decl"
+delta = -59
+reason = """TY_EQUAL moves to the EXROM (-137 B; a 5-byte stub in page0 calls it through CX_XCALL). float and
+double (DECL_SPECS +7, TY_SIZE0 +5: size 5), parameter offsets accumulated for 3-word float arguments (PARAMS +24),
+float initialisers and integer objects from float constants (INIT +37), a missing token reported at the previous
+token's line (CC_EXPECT +5). 2,888 B."""
+
+[[ledger]]
+id = "L48"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "expr"
+delta = 501
+reason = """Float expressions (spec.md 4.4, 4.9): the binary operators on floats with the usual arithmetic
+conversions (CX_FBINOP 167 B, the operation table CX_FOPS 20), constants folded by the float core (CX_FCONST 25,
+CX_XFLT 9), conversions both ways for casts, assignments, arguments and returns (CX_CAST +90, CX_CONV 25, CX_TOFLT
+24, CX_ARITH_A 7), the conditional operator and truth values (CX_COND +164 with CX_LOGIC, CX_TRUTH +8), ++/-- and
+unary minus (CX_INCDEC +32, CX_UNARY +37), held float operands (CX_HOLDV 20), float primaries (CX_PRIMARY +13).
+Shrink pass first (-21 B: F_LD for the constant loads, shared tails). 3,116 B; from the HOME reserve."""
+
+[[ledger]]
+id = "L49"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "codegen"
+delta = 197
+reason = """Float code generation: loads and stores of 5-byte objects (CG_FLOAD 79 B, CG_FSTORE 50: F_LDX/F_STX
+for frame objects within (ix+d)'s reach, F_LD/F_ST through an address), the 3-word argument and operand slots
+(CG_PUSHX 38), the F_OP calls (CG_FOP 11), the truth test of a float (CG_TEST +13), integer paths widened for the
+float cases (CG_LOAD +8, CG_STORE +10, CG_JCOND -12). 1,520 B; from the HOME reserve."""
+
+[[ledger]]
+id = "L50"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "stmt"
+delta = 11
+reason = """An automatic scalar's initialiser in braces, with an optional trailing comma (C89 6.5.7; spec.md
+4.7): DCL_AUTOINIT +11 B (INIT_CLOSE shared with the static initialisers). 1,381 B; from the HOME reserve."""
+
+[[ledger]]
+id = "L51"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "preproc"
+delta = -238
+reason = """The directive processor moves to the EXROM (L42); HOME keeps the hook (PP_HOOK), the macro
+lookup and expansion, and a 5-byte stub. 232 B; 238 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L52"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "library"
+delta = -42
+reason = """The library's binding (LIB_BIND's search, 93 B) moves to the EXROM (L42; a 5-byte stub in page0).
+printf's %f and %.Nf (LIB_PRINTF +51 B: the width and precision parsed by one routine, the 3-word float argument,
+the text from the float core's FTOA). 1,281 B; the rest returns to the HOME reserve."""
+
+[[ledger]]
+id = "L53"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "float"
+delta = 145
+reason = """The floating-point runtime in HOME (src/runtime/float.asm): F_OP and F_X (the float core through the
+EXROM trampoline, a NOBRK section, chunk 6 = RAM restored), F_ERR (the core's errors: a compile error, or runtime
+error 6 while a program runs), the accumulator's loads, stores and stack slots (F_PUSH, F_POP, F_DROP, F_LD, F_LDX,
+F_LDK, F_ST, F_STX, F_CP5, F_IXD, F_REST) and the truth test (F_TST). 145 B; from the HOME reserve."""
+
+[[ledger]]
+id = "L54"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "home"
+component = "page0"
+delta = 10
+reason = """CX_XCALL (14 B), the trampoline to the EXROM-resident compiler parts (L42), and their stubs
+(LEX_KEYWORD, TY_EQUAL, LIB_BIND: 5 B each; the directives' stub is in preproc), replacing CX_LIBFIND (12 B).
+170 B; 10 B from the HOME reserve."""
+
+[[ledger]]
+id = "L55"
+date = "2026-10-21"
+milestone = "Phase 8"
+bank = "exrom"
+component = "xdiag"
+delta = 5
+reason = """Runtime error 6, NUMBER TOO BIG (a float operation's overflow or division by zero at run time,
+spec.md 5.9): its text in the generated message table (DG_MSGS +5 B, words shared with NUMBER TOO LARGE).
+645 B; from the EXROM reserve."""

@@ -54,8 +54,10 @@ LEAPC_STACK_TOP     EQU $FF00   ; initial SP
 ; moves SP (src/runtime/helpers.asm), so only what runs between two frame checks can go further
 ; down, and the margin above LEAPC_STACK_LIMIT bounds it (measured, docs/milestones/M4.md):
 ;   held operands       2 B per expression level: at most 124 B (the compiler's nesting guard)
-;   pending arguments   2 B per word, at most LEAPC_ARGS_MAX words (expr.asm CX_CALL): 64 B
-;   a library routine   at most 40 B below its arguments (puts/print scrolling the screen)
+;   pending arguments   2 B per word, at most LEAPC_ARGS_MAX words (expr.asm CX_CALL): 64 B; a held
+;                       float operand's 3-word slot counts with them (Phase 8: CG_PUSHX)
+;   a library routine   at most 40 B below its arguments (puts/print scrolling the screen; Phase 8:
+;                       the float core 32 B through F_OP, printf's %f 34 B, interrupts included)
 ;   the IM 1 handler    18 B; the call and ENTER's push of IX: 4 B
 ; 250 B in all: the stack never leaves $F800-$FEFF. The floor is page-aligned (ENTER compares
 ; the high byte only).

@@ -211,9 +211,9 @@ LIB_BORDER:
 ; ============================================================================
 ; int printf(const char *fmt, ...) -- fmt's characters (LIB_PUTC), each conversion replaced by the
 ; next argument: %d (int), %u (unsigned), %x (unsigned, lowercase hexadecimal), %c (a character),
-; %s (a string), %% (a '%'). A width (decimal digits after the %) right-aligns the text with
-; spaces; flags (- 0 + space #) are not supported. Another conversion character prints the next
-; argument as a character
+; %s (a string), %f (a float, Phase 8: 6 decimals, or .N of them, N 0-9: more count as 9), %% (a
+; '%'). A width (decimal digits after the %) right-aligns the text with spaces; flags (- 0 + space
+; #) are not supported. Another conversion character prints the next argument as a character
 ; Out: HL undefined (deviation from C89, which returns the number of characters: spec.md 7)
 ; ============================================================================
 LIB_PRINTF:
@@ -261,24 +261,18 @@ LIB_PRINTF:
     call LIB_PUTC
     jr   .next
 .conv:
-    ld   b, 0                          ; the width
-.width:
+    call .num
+    ld   b, a                          ; B = the width
+    ld   c, 6                          ; C = the precision (%f)
     ld   a, (hl)
+    cp   '.'
+    jr   nz, .spec
     inc  hl
-    sub  '0'
-    cp   10
-    jr   nc, .spec
+    call .num
     ld   c, a
-    ld   a, b
-    add  a, a
-    add  a, a
-    add  a, b
-    add  a, a
-    add  a, c
-    ld   b, a
-    jr   .width
-.spec:
-    add  a, '0'                        ; A = the conversion character
+    ld   a, (hl)
+.spec:                                 ; A = the conversion character
+    inc  hl
     cp   '%'
     jr   z, .put
     ld   (LIB_FMT), hl
@@ -290,6 +284,8 @@ LIB_PRINTF:
     inc  hl
     ld   (LIB_AP), hl
     ex   de, hl                        ; HL = the value
+    cp   'f'
+    jr   z, .float
     ld   de, LIB_NUM
     ld   c, 10
     cp   'd'
@@ -313,6 +309,43 @@ LIB_PRINTF:
 .unsigned:
     call LIB_UTOA
     jp   .text
+.float:                                ; a float's 3-word slot (Phase 8): its text from the float core
+    ld   hl, (LIB_AP)
+    dec  hl
+    dec  hl
+    push hl
+    ld   de, 6
+    add  hl, de
+    ld   (LIB_AP), hl
+    pop  hl
+    ld   a, c
+    cp   10
+    jr   c, .prec
+    ld   c, 9
+.prec:
+    ld   a, FOP_FTOA
+    call F_X                           ; HL = the text (PRINT_BUF)
+    jp   .text
+.num:                                  ; A = the decimal number at HL (0: none), HL past it. Destroys: F, DE
+    ld   d, 0
+.nd:
+    ld   a, (hl)
+    sub  '0'
+    cp   10
+    jr   nc, .ne
+    inc  hl
+    ld   e, a
+    ld   a, d
+    add  a, a
+    add  a, a
+    add  a, d
+    add  a, a
+    add  a, e
+    ld   d, a
+    jr   .nd
+.ne:
+    ld   a, d
+    ret
 
 ; ============================================================================
 ; LIB_ITOAS -- the text of HL in base C at DE; in base 10 signed ('-' and the magnitude)

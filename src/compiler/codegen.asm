@@ -29,6 +29,10 @@
 ;
 ; Muted code (CX_NOEVAL > 0: sizeof, the unused operand of a constant ?: && ||, the counting pass
 ; of an initialiser) is parsed and typed but emits nothing and links no chain.
+;
+; Floats (Phase 8): a float value is in F_ACC, a held one in a 3-word stack slot; loads, stores and
+; the operations are calls of src/runtime/float.asm (`call F_LD`, `call F_LDX / db d`,
+; `call F_LDK / 5 bytes`, `call F_OP / db op`, ...).
 ; ============================================================================
 
 CG_GUARD        EQU 12          ; a unit (at most 8 bytes) + a spilled push + the linking `jp`
@@ -272,6 +276,49 @@ CG_FLINK:
     ret
 
 ; ============================================================================
+; CG_FLOAD -- X, a float constant or object, into F_ACC (Phase 8): `call F_LDK / 5 bytes`,
+; `ld hl,nn / call F_LD`, `call F_LDX / db d`, or the address in HL and `call F_LD`. X = OK_RVAL
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CG_FLOAD:
+    ld   a, (X_KIND)
+    or   a
+    jr   z, .const
+    cp   OK_LVALF
+    call z, CG_NEAR                    ; a far frame object: its address (OK_LVAL)
+    ld   a, (X_KIND)
+    ld   hl, F_LDX
+    cp   OK_LVALF
+    jr   z, .frame
+    cp   OK_LVALC
+    ld   hl, (X_VAL)
+    ld   a, $21                        ; ld hl,nn
+    call z, CG_OPW
+    ld   a, (X_KIND)
+    cp   OK_LVAL
+    call z, CG_LVADDR
+    ld   hl, F_LD
+    call CG_CALL
+    jr   .rval
+.frame:
+    call CG_CALL
+    ld   a, (X_VAL)
+    call CG_B
+    jr   .rval
+.const:
+    ld   hl, F_LDK
+    call CG_CALL
+    ld   hl, (X_VAL)
+    ld   b, FLOAT_SIZE
+.k:
+    ld   a, (hl)
+    call CG_B
+    inc  hl
+    djnz .k
+.rval:
+    jp   CX_SET_RVAL
+
+; ============================================================================
 ; CG_VAL -- X a value in HL unless it is a constant
 ; CG_LOAD -- X a value in HL (OK_RVAL): the deferred load, the load through the address in HL,
 ; or a condition made 0/1. A byte object is zero- or sign-extended by its type (spec.md 5.1)
@@ -287,6 +334,9 @@ CG_LOAD:
     cp   OK_RVAL
     ret  z
     jr   nc, .cond
+    call CX_XFLT
+    jr   z, CG_FLOAD
+    ld   a, (X_KIND)
     ld   hl, (X_VAL)
     cp   OK_LVALC
     jr   c, .const
@@ -537,16 +587,10 @@ CG_JTRUE:
 CG_JFALSE:
     ld   b, 1
 CG_JCOND:
-    ld   a, (X_KIND)
-    cp   OK_LVALC
+    push hl
+    call CX_TRUTH                      ; C: a constant, A = its truth
+    pop  hl
     jr   nc, .test
-    ld   a, (X_VAL)
-    ld   c, a
-    ld   a, (X_VAL + 1)
-    or   c
-    jr   z, .false
-    ld   a, 1
-.false:
     xor  b                             ; 1: it jumps
     ret  z
     ld   a, $C3
@@ -569,8 +613,15 @@ CG_TEST:
     ld   a, (X_VAL)
     ret  z
     call CG_LOAD
+    call CX_XFLT
+    jr   z, .flt
     ld   hl, TPL_TEST                  ; ld a,h / or l
     call CG_SEQ
+    jr   .nz
+.flt:                                  ; a float (Phase 8): Z if F_ACC is 0
+    ld   hl, F_TST
+    call CG_CALL
+.nz:
     xor  a                             ; NZ: true
 ; CG_SETCOND -- X = OK_COND with the condition A. Out: A kept. Destroys: F
 CG_SETCOND:
@@ -840,6 +891,10 @@ CX_SWAPCG:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 CG_STORE:
+    ld   hl, (Y_TYPE)
+    call TY_CLASS
+    cp   TC_FLOAT
+    jr   z, CG_FSTORE
     ld   a, (Y_KIND)
     cp   OK_LVAL
     jr   nz, .direct
@@ -873,6 +928,67 @@ CG_STORE:
     inc  c
     ld   a, $74
     jp   CG_FRAME
+; CG_FSTORE -- the float object Y = X (a float value: the caller converts it; Phase 8): `call F_ST`
+; with the address in HL (`ld hl,nn`, or held: `pop hl`), or `call F_STX / db d`. Out: X = OK_RVAL,
+; the value in F_ACC. Destroys: AF, BC, DE, HL
+CG_FSTORE:
+    call CG_LOAD
+    ld   a, (Y_KIND)
+    cp   OK_LVAL
+    jr   nz, .direct
+    call CG_YHL                        ; the address
+    jr   .st
+.direct:
+    ld   hl, (Y_VAL)
+    cp   OK_LVALC
+    jr   nz, .frame
+    ld   a, $21                        ; ld hl,nn
+    call CG_OPW
+.st:
+    ld   hl, F_ST
+    call CG_CALL
+    jr   .rval
+.frame:
+    ld   hl, F_STX
+    call CG_CALL
+    ld   a, (Y_VAL)
+    call CG_B
+.rval:
+    jp   CX_SET_RVAL
+
+; ============================================================================
+; CG_PUSHX -- push the value X: `push hl`, or a float's 3-word slot (`call F_PUSH`; Phase 8). CX_PEND
+; counts the words: at most LEAPC_ARGS_MAX (spec.md 4.10; else E_NESTING)
+; Out: A = the words. Destroys: AF, BC, DE, HL
+; CG_FOP -- emit `call F_OP / db A` (an operation of the float core; Phase 8). Destroys: AF, HL
+; ============================================================================
+CG_PUSHX:
+    call CG_LOAD
+    call CX_XFLT
+    jr   z, .float
+    ld   a, $E5                        ; push hl
+    call CG_OP
+    ld   b, 1
+    jr   .count
+.float:
+    ld   hl, F_PUSH
+    call CG_CALL
+    ld   b, 3
+.count:
+    ld   hl, CX_PEND
+    ld   a, (hl)
+    add  a, b
+    ld   (hl), a
+    cp   LEAPC_ARGS_MAX + 1
+    ld   a, b
+    ret  c
+    jp   PP_E_NESTING
+CG_FOP:
+    push af
+    ld   hl, F_OP
+    call CG_CALL
+    pop  af
+    jp   CG_B
 
 ; ============================================================================
 ; CG_TAILON -- start code that only computes the value just stored (a new unit; at most 4 bytes

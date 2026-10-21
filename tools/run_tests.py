@@ -14,7 +14,8 @@ field, and must satisfy the case's own hand-written expectations:
     // mode: eol               lex with LM_EOL (end-of-line tokens)
 
 Token syntax in expectations: a keyword or punctuator as written (`int`, `<<=`); `id:name`;
-`num:N` (append `u` for an unsigned type, written `num:40000u`); `chr:N` (character constant);
+`num:N` (append `u` for an unsigned type, written `num:40000u`); `chr:N` (character constant); `fltx:hex5`
+(a floating constant of exactly these 5 bytes) or `flt:TEXT` (the float core's value of TEXT, tools/fpmodel.py);
 `str:text` (no spaces), `strx:hexbytes` or `strrep:hexbyte*count`; `eol`. A suffix `@N` also checks the line; a prefix
 ` (backquote) also checks the line-start flag (`#).
 
@@ -48,8 +49,12 @@ recoveries, the host tool's tapes, V2 and Leap-C refusing each other's tapes.
 
 Every suite runs as tasks on a pool of emulators (--workers, default the CPUs less one, at most 8).
 
-Usage: run_tests.py [--port N] [--only SUBSTR] [--workers N]
-                    [--suite boot,lexer,decl,exec,bench,shell,e2e,tape,canary] [--json OUT]"""
+Phase 8 (suite `float`, tools/floattest.py): the float core against its bit-exact model (tools/fpmodel.py).
+`--fast` (make test-fast): everything but the cassette, the corpus through the shell's RUN (the workflow
+cases still RUN) and the typing-cost and redraw measurements; the canary over every other program.
+
+Usage: run_tests.py [--port N] [--only SUBSTR] [--workers N] [--fast]
+                    [--suite boot,lexer,decl,exec,bench,shell,e2e,tape,float,canary] [--json OUT]"""
 import argparse
 import glob
 import json
@@ -73,10 +78,11 @@ import shelltest        # noqa: E402
 import e2etest          # noqa: E402
 import tapetest         # noqa: E402
 import canary           # noqa: E402
+import floattest        # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
-EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr", "lib", "rt", "mem")
+EXEC_DIRS = ("expr", "experr", "golden", "run", "stmt", "stmterr", "pp", "pperr", "lib", "rt", "mem", "float", "doc")
 TEST_AREA = 0xE000
 TEST_DUMP_DATA = TEST_AREA + 8
 
@@ -96,7 +102,7 @@ def decode_dump(data):
         if kind == clex.TK["TK_NUM"]:
             value = data[i] | data[i + 1] << 8
             i += 2
-        elif kind in (clex.TK["TK_IDENT"], clex.TK["TK_STR"]):
+        elif kind in (clex.TK["TK_IDENT"], clex.TK["TK_STR"], clex.TK["TK_FNUM"]):
             n = data[i]
             text = bytes(data[i + 1:i + 1 + n])
             i += 1 + n
@@ -141,6 +147,11 @@ def match_expect(item, tok):
         v = int(v.rstrip("u"), 0)
         ok = (tok.kind == T["TK_NUM"] and tok.value == v and not tok.flags & clex.TF_CHARCONST
               and bool(tok.flags & clex.TF_UNSIGNED) == uns)
+    elif item.startswith("flt:"):                  # a floating constant: the float core's value of TEXT
+        import fpmodel
+        ok = tok.kind == T["TK_FNUM"] and tok.text == fpmodel.atof(item[4:] + ";")[0]
+    elif item.startswith("fltx:"):                 # a floating constant: exactly these 5 bytes
+        ok = tok.kind == T["TK_FNUM"] and tok.text == bytes.fromhex(item[5:])
     elif item.startswith("chr:"):
         ok = tok.kind == T["TK_NUM"] and tok.value == int(item[4:], 0) and tok.flags & clex.TF_CHARCONST
     elif item.startswith("strrep:"):
@@ -337,27 +348,27 @@ def phase3_builtins(m):
         round(sum(idle) / len(idle)) if idle else None, min(idle or [0]), max(idle or [0]),
         min(held or [0]), max(held or [0]))
     out.append(("(built-in) ISR cost per frame within V2's +10%", ok, msg))
-    # the binding's search (compile time, through the EXROM trampoline): the first and last names
-    # of the table and a name that is not the library's; the least of 3 runs (no interrupt inside)
+    # the binding's search (compile time, EXROM-resident: LIB_FIND, called by XL_BIND behind the HOME
+    # trampoline LIB_BIND; here called directly with the EXROM paged in, as at the idle prompt): the first
+    # and last names of the table and a name that is not the library's; the least of 3 runs (no interrupt)
     m.restore()
-    m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)
     times, ok = {}, True
     for name, want in (("cls", S("LIB_CLS")), ("exit", S("LIB_EXIT")), ("count", None)):
-        m.write(0xF400, name.encode())
-        m.poke16(S("NM_PTR"), 0xF400)
+        m.write(0xE000, name.encode())
+        m.poke16(S("NM_PTR"), 0xE000)
         m.write(S("NM_LEN"), len(name))
         best = None
         for _ in range(3):
             m.tstates_reset()
-            r = m.call("CX_LIBFIND", maxi=200_000)
+            r = m.call("LIB_FIND", maxi=200_000)
             t = m.tstates()
             rg = m.regs()
             found = bool(rg["AF"] & 0x40)            # Z: a library name
             ok = ok and r["ok"] and found == (want is not None) and (want is None or rg["HL"] == want)
-            ok = ok and m.read(S("BANK_EXROM_DEPTH"), 1)[0] == 0
+            ok = ok and m.read(S("BANK_EXROM_DEPTH"), 1)[0] == 1
             best = t if best is None else min(best, t)
         times[name] = best
-    out.append(("(built-in) the library's name search (CX_LIBFIND)", ok,
+    out.append(("(built-in) the library's name search (LIB_FIND)", ok,
                 "cls %d T, exit %d T, not a library name %d T" % (times["cls"], times["exit"], times["count"])))
     return out
 
@@ -393,19 +404,24 @@ def phase4_builtins(m):
         r = m.call("CX_FOLD", maxi=200_000)
         hl = m.regs()["HL"]
         d1, c1 = m.read(S("BANK_EXROM_DEPTH"), 1)[0], chunk6()
-        m.write(0xF400, b"exit")
-        m.poke16(S("NM_PTR"), 0xF400)
-        m.write(S("NM_LEN"), 4)
-        r2 = m.call("CX_LIBFIND", maxi=200_000)
-        rg = m.regs()
+        m.write(S("TOK_BUF"), b"while")
+        m.write(S("TOK_LEN"), 5)
+        r2 = m.call("LEX_KEYWORD", maxi=200_000)       # (CX_XCALL: the EXROM-resident compiler parts, Phase 8)
+        kw = m.regs()["AF"] >> 8
         d2, c2 = m.read(S("BANK_EXROM_DEPTH"), 1)[0], chunk6()
+        m.setreg("AF", 0)                            # FOP_FRI (the float core through F_X, Phase 8)
+        m.setreg("HL", 7)
+        r3 = m.call("F_X", maxi=200_000)
+        fx = m.read(S("F_ACC"), 5).hex()
+        d3, c3 = m.read(S("BANK_EXROM_DEPTH"), 1)[0], chunk6()
+        nobrk = m.read(S("NOBRK"), 1)[0]
         want = "EXROM" if depth else "RAM"
-        ok = (r["ok"] and r2["ok"] and hl == 42 and rg["HL"] == S("LIB_EXIT") and (d1, c1, d2, c2) ==
-              (depth, want, depth, want))
-        out.append(("(built-in) trampolines CX_FOLD and CX_LIBFIND at paging depth %d%s" % (
+        ok = (r["ok"] and r2["ok"] and r3["ok"] and hl == 42 and kw == S("TK_WHILE") and fx == "8360000000" and
+              (d1, c1, d2, c2, d3, c3) == (depth, want, depth, want, depth, want) and nobrk == 0)
+        out.append(("(built-in) trampolines CX_FOLD, CX_XCALL and F_X at paging depth %d%s" % (
             depth, " (nested)" if depth else ""), ok,
-            "" if ok else "fold %d depth %d chunk 6 %s; libfind HL %04X depth %d chunk 6 %s" % (
-                hl, d1, c1, rg["HL"], d2, c2)))
+            "" if ok else "fold %d depth %d chunk 6 %s; keyword %02X depth %d chunk 6 %s; float %s depth %d chunk 6 %s "
+            "NOBRK %d" % (hl, d1, c1, kw, d2, c2, fx, d3, c3, nobrk)))
     # beep() from the shell's paging: RT_RUN pages the EXROM out (depth 0), the trampoline in (1),
     # NOBRK covers it; afterwards the shell's depth 1 again
     src = ["int main(void)", "{", "    beep(2, 0);", "    return 7;", "}"]
@@ -675,7 +691,7 @@ def t_corpus(m, arg, only, suites):
 
 
 def t_canary(m, arg, only, suites):
-    k, n = arg
+    k, n, stride = arg
     out = []
     box = [m]
 
@@ -684,30 +700,43 @@ def t_canary(m, arg, only, suites):
         box[0].start()
         return box[0]
     rows = []
-    for rec in canary.check_all(m, _shard(canary.corpus(only), k, n), restart):
+    for rec in canary.check_all(m, _shard(canary.corpus(only)[::stride], k, n), restart):
         rows.append(rec)
         if not rec["ok"]:
             out.append("canary: FAIL %s: %s" % (rec["case"], rec["msg"]))
     return dict(rows={"canary": rows}, failed=sum(not r["ok"] for r in rows), out=out)
 
 
+def t_float(m, arg, only, suites):
+    rows = floattest.run(m, count=arg)
+    bad = [r for r in rows if not r["ok"]]
+    return dict(rows={"float": [dict(case="float core", ok=not bad, checks=len(rows), failed=len(bad))]},
+                failed=int(bool(bad)), out=["float: FAIL %s" % r["msg"] for r in bad[:20]] +
+                ["float: the float core against its model: %d/%d checks pass" % (len(rows) - len(bad), len(rows))])
+
+
 TASKS = dict(boot=t_boot, decl=t_decl, exec=t_exec, execb=t_exec_builtins, lexer=t_lexer, shell=t_shell,
-             e2e=t_e2e, tape=t_tape, corpus=t_corpus, canary=t_canary)
+             e2e=t_e2e, tape=t_tape, corpus=t_corpus, canary=t_canary, float=t_float)
 HEAVY = ("typing-cost", "redraw-oracle")
 
 
-def plan(suites, only):
-    """The tasks, the longest first: (kind, image, arg)."""
+def plan(suites, only, fast=False):
+    """The tasks, the longest first: (kind, image, arg). fast (make test-fast): no tape (suite left out by
+    the caller), no corpus through the shell's RUN (the workflow cases still RUN), no typing-cost and redraw
+    measurements, the canary over every other program of the corpus, fewer float-core operands."""
     t = []
     if "shell" in suites:
         sc = [n for n, _, _ in shelltest.CASES if not only or only in n]
-        t += [("shell", "build", c) for c in sc if c in HEAVY]
+        if not fast:
+            t += [("shell", "build", c) for c in sc if c in HEAVY]
     if "canary" in suites:
-        t += [("canary", "build", (k, SHARDS["canary"])) for k in range(SHARDS["canary"])]
+        t += [("canary", "build", (k, SHARDS["canary"], 2 if fast else 1)) for k in range(SHARDS["canary"])]
+    if "float" in suites and not only:
+        t.append(("float", "build", 100 if fast else 300))
     if "tape" in suites:                            # (the longest first: the not-found search, the V2 exchange)
         tc = [n for n, _, _ in tapetest.CASES if not only or only in n]
         t += [("tape", "build", n) for n in sorted(tc, key=lambda n: n not in tapetest.LONG)]
-    if "e2e" in suites:
+    if "e2e" in suites and not fast:
         t += [("corpus", "build", (k, SHARDS["corpus"])) for k in range(SHARDS["corpus"])]
     if "exec" in suites:
         t += [("exec", "build", (k, SHARDS["exec"])) for k in range(SHARDS["exec"])]
@@ -764,12 +793,15 @@ def main():
     ap.add_argument("--port", type=int, default=10760)
     ap.add_argument("--only")
     ap.add_argument("--json", default=os.path.join(ROOT, "build", "test_results.json"))
-    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench,shell,e2e,tape,canary")
+    ap.add_argument("--suite", default=None)
+    ap.add_argument("--fast", action="store_true", help="make test-fast: no tape, no corpus through RUN, "
+                    "no typing measurements, the canary over half the corpus")
     ap.add_argument("--workers", type=int, default=max(1, min(8, (os.cpu_count() or 4) - 1)))
     a = ap.parse_args()
-    suites = a.suite.split(",")
+    suites = (a.suite or ("boot,lexer,decl,exec,bench,shell,e2e,float,canary" if a.fast else
+                          "boot,lexer,decl,exec,bench,shell,e2e,tape,float,canary")).split(",")
     t_start = time.time()
-    tasks = plan(suites, a.only)
+    tasks = plan(suites, a.only, a.fast)
     nw = max(1, min(a.workers, len(tasks)))
     tq, rq = mp.Queue(), mp.Queue()
     for i, t in enumerate(tasks):
@@ -798,7 +830,7 @@ def main():
             if p.is_alive():
                 p.terminate()
     got.sort(key=lambda r: r["idx"])
-    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[], tape=[])
+    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[], tape=[], float=[])
     failed = sum(r["failed"] for r in got)
     extra = {}
     canary_rows = []
@@ -874,7 +906,7 @@ def main():
               "%d T); compile errors reported through RUN: %d numbers %s" % (
                   sum(x["ok"] for x in cr), len(cr), "%.2f" % s["ms_per_line"] if s["ms_per_line"] else "-",
                   s["lines"], s["tstates"], len(s["errors"]), s["errors"]))
-        if not a.only:
+        if not a.only and not a.fast:
             # every compile error class positions the cursor on its line through RUN (project_plan.md 8):
             # each number reported by a passing case (the corpus, and STRING TOO LONG's own case)
             seen = set(s["errors"]) | ({17} if any(x["ok"] for x in er if x["case"] == "diag-string-too-long") else set())
@@ -885,6 +917,12 @@ def main():
                 print("e2e: FAIL compile errors never reported through RUN with the cursor checked: %s" % missing)
             else:
                 print("e2e: every compile error number (%d) reported through RUN with the cursor on its line" % len(seen))
+    if "float" in suites:
+        for r in got:
+            if r["kind"] == "float":
+                for l in r["out"]:
+                    if not l.startswith("float: FAIL"):
+                        print(l)
     if "tape" in suites:
         tr = sorted(results["tape"], key=lambda x: x["case"])
         print("tape: %d/%d cassette cases pass" % (sum(x["ok"] for x in tr), len(tr)))

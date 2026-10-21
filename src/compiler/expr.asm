@@ -15,6 +15,11 @@
 ; The same parser evaluates the constant expressions of declarations (M1.2): array sizes, enum
 ; values, static initialisers, `sizeof`. There an operand that is not constant is an error
 ; (E_CONSTEXPR) and `sizeof` emits nothing (CX_MUTE).
+;
+; Floating point (Phase 8, spec.md 4.9): a float value is computed in F_ACC (src/runtime/float.asm),
+; a held one is a 3-word stack slot. Floating constants are compile-time constants (OK_CONST with
+; their 5 bytes in the compile workspace): negation, casts and + - * / of constants are folded by the
+; float core (CX_FOLD), so constant float expressions initialise static data.
 ; ============================================================================
 
 ; ============================================================================
@@ -110,7 +115,7 @@ CX_ASSIGN:
     ld   a, (X_KIND)
     cp   OK_LVAL
     call z, CG_LOAD
-    call CX_HOLD                       ; [left][op][lvalue]
+    call CX_HOLDV                      ; [left][op][lvalue]
     call CX_NEXTV
     call CX_POPY
     pop  af
@@ -124,10 +129,8 @@ CX_ASSIGN:
     call CX_POPY                       ; Y = the lvalue
     ld   hl, (Y_TYPE)
     call CX_CHECK_ASSIGN
-    ld   a, (X_KIND)
-    cp   OK_LVALC
     ld   hl, (Y_TYPE)
-    call c, CX_CAST                    ; a constant: converted now
+    call CX_CONV                       ; a constant: converted now; int <-> float
     call CG_STORE
     ld   hl, (Y_TYPE)
     ld   (X_TYPE), hl
@@ -193,6 +196,18 @@ CX_HOLD:
     jp   c, CX_PUSHX
     ld   a, 1
     ld   (CG_PEND), a
+    jp   CX_PUSHX
+; CX_HOLDV -- hold the value X for a binary operator: CX_HOLD, but a resident float (in F_ACC) is
+; pushed now, a 3-word slot counted in CX_PEND (Phase 8). Destroys: AF, BC, DE, HL
+CX_HOLDV:
+    call CX_XFLT
+    jr   nz, CX_HOLD
+    ld   a, (X_KIND)
+    cp   OK_LVAL
+    jr   c, CX_HOLD                    ; deferred: a constant or an object
+    push bc
+    call CG_PUSHX
+    pop  bc
     jp   CX_PUSHX
 
 ; ============================================================================
@@ -285,12 +300,18 @@ CX_COND:
     call nz, CX_SWAP                   ; X = the second operand
     call CG_VAL                        ; (retyped below: a deferred object is loaded first)
 .types:                                ; both integers: the usual conversions; an integer (a null
-    ld   hl, (Y_TYPE)                  ; pointer constant) with a pointer: the pointer's type
-    call TY_CLASS
+    ld   hl, (Y_TYPE)                  ; pointer constant) with a pointer: the pointer's type; two
+    call TY_CLASS                      ; floats: float; a float and another type: E_TYPE (deviation)
     ld   d, a
     ld   hl, (X_TYPE)
     call TY_CLASS
     ld   e, a
+    cp   TC_FLOAT
+    jr   z, .flt
+    ld   a, d
+    cp   TC_FLOAT
+    jp   z, CC_E_TYPE
+    ld   a, e
     dec  a
     cp   TC_UINT
     ret  nc
@@ -303,6 +324,10 @@ CX_COND:
 .set:
     ld   (X_TYPE), hl
     ret
+.flt:
+    cp   d
+    ret  z
+    jp   CC_E_TYPE
 .second:
     call CX_EXPR
     jr   .value
@@ -318,7 +343,12 @@ CX_TRUTH:
     ld   a, (X_KIND)
     cp   OK_LVALC
     ret  nc
+    call CX_XFLT
     ld   hl, (X_VAL)
+    jr   nz, .int
+    ld   l, (hl)                       ; a float constant: its exponent (0: zero)
+    ld   h, 0
+.int:
     ld   a, h
     or   l
     scf
@@ -362,7 +392,7 @@ CX_BINARY:
     jr   z, .logic
     inc  c
     ld   b, c
-    call CX_HOLD                       ; the left operand (BC kept)
+    call CX_HOLDV                      ; the left operand (BC kept)
     call CX_BINARY                     ; the right operand: higher precedence (left assoc.)
     call CX_RVAL
     call CX_POPY
@@ -500,6 +530,11 @@ CX_BINOP:
     ld   hl, (X_TYPE)
     call TY_CLASS
     ld   e, a                          ; D = left class, E = right class
+    cp   TC_FLOAT
+    jp   z, CX_FBINOP
+    ld   a, d
+    cp   TC_FLOAT
+    jp   z, CX_FBINOP
     ld   a, (CX_OP)
     cp   TK_PLUS
     jr   z, .add
@@ -667,6 +702,150 @@ CX_INT_A:
     cp   TC_UINT
     ret  c
     jp   CC_E_OPERAND
+; CX_ARITH_A -- class A must be arithmetic: an integer or float (Phase 8). Destroys: AF
+CX_ARITH_A:
+    dec  a
+    cp   TC_FLOAT
+    ret  c
+    jp   CC_E_OPERAND
+; CX_XFLT -- Z if X is a float; A = X's class. Destroys: AF, HL
+CX_XFLT:
+    ld   hl, (X_TYPE)
+    call TY_CLASS
+    cp   TC_FLOAT
+    ret
+
+; ============================================================================
+; CX_FBINOP -- CX_BINOP with a float operand (Phase 8; spec.md 4.3, 4.9): + - * / and the comparisons
+; of two arithmetic operands, an integer one converted. Two constants: + - * / folded by the float
+; core. Else `call F_OP / db op`: a resident float left operand is in its stack slot (CX_HOLDV) and
+; the right one goes to F_ACC; any other left operand (deferred, or an integer) is loaded after the
+; right one is pushed, and the operation reversed (bit 0 of the operation)
+; In:  D, E = the classes of Y (left) and X (right); CX_OP = the operator
+; Out: X = a float value, or a comparison: OK_COND, int
+; Errors: E_OPERAND, E_RANGE (folding)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CX_FBINOP:
+    ld   a, d
+    call CX_ARITH_A
+    ld   a, e
+    call CX_ARITH_A
+    ld   a, (CX_OP)
+    ld   hl, CX_FOPS
+    ld   bc, CX_FOPS_N
+    cpir
+    jp   nz, CC_E_OPERAND
+    ld   hl, CX_FOPS + 2 * CX_FOPS_N - 1
+    or   a
+    sbc  hl, bc
+    ld   a, (hl)
+    ld   (CX_OP), a                    ; the operation (a comparison: its condition in bits 4-5)
+    ld   a, (Y_KIND)
+    ld   b, a
+    ld   a, (X_KIND)
+    or   b
+    jr   nz, .code
+    bit  3, (hl)
+    jr   nz, .code                     ; (comparisons: at run time)
+    ld   hl, TY_FLOAT                  ; two constants: folded
+    call CX_CAST                       ; (an integer one converted)
+    call CX_SWAP
+    ld   hl, TY_FLOAT
+    call CX_CAST                       ; X = the left, Y = the right constant
+    ld   hl, (Y_VAL)
+    call F_LD
+    ld   hl, (X_VAL)
+    ld   a, (CX_OP)
+    call CX_FOLD                       ; F_ACC = left op right
+    ld   hl, F_ACC
+    jp   CX_FCONST
+.code:
+    ld   a, d
+    cp   TC_FLOAT
+    jr   nz, .rev
+    ld   a, (Y_KIND)
+    cp   OK_RVAL
+    jr   nz, .rev
+    call CX_TOFLT                      ; the left operand in its slot, the right one in F_ACC
+    ld   hl, CX_PEND                   ; (the operation pops the slot)
+    dec  (hl)
+    dec  (hl)
+    dec  (hl)
+    xor  a
+    jr   .op
+.rev:
+    call CX_TOFLT                      ; the right operand to F_ACC ...
+    ld   a, (Y_KIND)
+    cp   OK_LVAL
+    call nc, CG_YHL                    ; (a resident integer left operand: into HL first)
+    ld   hl, F_PUSH
+    call CG_CALL                       ; ... and to its slot (HL kept)
+    call CX_SWAP
+    call CX_TOFLT                      ; the left operand to F_ACC
+    ld   a, 1                          ; reversed
+.op:
+    ld   hl, CX_OP
+    xor  (hl)
+    ld   (hl), a
+    call CG_FOP
+    ld   a, (CX_OP)
+    bit  3, a
+    jr   nz, .cmp
+    ld   hl, TY_FLOAT
+    ld   (X_TYPE), hl
+    jp   CX_SET_RVAL
+.cmp:
+    rra
+    rra
+    rra
+    rra
+    and  3
+    call CG_SETCOND
+    jp   CX_SET_INT
+; the operators, then the operations: FOP_*; a comparison's condition (0 NZ, 1 Z, 2 NC, 3 C) in
+; bits 4-5, which the float core ignores; > and <= compare reversed
+CX_FOPS:
+    DB   TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH, TK_LT, TK_GT, TK_LE, TK_GE, TK_EQ, TK_NE
+CX_FOPS_N EQU $ - CX_FOPS
+    DB   FOP_ADD, FOP_SUB, FOP_MUL, FOP_DIV, FOP_CMP | $30, FOP_CMPR | $30, FOP_CMPR | $20
+    DB   FOP_CMP | $20, FOP_CMP | $10, FOP_CMP
+    ASSERT $ - CX_FOPS == 2 * CX_FOPS_N
+
+; ============================================================================
+; CX_TOFLT -- X (a value) as a float in F_ACC: loaded; an integer converted (`call F_OP / db FRI`,
+; FRU for unsigned)
+; CX_FCONST -- X = the float constant whose 5 bytes are at HL: a copy in the compile workspace
+; (the local area: reclaimed with its scope)
+; Errors: E_NOMEM (CX_FCONST)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CX_TOFLT:
+    call CG_LOAD
+    call CX_XFLT
+    ret  z
+    cp   TC_UINT
+    ld   a, FOP_FRU
+    jr   z, .c
+    xor  a                             ; FOP_FRI
+.c:
+    call CG_FOP
+    ld   hl, TY_FLOAT
+    ld   (X_TYPE), hl
+    ret
+CX_FCONST:
+    push hl
+    ld   bc, FLOAT_SIZE
+    call WS_LALLOC
+    ld   (X_VAL), hl
+    ex   de, hl
+    pop  hl
+    ldir
+    ld   hl, TY_FLOAT
+    ld   (X_TYPE), hl
+    xor  a                             ; OK_CONST
+    ld   (X_KIND), a
+    ret
 
 ; ============================================================================
 ; CX_USUAL -- the usual arithmetic conversions of two integer classes (spec.md 4.3)
@@ -781,6 +960,8 @@ CX_UNARY:
     jr   z, .not
     push af
     call TY_CLASS
+    cp   TC_FLOAT
+    jr   z, .float
     call CX_INT_A
     call CG_VAL                        ; a run-time operand: its value (its own width) first
     ld   hl, (X_TYPE)
@@ -809,20 +990,43 @@ CX_UNARY:
     ret
 .not:                                  ; !x = (x == 0), an int
     call CX_SCALAR_X
-    ld   a, (X_KIND)
-    cp   OK_LVALC
+    call CX_TRUTH
     jr   c, .cnot
     call CG_TEST                       ; at run time: the opposite condition
     xor  1
     call CG_SETCOND
     jr   .int
-.cnot:
-    ld   de, (X_VAL)
-    ld   hl, 0
-    ld   b, TK_EQ
-    call .cfold
+.cnot:                                 ; a constant (A = its truth)
+    xor  1
+    ld   l, a
+    ld   h, 0
+    ld   (X_VAL), hl
+    xor  a
+    ld   (X_KIND), a                   ; OK_CONST
 .int:
     jp   CX_SET_INT
+.float:                                ; a float (Phase 8): + nothing, - negated (a constant now), ~ E_OPERAND
+    pop  af
+    cp   TK_TILDE
+    jp   z, CC_E_OPERAND
+    cp   TK_PLUS
+    ret  z
+    ld   a, (X_KIND)
+    or   a
+    jr   z, .fneg
+    call CG_LOAD
+    ld   a, FOP_NEG
+    jp   CG_FOP
+.fneg:
+    ld   hl, (X_VAL)
+    ld   a, (hl)
+    or   a
+    ret  z                             ; (0 has no sign)
+    inc  hl
+    ld   a, (hl)
+    xor  $80
+    ld   (hl), a
+    ret
 .deref:
     call CX_RVAL
     jp   CX_DEREF
@@ -872,6 +1076,8 @@ CX_INCDEC:
     call CX_POPY                       ; Y = the lvalue
     ld   hl, (Y_TYPE)
     call TY_CLASS
+    cp   TC_FLOAT
+    jr   z, .float
     cp   TC_PTR
     ld   de, 1
     jr   nz, .step
@@ -899,6 +1105,25 @@ CX_INCDEC:
     call TY_CLASS
     call CG_EXT0
     jp   CG_TAILOFF
+.float:                                ; a float (Phase 8): F_ACC +- 1, stored; postfix: the value before
+    pop  af                            ; (FOP_PINC / FOP_PDEC keep it in F_OLD: F_REST)
+    pop  bc
+    push bc
+    ld   b, FOP_INC
+    cp   TK_DEC
+    jr   nz, .fop
+    inc  b                             ; FOP_DEC
+.fop:
+    ld   a, c
+    add  a, a
+    add  a, b                          ; postfix: FOP_PINC, FOP_PDEC
+    call CG_FOP
+    call CG_STORE
+    pop  bc
+    dec  c
+    ret  nz
+    ld   hl, F_REST
+    jp   CG_CALL
 
 ; ============================================================================
 ; CX_POSTFIX -- a primary expression and its postfix operators [ ] ( ) . -> ++ --
@@ -1061,19 +1286,22 @@ CX_CALL:
     inc  hl
     ld   (CX_PARAMP), hl
     ex   de, hl
+    push hl
     call CX_CHECK_ASSIGN               ; to the parameter's type (a char parameter is read as a
-    jr   .push                         ; byte by the callee)
+    pop  hl                            ; byte by the callee) ...
+    call CX_CONV                       ; ... and converted between integer and float
+    jr   .push
 .default:
     call CX_SCALAR_X                   ; no prototype: scalars (char already promoted)
 .push:
-    call CG_LOAD
-    ld   a, $E5                        ; push hl
-    call CG_OP
-    ld   hl, CX_ARGN
-    dec  (hl)
+    call CG_PUSHX                      ; A = the words pushed (a float: 3; CX_PEND counts them)
+    ld   hl, CX_ARGT
+    dec  a
+    add  a, (hl)
+    ld   (hl), a                       ; the words to pop afterwards
     dec  hl
-    inc  (hl)                          ; CX_PEND: one more word pushed
-    ASSERT CX_PEND == CX_ARGN - 1
+    dec  (hl)                          ; CX_ARGN: one argument less
+    ASSERT CX_ARGT == CX_ARGN + 1
     jr   .eval
 .end:                                  ; after the first argument: the others again, to `)`
     ld   a, (TOK_KIND)
@@ -1189,6 +1417,8 @@ CX_PRIMARY:
     ld   a, (TOK_KIND)
     cp   TK_NUM
     jr   z, .number
+    cp   TK_FNUM
+    jr   z, .fnum
     cp   TK_STR
     jp   z, .string
     cp   TK_IDENT
@@ -1219,6 +1449,10 @@ CX_PRIMARY:
     xor  a                             ; OK_CONST
 .kind:
     ld   (X_KIND), a
+    jp   LEX_NEXT
+.fnum:                                 ; a floating constant (Phase 8): TOK_BUF = its value
+    ld   hl, TOK_BUF
+    call CX_FCONST
     jp   LEX_NEXT
 .ident:
     call NM_FROM_TOK
@@ -1430,7 +1664,11 @@ CX_CAST:
     cp   TC_ARRAY
     jp   nc, CC_E_OPERAND
     ld   b, a                          ; B = the target class
+    cp   TC_FLOAT
+    jr   z, .tof
     ld   a, c
+    cp   TC_FLOAT
+    jr   z, .fromf
     call CX_SCALAR_A
     ld   a, (X_KIND)
     cp   OK_FUNC
@@ -1471,11 +1709,53 @@ CX_CAST:
 .type:
     ld   (X_TYPE), hl
     ret
+.tof:                                  ; to float (Phase 8): from an integer or a float
+    ld   a, c
+    call CX_ARITH_A
+    ld   a, (X_KIND)
+    or   a
+    jp   nz, CX_TOFLT                  ; at run time
+    ld   a, c
+    cp   TC_FLOAT
+    ret  z                             ; a float constant
+    ld   hl, (X_VAL)                   ; an integer constant: converted now
+    cp   TC_UINT
+    ld   a, FOP_FRU
+    jr   z, .kf
+    xor  a                             ; FOP_FRI
+.kf:
+    call CX_FOLD
+    ld   hl, F_ACC
+    jp   CX_FCONST
+.fromf:                                ; from float to an integer type (B)
+    ld   a, b
+    call CX_INT_A
+    push hl
+    ld   a, (X_KIND)
+    or   a
+    jr   z, .ki
+    push bc
+    call CG_LOAD
+    ld   a, FOP_TOI                    ; at run time: truncated (the low 16 bits), then as an int
+    call CG_FOP                        ; value (a char: extended)
+    pop  bc
+    pop  hl
+    jr   .code
+.ki:                                   ; a constant: converted now, then as an int constant
+    ld   hl, (X_VAL)
+    call F_LD
+    ld   a, FOP_TOI
+    call CX_FOLD
+    ld   (X_VAL), hl
+    ld   hl, TY_INT
+    ld   (X_TYPE), hl
+    pop  hl
+    jp   CX_CAST
 
 ; ============================================================================
 ; CX_CHECK_ASSIGN -- can X (a value) be assigned to an object of type HL (spec.md 4.3)?
-; Integers take integers; pointers take compatible pointers, void * either way, or the null
-; pointer constant 0.
+; Arithmetic types (integers, float) take arithmetic values; pointers take compatible pointers,
+; void * either way, or the null pointer constant 0.
 ; Errors: E_TYPE
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
@@ -1484,12 +1764,12 @@ CX_CHECK_ASSIGN:
     cp   TC_PTR
     jr   z, .ptr
     dec  a
-    cp   TC_UINT
+    cp   TC_FLOAT
     jr   nc, .bad                      ; arrays, structs, void
     ld   hl, (X_TYPE)
     call TY_CLASS
     dec  a
-    cp   TC_UINT
+    cp   TC_FLOAT
     ret  c
 .bad:
     jp   CC_E_TYPE
@@ -1527,6 +1807,24 @@ CX_CHECK_ASSIGN:
     jr   .bad
 .void:
     pop  hl
+    ret
+
+; ============================================================================
+; CX_CONV -- convert the value X for an object of type HL (assignment, argument, initialiser): a
+; constant now (CX_CAST), an integer to or from float (code; Phase 8); else nothing
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CX_CONV:
+    ld   a, (X_KIND)
+    cp   OK_LVALC
+    jp   c, CX_CAST
+    call TY_CLASS
+    cp   TC_FLOAT
+    jp   z, CX_CAST
+    push hl
+    call CX_XFLT
+    pop  hl
+    jp   z, CX_CAST
     ret
 
 ; ============================================================================

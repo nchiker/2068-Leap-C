@@ -41,6 +41,8 @@
 ; exact mistake, so both are always added together now.
 ; ============================================================================
 
+    IFNDEF GFX_EDITOR_TEXT_ONLY          ; Leap-C (delta D12): the EXROM assembles only GFX_PUTCHAR_BOLD
+                                         ; and GFX_PRINT_STRING, the editor's text output
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
 
@@ -660,6 +662,9 @@ GFX_PUTCHAR_OVER:
     djnz .scanline_loop
     ret
 
+    ENDIF
+    IFNDEF GFX_NO_EDITOR_TEXT            ; Leap-C (delta D12): GFX_PUTCHAR_BOLD and GFX_PRINT_STRING are
+                                         ; the EXROM editor's only, so they are assembled in the EXROM
 ; ============================================================================
 ; GFX_PUTCHAR_BOLD
 ; Plots one character with a synthesized bold effect: each scanline
@@ -727,6 +732,8 @@ GFX_PRINT_STRING:
     inc  c
     jr   .loop
 
+    ENDIF
+    IFNDEF GFX_EDITOR_TEXT_ONLY
 ; ============================================================================
 ; GFX_PRINT_STRING_ATTR
 ; Prints a null-terminated string with BASIC-style attributes. At column 32
@@ -2219,3 +2226,4 @@ GFX_SPRITE_DRAW:
     ld   a, 1
     ld   (SPRITE_XFER_DIR), a           ; nonzero = draw
     jr   GFX_SPRITE_TRANSFER
+    ENDIF

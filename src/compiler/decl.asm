@@ -63,14 +63,17 @@ IMG_TABLE:
 ; ============================================================================
 ; CC_EXPECT -- the current token must be A; step past it
 ; In:  A = token kind. Out: A = the next token's kind
-; Errors: E_SYNTAX
+; Errors: E_SYNTAX, at the previous token's line (Phase 8): a missing `;` or `)` belongs after it,
+;      and the token that is there instead may start the next line
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 CC_EXPECT:
     ld   hl, TOK_KIND
     cp   (hl)
     jp   z, LEX_NEXT
-    jp   CC_E_SYNTAX
+    ld   hl, (TOK_PLINE)
+    ld   a, E_SYNTAX
+    jp   CC_ERROR_AT
 
 ; ============================================================================
 ; CC_STACKCHK -- compiler stack guard for the recursive parsers (spec.md 4.10)
@@ -271,12 +274,13 @@ DS_CODE:
     xor  a
     ret
 
-; specifier codes: 1-5 storage class (SC_*), DSC_CONST, DSC_NOTSUP, DSC_STRUCT, DSC_ENUM, or
-; $80 + the DS_MASK bit of a type specifier
+; specifier codes: 1-5 storage class (SC_*), DSC_CONST, DSC_NOTSUP, DSC_STRUCT, DSC_ENUM, DSC_FLOAT,
+; or $80 + the DS_MASK bit of a type specifier
 DSC_CONST       EQU $40
 DSC_NOTSUP      EQU $41
 DSC_STRUCT      EQU $42
 DSC_ENUM        EQU $43
+DSC_FLOAT       EQU $44         ; float, double (Phase 8): one type, alone as a struct name is
 DSM_VOID        EQU $01
 DSM_CHAR        EQU $02
 DSM_SHORT       EQU $04
@@ -287,8 +291,8 @@ DSM_OTHER       EQU $40             ; struct, enum or typedef name
 DS_TABLE:
     DB   SC_AUTO, 0, 0, $80 + DSM_CHAR                  ; auto break case char
     DB   DSC_CONST, 0, 0, 0                             ; const continue default do
-    DB   DSC_NOTSUP, 0, DSC_ENUM, SC_EXTERN             ; double else enum extern
-    DB   DSC_NOTSUP, 0, 0, 0                            ; float for goto if
+    DB   DSC_FLOAT, 0, DSC_ENUM, SC_EXTERN              ; double else enum extern
+    DB   DSC_FLOAT, 0, 0, 0                             ; float for goto if
     DB   $80 + DSM_INT, DSC_NOTSUP, SC_REGISTER, 0      ; int long register return
     DB   $80 + DSM_SHORT, $80 + DSM_SIGNED, 0, SC_STATIC ; short signed sizeof static
     DB   DSC_STRUCT, 0, SC_TYPEDEF, DSC_NOTSUP          ; struct switch typedef union
@@ -300,8 +304,8 @@ DS_TABLE:
 ; In:  current token = the first specifier, or anything else (C89 implicit int)
 ; Out: HL = base type; C = storage class (SC_*), B = nonzero if `const` was given; current token = the
 ;      first token after the specifiers
-; Errors: E_TYPESPEC, E_STORAGE (two storage classes), E_NOTSUP (long, float, double, union,
-;      volatile), and those of STRUCT_SPEC / ENUM_SPEC
+; Errors: E_TYPESPEC, E_STORAGE (two storage classes), E_NOTSUP (long, union, volatile), and those
+;      of STRUCT_SPEC / ENUM_SPEC
 ; Destroys: AF, DE, IX; NM
 ; ============================================================================
 DECL_SPECS:
@@ -325,6 +329,9 @@ DECL_SPECS:
     jp   c, CC_E_NOTSUP
     ld   hl, STRUCT_SPEC
     jr   z, .agg
+    cp   DSC_FLOAT
+    ld   hl, TY_FLOAT
+    jr   z, .other                     ; float, double: alone, as a typedef name
     ld   hl, ENUM_SPEC
 .agg:
     ld   ix, DS_SC                     ; struct or enum: the specifier parsers nest DECL_SPECS
@@ -346,6 +353,7 @@ DECL_SPECS:
     jr   z, .done
     ld   l, (ix + S_TYPE)
     ld   h, (ix + S_TYPE + 1)
+.other:
     ex   (sp), hl
     ld   a, DSM_OTHER
     jr   .typebit
@@ -808,7 +816,7 @@ PARAMS:
     ld   bc, 0                         ; B = flags, C = parameter count
     ld   a, (TOK_KIND)
     cp   TK_RPAREN
-    jr   z, .end                       ; `()`: no prototype
+    jp   z, .end                       ; `()`: no prototype
     inc  b                             ; TFF_PROTO
 .param:
     push bc
@@ -853,10 +861,21 @@ PARAMS:
     ld   a, SK_OBJ
     call DCL_LOCAL
     ld   (ix + S_FLAGS), 1 << SF_PARAM
-    pop  bc
-    ld   a, c
-    add  a, a
-    ld   (ix + S_VAL), a               ; argument offset: 2 per parameter
+    call DCL_GETTYPE
+    call TY_CLASS
+    pop  bc                            ; B = flags | 2 x the argument words so far (Phase 8)
+    ld   e, a
+    ld   a, b
+    and  $FE
+    ld   (ix + S_VAL), a               ; argument offset: 2 per word before it (spec.md 5.2)
+    ld   a, e
+    cp   TC_FLOAT
+    ld   a, 2                          ; a word ...
+    jr   nz, .words
+    ld   a, 2 * 3                      ; ... a float: three (spec.md 5.2)
+.words:
+    add  a, b
+    ld   b, a
     inc  c
     ld   a, c
     cp   16 + 1
@@ -867,7 +886,7 @@ PARAMS:
     push bc
     rst  $30                          ; LEX_NEXT
     pop  bc
-    jr   .param
+    jp   .param
 .end:
     push bc
     ld   a, TK_RPAREN
@@ -888,7 +907,9 @@ PARAMS:
     add  hl, de
     ld   (hl), c                       ; parameter count
     inc  hl
-    ld   (hl), b                       ; flags
+    ld   a, b
+    and  1
+    ld   (hl), a                       ; flags
     inc  hl
     ex   de, hl                        ; DE -> the parameter types: last parameter first,
     ld   hl, (SYM_LOC)                 ; the order of the chain

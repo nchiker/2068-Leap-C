@@ -7,7 +7,9 @@
 ; the image and zeroes the rest, so the image holds the program's initial static data.
 ;
 ; Initialisers follow C89 6.5.7 with brace elision: scalars (optionally in braces), arrays and
-; structs of constant expressions, char arrays from string literals. With CX_NOEVAL > 0 (the
+; structs of constant expressions, char arrays from string literals. Phase 8: float objects take
+; arithmetic constant expressions (floating constants folded by the float core, integers converted),
+; integer objects floating ones (truncated). With CX_NOEVAL > 0 (the
 ; counting pass for a `[]` array) nothing is stored or allocated.
 ; ============================================================================
 
@@ -131,16 +133,22 @@ INIT:
     ld   a, (TOK_KIND)                 ; scalar
     cp   TK_LBRACE
     jr   z, .braced_scalar
-    call CX_CONST_INIT                 ; X = a constant (integer or address)
+    call CX_CONST_INIT                 ; X = a constant (integer, float or address)
     pop  hl
     push hl
     call CX_CHECK_ASSIGN
     pop  hl
-    call TY_SIZE                       ; 1 or 2
+    push hl
+    call CX_CONV                       ; (an integer to or from float: converted now; Phase 8)
+    pop  hl
+    call TY_SIZE                       ; 1, 2 or 5
     pop  de
     ld   a, (CX_NOEVAL)
     or   a
     ret  nz
+    ld   a, l
+    cp   FLOAT_SIZE
+    jr   z, .float
     ld   a, (X_KIND)
     cp   OK_FUNC
     ld   a, l
@@ -154,6 +162,18 @@ INIT:
     ret  z
     inc  hl
     ld   (hl), d
+    ret
+.float:                                ; a float: the constant's 5 bytes; its workspace copy is freed
+    ld   hl, (X_VAL)                   ; if it is the newest
+    call F_CP5
+    ld   de, (X_VAL)
+    ld   hl, FLOAT_SIZE
+    add  hl, de
+    ld   bc, (WS_LOC)
+    or   a
+    sbc  hl, bc
+    ret  nz
+    ld   (WS_LOC), de
     ret
 .braced_scalar:
     rst  $30                          ; LEX_NEXT

@@ -41,13 +41,23 @@ COMP_XSHELL_BEGIN:
 COMP_XCOMP_ENTRY:
     ASSERT $ == LEAPC_EXROM_FOLD
     jp   XC_FOLD
-    ASSERT $ == LEAPC_EXROM_LIBFIND
-    jp   LIB_FIND
+    ASSERT $ == LEAPC_EXROM_LIBBIND
+    jp   XL_BIND
+    ASSERT $ == LEAPC_EXROM_KEYWORD
+    jp   XK_KEYWORD
+    ASSERT $ == LEAPC_EXROM_TYEQUAL
+    jp   XT_EQUAL
+    ASSERT $ == LEAPC_EXROM_DIRECTIVE
+    jp   XP_DIRECTIVE
 COMP_XCOMP_ENTRY_END:
     ASSERT $ == LEAPC_EXROM_BEEP
     jp   AY_BEEP_PLAY                  ; beep() (HOME LIB_BEEP: page in, play, page out)
     ASSERT $ == LEAPC_EXROM_TAPE
     jp   SH_LIBTAPE                    ; tape_save(), tape_load() (HOME LIB_TAPE: page in, call, page out)
+COMP_XFP_ENTRY:
+    ASSERT $ == LEAPC_EXROM_FLOAT
+    jp   XF_OP                         ; the float core (HOME F_X, F_OP; CX_FOLD at compile time)
+COMP_XFP_ENTRY_END:
 ; ---------------------------------------------------------------- shell
     INCLUDE "src/shell/shell.asm"
     INCLUDE "src/shell/tape.asm"
@@ -64,11 +74,20 @@ COMP_XDIAG_END:
 COMP_XCOMP_BEGIN:
     INCLUDE "src/compiler/fold.asm"
     INCLUDE "src/compiler/libnames.asm"
+    INCLUDE "src/compiler/keywords.asm"
+    INCLUDE "src/compiler/tyequal.asm"
+    INCLUDE "src/compiler/directives.asm"
 COMP_XCOMP_END:
 
 ; ---------------------------------------------------------------- retained platform (spec.md 2.1)
 COMP_XPLATFORM_BEGIN:
     INCLUDE "rom/exrom_editor.asm"
+; the line store's insert and range delete: the editor's only callers (platform delta D11, Phase 8)
+    DEFINE MEM_LINE_EDIT_ONLY
+    INCLUDE "kernel/memory/memory.asm"
+; the editor's text output (bold keywords, strings): its only callers (platform delta D12, Phase 8)
+    DEFINE GFX_EDITOR_TEXT_ONLY
+    INCLUDE "kernel/graphics/graphics.asm"
 ; the tape: the header logic here; its block I/O is in HOME (platform delta D9), so the platform's calls of
 ; STORAGE_SEND_BLOCK / STORAGE_RECEIVE_BLOCK go to the shell's callers of the HOME trampoline TAPE_BLOCK
 STORAGE_SEND_BLOCK      EQU SH_TAPE_SEND
@@ -77,11 +96,16 @@ STORAGE_RECEIVE_BLOCK   EQU SH_TAPE_RECV
     INCLUDE "kernel/storage/storage.asm"
     INCLUDE "rom/exrom_sound.asm"
     INCLUDE "rom/v2_ay_beep.asm"
-; integer formatting, then (from BASIC_FLOAT_TO_STRING_EXROM) float formatting, which with the
-; calculator after it forms the optional FP component (spec.md 4.9)
+; integer formatting (V2's float formatting is left out: platform delta D10; the float core has its own)
+    DEFINE LEAPC_FP_CORE
     INCLUDE "rom/exrom_format.asm"
-    INCLUDE "rom/exrom_calc.asm"
 COMP_XPLATFORM_END:
+
+; ---------------------------------------------------------------- the float core (spec.md 4.9; Phase 8: the
+; re-engineered V2 calculator, rom/exrom_calc.asm, which is no longer assembled)
+COMP_XFP_BEGIN:
+    INCLUDE "src/runtime/fpcore.asm"
+COMP_XFP_END:
 
 LEAPC_EXROM_CODE_END:
     ASSERT $ <= LEAPC_EXROM_END

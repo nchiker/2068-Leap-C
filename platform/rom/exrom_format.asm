@@ -66,6 +66,7 @@ BASIC_NUM_TO_STRING_EXROM:
     ex   de, hl
     ret
 
+    IFNDEF LEAPC_FP_CORE             ; Leap-C (delta D10): its float core has its own formatter
     IFDEF EDITOR_TEST_EXROM          ; the legacy EXROM fixture built by `make check` has no room: old small path
 BASIC_FLOAT_TO_STRING_EXROM:
     rst  $28
@@ -296,6 +297,7 @@ BASIC_FLOAT_TO_STRING_EXROM:
 .idone:
     ex   de, hl                  ; HL -> the first digit
     ret
+    ENDIF
     ENDIF
 
     IFNDEF V2_PRODUCTION          ; RC: only the V1 rom/exrom_storage.asm calls it

@@ -6,9 +6,9 @@
 ; expression compiler and tools/declcheck.py (the test harness decodes the workspace with it).
 ;
 ; TYPE HANDLES (16 bits)
-;   H < TY_NODE_H   a scalar base with pointer depth H: L = TB_* (0..4), H = number of `*`.
-;                   int = $0003, char * = $0101, void ** = $0200. Pointers to scalar bases never
-;                   use a node, so equal handles <=> equal types for them.
+;   H < TY_NODE_H   a scalar base with pointer depth H: L = TB_* (0..5), H = number of `*`.
+;                   int = $0003, char * = $0101, void ** = $0200, float = $0005 (Phase 8). Pointers
+;                   to scalar bases never use a node, so equal handles <=> equal types for them.
 ;   H >= TY_NODE_H  the address of a type node in the compile workspace (global area).
 ;
 ; TYPE NODES (global area, never reclaimed during a compile)
@@ -43,20 +43,26 @@ TB_CHAR         EQU 1       ; char = unsigned char (spec.md 4.2)
 TB_SCHAR        EQU 2       ; signed char
 TB_INT          EQU 3       ; int, short, signed, enum
 TB_UINT         EQU 4       ; unsigned, unsigned short
+TB_FLOAT        EQU 5       ; float, double (Phase 8: the Sinclair 5-byte format, spec.md 4.9)
 TY_NODE_H       EQU $40     ; handles with H >= this are node addresses (the workspace is >= $7800)
 TY_PTR_MAX      EQU $10     ; pointer levels on a scalar base are limited to 15
 TY_INT          EQU TB_INT
 TY_UINT         EQU TB_UINT
+TY_FLOAT        EQU TB_FLOAT
+FLOAT_SIZE      EQU 5
 
-TC_VOID         EQU 0       ; TC_VOID..TC_UINT equal TB_*
+; classes: the integers (TC_CHAR..TC_UINT), then the arithmetic types (..TC_FLOAT), then the scalars
+; (..TC_PTR): range checks rely on this order
+TC_VOID         EQU 0       ; TC_VOID..TC_FLOAT equal TB_*
 TC_CHAR         EQU 1
 TC_SCHAR        EQU 2
 TC_INT          EQU 3
 TC_UINT         EQU 4
-TC_PTR          EQU 5
-TC_ARRAY        EQU 6
-TC_FUNC         EQU 7
-TC_STRUCT       EQU 8
+TC_FLOAT        EQU 5
+TC_PTR          EQU 6
+TC_ARRAY        EQU 7
+TC_FUNC         EQU 8
+TC_STRUCT       EQU 9
 
 ; ---- type nodes ----
 TN_PTR          EQU 1       ; class = kind + TC_PTR - TN_PTR
@@ -115,14 +121,16 @@ SC_REGISTER     EQU 5
 ; Deferred kinds (below OK_LVAL) have no code yet: they are loaded or stored when used. Resident
 ; kinds have had their code emitted: the address or value is in HL (or, when the operand is held
 ; for another operand's code, on the stack: CG_PEND), or a condition is in the flags.
-OK_CONST        EQU 0       ; integer constant: X_VAL (an integer constant expression)
+OK_CONST        EQU 0       ; integer constant: X_VAL (an integer constant expression); a float
+                            ;   constant (Phase 8): X_VAL -> its 5 bytes in the compile workspace
 OK_ADDRC        EQU 1       ; constant computed from an address: X_VAL
 OK_LVALC        EQU 2       ; object at the constant address X_VAL (static storage)
 OK_LVALF        EQU 3       ; object in the frame at IX + X_VAL (a local or a parameter)
 OK_FUNC         EQU 4       ; the function whose file-scope entry is X_VAL (its address is a
                             ;   constant known when the function is defined: fixup chain)
 OK_LVAL         EQU 5       ; object at HL + X_VAL (address computed at run time)
-OK_RVAL         EQU 6       ; value in HL
+OK_RVAL         EQU 6       ; value in HL; a float (Phase 8): in F_ACC, or, held (CX_HOLDV), in a
+                            ;   3-word slot on the machine stack
 OK_COND         EQU 7       ; value 1/0 as the Z80 condition X_VAL (0 NZ, 1 Z, 2 NC, 3 C) true/false
 X_FLAGS_CONST   EQU 1 << SF_CONST   ; X_FLAGS: the object is const (assignment refused)
 

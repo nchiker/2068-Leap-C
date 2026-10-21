@@ -19,7 +19,7 @@
     IFNDEF LEAPC_ERRORS_INC
     DEFINE LEAPC_ERRORS_INC
 
-E_NOTSUP        EQU 1       ; "NOT SUPPORTED": long/float constants here; reserved words in the parser
+E_NOTSUP        EQU 1       ; "NOT SUPPORTED": long constants here; reserved words in the parser
 
 ; lexical
 E_BADCHAR       EQU 10      ; "BAD CHARACTER": outside ASCII 32-126 / not a C token: @ $ `
@@ -27,8 +27,10 @@ E_COMMENT       EQU 11      ; "UNTERMINATED COMMENT": reported at the line where
 E_STRING        EQU 12      ; "UNTERMINATED STRING": end of line inside "..."
 E_CHARCONST     EQU 13      ; "BAD CHARACTER CONSTANT": empty, unterminated or more than one char
 E_ESCAPE        EQU 14      ; "BAD ESCAPE": unknown \c, \x without digits, value > 255
-E_NUMBER        EQU 15      ; "BAD NUMBER": invalid digit or suffix, 0x without digits
-E_RANGE         EQU 16      ; "NUMBER TOO LARGE": a constant above 65535
+E_NUMBER        EQU 15      ; "BAD NUMBER": invalid digit or suffix, 0x without digits, a malformed
+                            ;   floating constant
+E_RANGE         EQU 16      ; "NUMBER TOO LARGE": a constant above 65535, a floating constant or
+                            ;   constant float expression beyond the float range
 E_TOOLONG       EQU 17      ; "STRING TOO LONG": a string literal beyond TOK_BUF (a line the editor
                             ;   cannot make: guard only)
 
@@ -87,4 +89,5 @@ RTE_HEAP        EQU 2       ; "OUT OF HEAP": no Release 1 library function raise
 RTE_HIRES       EQU 3       ; "HI-RES IN USE": hi-res mode with the image in $6000-$77FF
 RTE_ARG         EQU 4       ; "BAD ARGUMENT": invalid library argument
 RTE_BREAK       EQU 5       ; "BREAK": the shell reports it as BREAK, without a number
+RTE_FLOAT       EQU 6       ; "NUMBER TOO BIG": a float operation's overflow or division by 0 (Phase 8)
     ENDIF

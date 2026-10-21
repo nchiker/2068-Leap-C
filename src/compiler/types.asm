@@ -10,7 +10,7 @@
 ; ============================================================================
 ; TY_CLASS -- the class of a type
 ; In:  HL = type
-; Out: A = TC_*: TC_VOID..TC_UINT for a scalar base, TC_PTR, TC_ARRAY, TC_FUNC or TC_STRUCT
+; Out: A = TC_*: TC_VOID..TC_FLOAT for a scalar base, TC_PTR, TC_ARRAY, TC_FUNC or TC_STRUCT
 ; Destroys: F (HL kept)
 ; ============================================================================
 TY_CLASS:
@@ -110,6 +110,9 @@ TY_SIZE0:
     cp   TC_INT
     ld   hl, 1
     ret  c                             ; char, signed char
+    cp   TC_FLOAT
+    ld   l, FLOAT_SIZE
+    ret  z                             ; float (Phase 8)
 .word:
     ld   hl, 2
     ret
@@ -239,119 +242,3 @@ TY_ARRAY:
 TY_E_TOOLARGE:
     ld   a, E_TOOLARGE
     jp   CC_ERROR
-
-; ============================================================================
-; TY_EQUAL -- are two types compatible (spec.md 4.3: the same type, allowing for unknown array
-; sizes and unprototyped functions)?
-; In:  HL, DE = types
-; Out: Z: compatible. NZ: not
-; Errors: E_NESTING (compiler stack guard)
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-TY_EQUAL:
-    call CC_STACKCHK
-.loop:
-    or   a
-    sbc  hl, de
-    add  hl, de
-    ret  z                             ; the same handle
-    ld   a, h
-    cp   TY_NODE_H
-    jr   c, .ne                        ; scalar handles are canonical
-    ld   a, d
-    cp   TY_NODE_H
-    jr   c, .ne
-    ld   a, (de)
-    cp   (hl)
-    ret  nz                            ; different kinds
-    cp   TN_STRUCT
-    jr   z, .ne                        ; different struct nodes are different types
-    push hl
-    push de
-    cp   TN_FUNC
-    jr   z, .func
-    cp   TN_ARRAY
-    jr   nz, .next                     ; pointers: compare the targets
-    call .fieldb                       ; arrays: equal counts, or one unknown
-    push bc
-    ex   de, hl
-    call .fieldb
-    ex   de, hl
-    pop  hl                            ; HL = first count, BC = second count
-    ld   a, h
-    or   l
-    jr   z, .next
-    ld   a, b
-    or   c
-    jr   z, .next
-    sbc  hl, bc
-    jr   nz, .ne2
-    jr   .next
-.func:                                 ; both prototyped: same parameter count and types
-    ld   bc, TN_FFLAGS
-    add  hl, bc
-    ld   a, (hl)
-    ex   de, hl
-    add  hl, bc
-    and  (hl)
-    rra                                ; C: both have TFF_PROTO
-    jr   nc, .next
-    dec  hl
-    ld   a, (hl)                       ; parameter count (second)
-    ex   de, hl
-    dec  hl
-    cp   (hl)
-    jr   nz, .ne2
-    or   a
-    jr   z, .next
-    ld   b, a
-    inc  hl
-    inc  hl                            ; HL, DE -> the parameter types
-    inc  de
-    inc  de
-.param:
-    push bc
-    ld   c, (hl)
-    inc  hl
-    ld   b, (hl)
-    inc  hl
-    push hl
-    ex   de, hl
-    ld   e, (hl)
-    inc  hl
-    ld   d, (hl)
-    inc  hl
-    ex   (sp), hl                      ; (SP) = next second, HL = next first
-    push hl
-    ld   h, b
-    ld   l, c
-    call TY_EQUAL
-    pop  hl
-    pop  de
-    pop  bc
-    jr   nz, .ne2
-    djnz .param
-.next:                                 ; compare field A: target, element or return type
-    pop  de
-    pop  hl
-    call .fielda
-    ex   de, hl
-    call .fielda
-    jr   .loop
-.ne2:
-    pop  de
-    pop  hl
-.ne:
-    or   1
-    ret
-.fielda:                               ; HL = field A of node HL
-    inc  hl
-    inc  hl
-    inc  hl
-    rst  $08                          ; LDI: HL = (HL)
-    ret
-.fieldb:                               ; BC = field B of node HL (HL kept)
-    push de
-    call TY_FIELDS
-    pop  de
-    ret

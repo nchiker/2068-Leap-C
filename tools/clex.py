@@ -11,6 +11,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fpmodel          # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -60,7 +63,7 @@ PUNCT_KIND = {p: TK[n] for p, n in PUNCT.items()}
 KIND_NAME = {v: k for k, v in PUNCT_KIND.items()}
 KIND_NAME.update({v: k for k, v in KW_KIND.items()})
 KIND_NAME.update({TK["TK_EOF"]: "eof", TK["TK_IDENT"]: "id", TK["TK_NUM"]: "num",
-                  TK["TK_STR"]: "str", TK["TK_EOL"]: "eol"})
+                  TK["TK_STR"]: "str", TK["TK_EOL"]: "eol", TK["TK_FNUM"]: "flt"})
 ESCAPES = {"n": 10, "t": 9, "r": 13, "\\": 92, "'": 39, '"': 34, "?": 63, "a": 7, "b": 8, "f": 12,
            "v": 11}
 TF_BOL, TF_UNSIGNED, TF_CHARCONST = 1, 2, 4
@@ -119,6 +122,16 @@ def lex(lines, eol_mode=False):
             return None
         v = int(c, 36)
         return v if v < base else None
+
+    def fnum(start):
+        """A floating constant from `start`, converted as the ROM's float core does (Phase 8: tools/fpmodel.py):
+        its token is appended; returns the index after it."""
+        try:
+            b, used = fpmodel.atof(text[start:])
+        except fpmodel.FloatError as e:
+            err("E_RANGE" if str(e) == "range" else "E_NUMBER", tl)
+        toks.append(Token(TK["TK_FNUM"], flags, tl, text=b))
+        return start + used
 
     try:
         while True:
@@ -181,26 +194,42 @@ def lex(lines, eol_mode=False):
                     base, j = 10, i
                 k = j
                 v = 0
+                big = False
                 while digit(text[k], base) is not None:
                     v = v * base + digit(text[k], base)
                     if v > 65535:
-                        err("E_RANGE", tl)
+                        big = True
+                        break
                     k += 1
+                def decimal_float(code):                 # a floating constant after all? (digits, . or e)
+                    m = i
+                    while text[m].isascii() and text[m].isdigit():
+                        m += 1
+                    if text[m] not in ".eE":
+                        err(code, tl)
+                    return fnum(i)
+
+                if big:
+                    i = decimal_float("E_RANGE")
+                    continue
                 if base == 16 and k == j:
                     err("E_NUMBER", tl)
-                i = k
+                start, i = i, k
                 f = flags
                 if text[i] == ".":
-                    err("E_NOTSUP", tl)
+                    i = fnum(start)
+                    continue
                 if text[i] in "uU":
                     f |= TF_UNSIGNED
                     i += 1
                 if text[i] in "lL":
                     err("E_NOTSUP", tl)
                 if text[i] in "eE" and base != 16:
-                    err("E_NOTSUP", tl)
-                if isid(text[i]):
-                    err("E_NUMBER", tl)
+                    i = fnum(start)
+                    continue
+                if isid(text[i]):                        # 08.5, 09e1: decimal floating constants
+                    i = decimal_float("E_NUMBER")
+                    continue
                 if v > 32767:
                     f |= TF_UNSIGNED
                 toks.append(Token(TK["TK_NUM"], f, tl, value=v))
@@ -260,7 +289,8 @@ def lex(lines, eol_mode=False):
                 toks.append(Token(TK["TK_NUM"], flags | TF_CHARCONST, tl, value=v))
                 continue
             if c == "." and text[i + 1].isascii() and text[i + 1].isdigit():
-                err("E_NOTSUP", tl)
+                i = fnum(i)
+                continue
             for p in ("...", "<<=", ">>="):
                 if text.startswith(p, i):
                     break

@@ -1,0 +1,18 @@
+--- a/rom/exrom_format.asm
++++ b/rom/exrom_format.asm
+@@ -66,6 +66,7 @@
+     ex   de, hl
+     ret
+ 
++    IFNDEF LEAPC_FP_CORE             ; Leap-C (delta D10): its float core has its own formatter
+     IFDEF EDITOR_TEST_EXROM          ; the legacy EXROM fixture built by `make check` has no room: old small path
+ BASIC_FLOAT_TO_STRING_EXROM:
+     rst  $28
+@@ -297,6 +298,7 @@
+     ex   de, hl                  ; HL -> the first digit
+     ret
+     ENDIF
++    ENDIF
+ 
+     IFNDEF V2_PRODUCTION          ; RC: only the V1 rom/exrom_storage.asm calls it
+ BASIC_APPEND_STR_EXROM:

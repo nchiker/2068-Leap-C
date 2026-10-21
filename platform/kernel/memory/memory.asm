@@ -66,6 +66,8 @@ LABEL_COUNT_SIZE    EQU 2
 LABEL_NAMELEN_SIZE  EQU 1
 LABEL_POS_SIZE      EQU 2
 
+    IFNDEF MEM_LINE_EDIT_ONLY            ; Leap-C (delta D11): the EXROM assembles only MEM_LINE_INSERT
+                                         ; and MEM_LINE_DELETE_RANGE (and the constants above)
 ; ============================================================================
 ; MEM_COLD_INIT
 ; Establishes the power-on invariant for every ROM-owned RAM byte.  Emulators
@@ -527,6 +529,9 @@ MEM_LINE_STORE:
     or   a
     ret
 
+    ENDIF
+    IFNDEF MEM_NO_LINE_EDIT              ; Leap-C (delta D11): MEM_LINE_INSERT and MEM_LINE_DELETE_RANGE
+                                         ; are the editor's only, so they are assembled in the EXROM
 ; ============================================================================
 ; MEM_LINE_INSERT
 ; Inserts a NEW statement at the given position, shifting whatever's
@@ -673,6 +678,8 @@ MEM_LINE_DELETE_RANGE:
 ; Out: HL = free bytes
 ; Destroys: AF, HL, DE
 ; ============================================================================
+    ENDIF
+    IFNDEF MEM_LINE_EDIT_ONLY
     IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (FREE() is computed VM-side)
 MEM_FREE_BYTES:
     ld   hl, (VARS_START)
@@ -680,4 +687,5 @@ MEM_FREE_BYTES:
     or   a
     sbc  hl, de
     ret
+    ENDIF
     ENDIF
