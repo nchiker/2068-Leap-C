@@ -1,6 +1,6 @@
 # 2068-Leap-C — Specification
 
-**Version 0.8, 2026-10-20** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6-v0.7, 2026-10-20). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.9, 2026-10-20** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6-v0.8, 2026-10-20). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
@@ -15,6 +15,8 @@
 **Changes in v0.7 (Phase 5, as built; `docs/milestones/M5.md`):** the editor and shell (§6.1), the C punctuation's keys and glyphs, confirmed by the owner (§6.2), RUN's recovery as built in Phase 5 (§6.3), RST `$30` given to the compiler's `LEX_NEXT` by owner decision (§2.3, §5.3, §5.6), the platform deltas D7 and D8 (§2.1).
 
 **Changes in v0.8 (Phase 6, as built; `docs/milestones/M6.md`):** the compile/run workflow (§6.3): the reports on rows 22-23 (compile errors and runtime errors with their messages, BREAK, the exit status, the image's size and the free heap), the error messages (§5.9, §6.3, from `include/leapc_errors.inc`), `FREE` (§6.1), the compile speed measured through `RUN`.
+
+**Changes in v0.9 (Phase 7, as built; `docs/milestones/M7.md`):** the cassette. The tape block I/O in HOME behind the trampoline `TAPE_BLOCK`, the header logic in the EXROM (§2.1 platform delta D9, §2.2, §8.3); the tape cells (§3.1); `SAVE`, `LOAD`, `VERIFY` (§6.1); `tape_save`, `tape_load` and their BREAK section (§5.8, §7, §7.1); the program and data tapes, their version word and refusal rules, LOAD's staging and record check (§8); the host tool `tools/c2tape.py` (§10).
 
 **What is fixed and what is tuned:**
 
@@ -89,7 +91,7 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 | AY beep (HOME part) | 58 | HOME | kept |
 | `FOLD_UPPER` (was in the BASIC compiler) | 9 → 0 | HOME | not built: C is case-sensitive and nothing calls it |
 | Editor engine | 737 | EXROM | kept unchanged |
-| Tape: `STORAGE_*` | 793 | EXROM | kept. **Phase 7:** block send/receive (331 B) move to HOME (§8.3) |
+| Tape: `STORAGE_*` | 793 | EXROM | kept. **Delta D9 (v0.9, Phase 7):** block send/receive (331 B, byte for byte) assembled in HOME, the header logic (`STORAGE_SAVE`, `STORAGE_LOAD`, version word, progress) in the EXROM: conditional assembly only (§8.3) |
 | Shell: editor/screen glue, command loop, tape commands, messages, chime, entry slots | 2,754 | EXROM | adapted into the Leap-C shell; BASIC-only parts removed (v0.7, Phase 5: §6.1) |
 | Integer formatting | 79 | EXROM | kept |
 | Sound, AY beep (EXROM part) | 59 | EXROM | kept |
@@ -149,6 +151,8 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 3. The compiler core runs in **HOME with chunk 6 paged out**, because it writes the program image there. EXROM-resident compiler parts (diagnostics) run only through a trampoline and never touch chunk 6.
 4. The editor and shell run in **EXROM**. While they run, chunk 6 RAM is invisible.
 
+**As built (v0.9): tape blocks.** The EXROM's header logic reaches HOME's block I/O through the trampoline `TAPE_BLOCK` (page zero's trampoline budget, 14 B): it pages the EXROM out through the depth count for the one block and in again after it, so every block moves with chunk 6 = RAM, whether the shell or a program started the transfer. The stack stays outside chunk 6 (rule 2). The test harness checks this as a banking invariant on every transfer: HOME's `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK` never run with the EXROM paged in.
+
 ### 2.3 Page zero and RST assignment (baseline)
 
 | Vector | Use | Body placement |
@@ -206,7 +210,7 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 | Range | Holds (measured, `docs/milestones/M4.md`) |
 |---|---|
 | `$5B00-$5D59` | the platform system variables (602 B) |
-| `$5D5A-$5FFF` | the Leap-C cells: 447 B used (`LEAPC_CELLS_END` `$5F19`; v0.7: the shell's 63 B), 231 B free |
+| `$5D5A-$5FFF` | the Leap-C cells: 496 B used (`LEAPC_CELLS_END` `$5F4A`; v0.7: the shell's 63 B; v0.8: the report's 35 B; v0.9: the tape's 14 B: `TAPE_NAME`, `TAPE_ABORT`, `TAPE_DEST`), 182 B free |
 | `$F180-$F3FF` | the V2 platform cells Leap-C keeps at their V2 addresses: `UDG_TABLE` (`$F180`, 168 B), `EDIT_LINE_BUF` (`$F228`, 128 B), `GFX_LINE_X0..Y1` (`$F3C4`, 4 B). The other 340 B are V2 cells nothing in Leap-C uses |
 | `$F800-$FEFF` | the stack; `ENTER`'s floor `$F900` (§5.3) |
 
@@ -552,8 +556,9 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 **As built (v0.5):**
 
 - The ISR (platform delta D4) calls `RT_BREAKREQ` when it accepts the BREAK key, after latching it as usual. With no program running it is an ordinary key. Otherwise `RT_BREAKREQ` sets `BRK_HALT` (`BRKPEND`; the platform's `VM_HALTED`) and, if `NOBRK` is 0, ends the program at once with runtime error 5: the ISR's frame is dropped with the program's stack.
-- `NOBRK` sections: the EXROM trampoline of `beep()` (the only EXROM service programs use in Release 1; Phase 7 adds the tape). The beep's wait ends early on `BRK_HALT`, the trampoline pages the EXROM out and silences the AY, and its end (`RT_NOBRK_END`) then stops the program. **Heap updates are not deferred** (deviation): the heap belongs to one run and is set up again at the next start, so an interrupted `malloc` leaves nothing that must be consistent. AY register writes are single `OUT` pairs that the exit's silencing re-selects.
+- `NOBRK` sections: the EXROM trampolines of `beep()` and (v0.9) `tape_save()` / `tape_load()`, the EXROM services programs use in Release 1. The beep's wait ends early on `BRK_HALT`, the trampoline pages the EXROM out and silences the AY, and its end (`RT_NOBRK_END`) then stops the program. **Heap updates are not deferred** (deviation): the heap belongs to one run and is set up again at the next start, so an interrupted `malloc` leaves nothing that must be consistent. AY register writes are single `OUT` pairs that the exit's silencing re-selects.
 - `pause()` and every other wait end on BREAK through the immediate unwind.
+- **Tape (v0.9).** While a tape block moves, interrupts are off (the ROM's tape routines), so the ISR cannot see BREAK; the routines themselves test SPACE (the stock ROM's rule: BREAK is CAPS SHIFT + SPACE) at every edge and after every byte sent, and abort. `tape_save()` / `tape_load()` then end the program with BREAK (runtime error 5, at the line of the function that called them); a BREAK the ISR accepted between two blocks waits for the section's end, as for `beep()`.
 - Cost (measured): the ISR delta is 8 B (V2's BREAK latch, 14 B, removed); the runtime's request and BREAK exit 32 B, the section end 12 B. The ISR's per-frame cost is unchanged: the delta runs only on the frame that accepts a key.
 
 ### 5.9 Runtime errors
@@ -614,9 +619,18 @@ These come from V2's full-screen editor and shell glue, adapted:
 - **The view** shows up to 20 lines above the cursor's line (V2), fewer when they wrap onto more rows than there are above it: the cursor's line is always whole on the screen (V2 could push it off the screen).
 - **Redraw.** Typing redraws only the cursor's line, or, when the line starts or stops wrapping onto another row, that line and the ones below it (V2 redrew the whole screen then); UP and DOWN near the top redraw only the two lines involved; LEFT and RIGHT move only the cursor. A key clears the whole screen only when the view moves (measured: no typed key clears it in any of the test scenarios). Typing costs 47 kT per key on V2's 10-line typing scenario (V2: 72 kT) and at most V2's cost in all of V2's scenarios (`docs/milestones/M5.md` §6).
 - **Keyword highlighting.** A line not being edited shows its C keywords in bold as typed, from the compiler's own keyword table (no copy in the EXROM). Not keywords: identifiers that contain one (`int1`, `_if`), case variants (`INT`), and the text of string literals, character constants and comments. Each line is scanned on its own: a line inside a `/* ... */` comment begun on an earlier line is highlighted as code.
-- **Commands** are recognised only on the append line (the empty line after the last), alone on the line apart from spaces, in any case; anything else is stored as source. Phase 5 builds `RUN`, `LIST` and `NEW`; Phase 6 `FREE` and the reports (§6.3); `SAVE`, `LOAD` and `VERIFY` come in Phase 7.
+- **Commands** are recognised only on the append line (the empty line after the last), alone on the line apart from spaces, in any case; anything else is stored as source. Phase 5 builds `RUN`, `LIST` and `NEW`; Phase 6 `FREE` and the reports (§6.3); Phase 7 `SAVE`, `LOAD` and `VERIFY` (below).
 - **`FREE`** (v0.8) reports on rows 22-23 `SOURCE s B  FREE f B` (the source's size in the line store, and the room left for it: up to `VARS_START`, the line store's ceiling) and `IMAGE i B  HEAP h B` (the image of the last successful compile, 0 before any; the heap a program would have with the source as it is). A key returns to the editor as it was.
 - **`LIST`** shows the source a page (23 rows) at a time with keywords bold; a line that does not fit starts the next page; a key shows the next page, BREAK ends the listing.
+- **`SAVE "name"`, `LOAD "name"`, `LOAD ""`, `VERIFY "name"`, `VERIFY ""`** (v0.9, Phase 7; the tapes: §8.1). The word, in any case, then spaces (or none) and a quote make a tape command (no C line starts so); `SAVE` alone, or `save(x);`, is source. The name is 1-10 characters for `SAVE`, 0-10 for `LOAD` and `VERIFY` (`""`: the next program tape, any name); only spaces may follow its closing quote, else `BAD NAME`. While the tape moves, the status row shows `SAVING name`, `LOADING` / `VERIFYING` while it searches, and `LOADING name` / `VERIFYING name` once the header is found (drawn between the blocks, never inside one). Each command ends with a report on rows 22-23 until a key, as `RUN`'s (§6.3); row 23 is `SOURCE s B  FREE f B` (as `FREE`'s first row) for every outcome:
+
+| Command | Row 22 |
+|---|---|
+| `SAVE` | `SAVED name`; `BREAK` (SPACE stopped it: no data block follows); `BAD NAME`; `NO PROGRAM` (an empty source: a block of no bytes cannot be loaded) |
+| `LOAD` | `LOADED name` (the tape's name): the source is replaced, the cursor on the append line after its last line; `LOAD FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME` |
+| `VERIFY` | `VERIFIED name`: the tape holds exactly the source, and ends where it does; `VERIFY FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME`. Nothing is written |
+
+  A failed `LOAD` leaves the source and the editor as they were (§8.1: the program arrives above the source and replaces it only when it is whole and sound), except when the tape's program does not fit above the source and part of it was received: then the source is empty, as after `NEW` (V2's rule: it cannot be trusted).
 
 ### 6.2 C punctuation (baseline mapping; physical legends need owner confirmation)
 
@@ -689,7 +703,7 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 | Conversion | `atoi`, `itoa(n, buf, base)`, `abs` |
 | Heap | `malloc`, `free` (first-fit free list in the heap region) |
 | Program | `exit(n)` |
-| Tape (Phase 7) | `tape_save(name, addr, len)`, `tape_load(name, addr, max)` (data blocks; §8.3) |
+| Tape (Phase 7) | `tape_save(name, addr, len)`, `tape_load(name, addr, max)` (data blocks; §7.1, §8.3) |
 
 **Not built in:** circle and flood fill (V2 has them only as BASIC packages; implementable in C), ULAplus palette, printer. These are candidates for a later library-loading mechanism (§9).
 
@@ -700,7 +714,7 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 
 **Binding.** The library's names are not declared in advance and are not reserved. An identifier that no declaration in scope names is looked up among them (`LIB_BIND`, through the EXROM's name table) and, if it is one, becomes a defined file-scope function at its ROM address with its prototype. A program's own declaration of a name comes first and hides the library function. A program's own prototype of a library function declares a new function that must then be defined (deviation: C89 7.1.7 lets a program declare library functions itself). `#include <leap.h>` is a no-op.
 
-**Prototypes.** Pointer parameters are `void *` (any object pointer converts); integer parameters are `int`. Return types: `void`, `int`, `unsigned` (`frames`, `strlen`), `char *` (`gets`, `strcpy`, `strncpy`, `strcat`, `strchr`, `itoa`), `void *` (`malloc`, `memcpy`, `memmove`, `memset`). `printf` has no prototype: any arguments, the default promotions. Library functions have addresses (function pointers).
+**Prototypes.** Pointer parameters are `void *` (any object pointer converts); integer parameters are `int`. Return types: `void`, `int`, `unsigned` (`frames`, `strlen`), `char *` (`gets`, `strcpy`, `strncpy`, `strcat`, `strchr`, `itoa`), `void *` (`malloc`, `memcpy`, `memmove`, `memset`). `printf` has no prototype: any arguments, the default promotions. Library functions have addresses (function pointers). v0.9: `void tape_save(void *name, void *addr, int len)`, `int tape_load(void *name, void *addr, int max)`; 50 names in all.
 
 **Screen.** Text rows 0-23, columns 0-31; pixels x 0-255, y 0-191 **from the top** (the platform's convention). Text continues on the next row after column 31; below row 23 the screen scrolls up. `'\n'` moves to the next row's start. Characters without a glyph show as spaces.
 
@@ -731,6 +745,9 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 | `abs(n)` | `abs(-32768)` = -32768 |
 | `malloc(n)`, `free(p)` | §3.2; NULL when nothing fits and for n ≥ 32 KB; `free(NULL)` does nothing |
 | `exit(n)` | ends the program with status n, from any depth |
+| `tape_save(name, addr, len)` (v0.9) | `len` bytes from `addr` to tape as a data tape (§8.3) named `name` (a C string of 1-10 characters); returns when both blocks are sent (about 7 s, plus 5-7 ms a byte). A longer or empty name, or `len` 0: error 4. Any address, chunk 6 included |
+| `tape_load(name, addr, max)` (v0.9) | the next data tape named `name` (`""`: any) into `addr`, at most `max` bytes. Returns its length; -1 when nothing was loaded (no such tape before the search gives up, about 2 minutes of silence; a tape longer than `max`; a bad block before the data), `addr` untouched; -2 when the data block failed after part of it was written; -3 for a tape whose version word is not Leap-C's (nothing written). Program tapes are skipped. A name longer than 10 characters: error 4. Any address, chunk 6 included |
+| `tape_save`, `tape_load`: BREAK | BREAK (or SPACE) during the transfer stops it and ends the program with runtime error 5 (§5.8). While a block moves, interrupts are off: `frames()` does not count |
 
 ## 8. Storage
 
@@ -740,6 +757,18 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 - **Version word** (autostart field): `$8C00` (bit 15 = Leap-tagged, major `$0C` = Leap-C source, minor 0).
 - V2 ROMs refuse Leap-C tapes and Leap-C refuses V2 BASIC tapes with `BAD TAPE VERSION` (V2's acceptance rule).
 - `LOAD` writes into the source region only, never chunk 6.
+
+**As built (v0.9, Phase 7).** The platform's tape code (V2's port of the stock ROM's SA-BYTES / LD-BYTES: the stock timing, measured on Leap-C's own SAVE: pilot 2,168 T, sync 667 / 735 T, bits 855 / 1,710 T, 8,063 header and 3,223 data pilot pulses) in the stock two-block format:
+
+| Block | Contents |
+|---|---|
+| header | flag `$00`; type 0; the name, 10 characters padded with spaces; the length; `$8C00` (the autostart field); the program length (= the length); XOR checksum |
+| data | flag `$FF`; the line store, `[length:2][text][CR]` per line, exactly as the editor keeps it; XOR checksum |
+
+- **Acceptance** (V2's rule, `STORAGE_LOAD`): the bit 15 tag and the major must be Leap-C's and the tape's minor at most Leap-C's; anything else (V2's `$8101`, a stock tape's `$8000` or autostart line, a later Leap-C minor) is `BAD TAPE VERSION` before any byte is received. Headers of another type or another name are skipped; the search gives up after 15 headers or blocks, or about 2 minutes of silence.
+- **LOAD is staged.** A program that fits in the line store's room above the current source (below `VARS_START`) is received there, then checked and moved down onto the source; otherwise it is received in place. It must be whole (both checksums) and sound: records of 1-128 bytes, each ending in CR, ending exactly at its length, at least one. A tape longer than the line store's room is refused at its header.
+- **VERIFY** compares the tape's data with the source byte for byte and requires the tape to end where the source does. It never writes.
+- V2 refuses Leap-C's tapes with its own `BAD TAPE VERSION` and leaves its program alone (tested on the V2 reference ROM with a tape made by Leap-C's SAVE, and the reverse).
 
 ### 8.2 Compiled images
 
@@ -759,6 +788,8 @@ Not saved in Release 1; source is the program.
 
 The data tape type uses header type 3 with version word `$8C00`.
 
+**As built (v0.9, Phase 7): the resolution, not the fallback.** HOME absorbed the block I/O: 331 B, the vendored routines byte for byte (platform delta D9), within the 340 B budget; the EXROM lost exactly those 331 B. The header logic stays in the EXROM and reaches the blocks through `TAPE_BLOCK` (§2.2), so `tape_save` and `tape_load` move data from and to any address, chunk 6 included (tested: image region 1, `$E000`, the heap, the screen). The library's HOME part copies the name's first 11 bytes out of the program's memory with chunk 6 = RAM before the EXROM is paged in. The data tape is the program tape's format with type 3 and the bytes given; `tape_load` takes the first data tape of that name (any, for `""`), skipping program tapes.
+
 ---
 
 ## 9. Extensibility (later)
@@ -777,7 +808,7 @@ The data tape type uses header type 3 with version word `$8C00`.
 - **Budget tooling:** per-component sizes from the listings; `budget.toml` limits; ROM map report.
 - **Platform vendoring:** `platform/` pinned to the V2 reference with a delta list. V2 itself is never modified.
 - **Cross tools (development only):**
-  - a host tool to turn `.c` files into Leap-C program tapes;
+  - a host tool to turn `.c` files into Leap-C program tapes (v0.9: `tools/c2tape.py FILE.c OUT.tap|OUT.tzx [--name NAME]`: the blocks the ROM's own `SAVE` sends for that source, byte for byte; `.tzx` as standard speed blocks);
   - optionally SDCC as a test oracle (installing it needs owner approval).
 
 ---

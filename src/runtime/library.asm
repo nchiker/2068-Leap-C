@@ -1011,3 +1011,41 @@ LIB_EXIT:
     call LIB_ARGS
     xor  a
     jp   RT_ERROR
+
+; ---------------------------------------------------------------- tape (Phase 7; spec.md 7, 8.3)
+; void tape_save(const char *name, const void *addr, unsigned len) -- len bytes from addr to tape as a data
+; tape (header type 3, version LEAPC_TAPE_VERSION) named name (1-10 characters; else, or for len 0, runtime
+; error 4)
+; int tape_load(const char *name, void *addr, unsigned max) -- the next data tape named name ("": any) into
+; addr, at most max bytes: its length; -1 when nothing was loaded (no such tape found, longer than max, a bad
+; block before the data), -2 when its data block failed after part of it was written, -3 for a tape whose
+; version word is not Leap-C's (nothing loaded). A name longer than 10 characters: runtime error 4
+; Both: any address (chunk 6 too: the EXROM's header logic, SH_LIBTAPE, moves the blocks with chunk 6 paged
+; out, TAPE_BLOCK); BREAK or SPACE stops the transfer and the program (runtime error 5). A section that
+; defers BREAK (NOBRK, spec.md 5.8). Interrupts are off while a block moves (FRAMES does not count)
+LIB_TAPE_SAVE:
+    DB   $3E                           ; (`ld a, n`: n is the `xor a` below, so A = $AF: tape_save)
+LIB_TAPE_LOAD:
+    xor  a                             ; A = 0: tape_load
+    ex   af, af'                       ; (the selector in A': LIB_ARGS keeps it)
+    call LIB_ARGS                      ; HL = the name
+    ld   de, TAPE_NAME                 ; its first 11 bytes, read with chunk 6 = RAM
+    ld   bc, TAPE_NAME_LEN + 1
+    ldir
+    call LIB_ARGS                      ; DE = the address, BC = the length
+    push ix
+    ld   hl, NOBRK
+    inc  (hl)
+    call BANK_PAGE_EXROM_IN
+    ex   af, af'
+    call LEAPC_EXROM_TAPE              ; A = 0: HL = the result; else A = the runtime error
+    push af
+    call BANK_PAGE_EXROM_OUT
+    pop  af
+    pop  ix
+    or   a
+    jp   nz, RT_LIBERR
+    push hl
+    call RT_NOBRK_END
+    pop  hl
+    ret

@@ -1,0 +1,29 @@
+--- a/kernel/storage/storage.asm
++++ b/kernel/storage/storage.asm
+@@ -233,6 +233,11 @@
+ STORAGE_LEADER_PILOT EQU $9C    ; LD-LEADER M0126 — initial timing
+                                  ; value for the leader-tone search.
+ 
++; LEAP-C DELTA D9 (Phase 7): the block I/O (STORAGE_SEND_BLOCK, STORAGE_RECEIVE_BLOCK) is
++; assembled in the HOME ROM only (STORAGE_NO_BLOCKS leaves it out of the EXROM), and the
++; header logic from STORAGE_VERSION_WORD on in the EXROM only (STORAGE_BLOCKS_ONLY leaves it
++; out of the HOME), so data blocks can move with chunk 6 paged out (spec.md 8.3).
++    IFNDEF STORAGE_NO_BLOCKS
+ ; ============================================================================
+ ; STORAGE_SEND_BLOCK — ported from the real ROM's SA-BYTES (+ SA-FLAG/
+ ; SA-LEADER/SA-SYNC-1/SA-SYNC-2/SA-LOOP/SA-LOOP-P/SA-START/SA-PARITY/
+@@ -589,7 +594,9 @@
+     out  (PORT_ULA), a
+     ret
+     ENDIF
++    ENDIF ; STORAGE_NO_BLOCKS (D9)
+ 
++    IFNDEF STORAGE_BLOCKS_ONLY ; (D9)
+     IFDEF STORAGE_VERSIONED
+ ; ============================================================================
+ ; STORAGE_VERSION_WORD (R10.9)
+@@ -1066,3 +1073,4 @@
+     ret
+ .call_hl:
+     jp   (hl)
++    ENDIF ; STORAGE_BLOCKS_ONLY (D9)

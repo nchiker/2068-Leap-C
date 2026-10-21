@@ -1,4 +1,4 @@
-# 2068-Leap-C build (project_plan.md section 3 onwards: Phase 1 M1.1-M1.3, Phases 2-6).
+# 2068-Leap-C build (project_plan.md section 3 onwards: Phase 1 M1.1-M1.3, Phases 2-7).
 #   make / make build   production images in build/, test images (-DLEAPC_TEST) in build/test/
 #   make check          strict assembly (build), budgets, platform delta check, test-image check,
 #                       RAM layout guard (static census of the RAM the ROMs reference, with negative
@@ -9,13 +9,18 @@
 #                       expressions, statements, preprocessor, the library, runtime errors, BREAK,
 #                       soak; helper, library, ISR, lexer and spike-workload measurements; memory
 #                       layout, regions, stack, heap, banking invariants; the shell; the compile/run
-#                       workflow: typed programs, the corpus through RUN, diagnostics, reports) and
-#                       the canary, as tasks on a pool of emulators; needs ~/ts2068-debug, ZEsarUX 13.0
+#                       workflow: typed programs, the corpus through RUN, diagnostics, reports; the
+#                       cassette: SAVE/LOAD/VERIFY and tape_save/tape_load on real tape signals, V2's
+#                       tapes) and the canary, as tasks on a pool of emulators; needs ~/ts2068-debug,
+#                       ZEsarUX 13.0, and ~/2068-Leap (read only) for the V2 reference ROM
 #   make canary         the RAM canary and banking invariants over the whole corpus (4 emulators)
 #   make capacity       the measured capacity table (build/capacity.json, docs/milestones/M4.md)
 #   make repro          two clean builds must give identical image hashes
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
-.PHONY: all build prod testimg check budget inventory test canary capacity repro audit clean
+#   make v2ref          the V2 reference ROM (tag v2.0.1-emu.1) in build/v2ref/, built from the frozen
+#                       repository through `git archive` (the cross-version tape tests)
+# Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
+.PHONY: all build prod testimg check budget inventory test canary capacity repro audit v2ref clean
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -55,8 +60,13 @@ budget: prod
 inventory: prod
 	python3 tools/rom_inventory.py
 
-test: build
+test: build build/v2ref/ts2068rom_zesarux.bin
 	python3 tools/run_tests.py
+
+v2ref: build/v2ref/ts2068rom_zesarux.bin
+
+build/v2ref/ts2068rom_zesarux.bin:
+	tools/v2ref.sh
 
 canary: build
 	python3 tools/canary.py

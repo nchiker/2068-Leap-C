@@ -347,7 +347,7 @@ def main():
     edges = xref(bank)
     ext_by = {}
     for src, name in ext:
-        dst = bank.owner(bank.name_addr[name])
+        dst = bank.owner(bank.name_addr[bank.equ_alias.get(name, name)])   # (an exported EQU alias: its label)
         ext_by.setdefault(dst, set()).add(src)
     page0 = [r["start"] for r in routines if r["comp"] == "page0"]
     entries = [bank.name_addr[n] for n in ENTRIES[bank.name] if n in bank.name_addr]

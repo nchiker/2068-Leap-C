@@ -1,13 +1,16 @@
 """Leap-C memory guards for the test harness (project_plan.md section 6, Phase 4; docs/milestones/M4.md).
 
-Banking invariants. Three ZEsarUX breakpoint conditions, armed in slots 9-11 (the harness's own
-breakpoints use 1-8) while the ROM compiles and runs a program. ZEsarUX evaluates them after every
-instruction; the first one that holds stops the machine, and `fired()` names it:
+Banking invariants. ZEsarUX breakpoint conditions, armed in slots 9-11 and 19-20 (the harness's own
+breakpoints use 1-8, the tape capture 14-18, ad hoc checks 12-13) while the ROM compiles and runs a
+program. ZEsarUX evaluates them after every instruction; the first one that holds stops the machine, and
+`fired()` names it:
   - the stack in chunk 6 (spec.md 2.2 bank rule 2: never, whatever runs);
   - a paging depth other than 0 while a program runs outside a BREAK-deferring section
     (RUNNING set and NOBRK 0: spec.md 3.3; the EXROM trampolines are NOBRK sections);
   - a write to chunk 6 while the EXROM is paged in (bank rule 3: the EXROM-resident compiler parts
-    and the trampolines never touch chunk 6; the IM 1 handler never does).
+    and the trampolines never touch chunk 6; the IM 1 handler never does);
+  - (Phase 7) a tape block sent or received with the EXROM paged in: HOME's STORAGE_SEND_BLOCK and
+    STORAGE_RECEIVE_BLOCK run only through TAPE_BLOCK, with chunk 6 = RAM (spec.md 8.3).
 
 RAM canary. Before the compile, the RAM no compile may write is filled with CANARY; after it, every
 byte that changed is reported. The same before and after the run. Spans:
@@ -22,7 +25,7 @@ byte that changed is reported. The same before and after the run. Spans:
   - the stack ($F800 .. $FEFF): its low-water mark is measured, not a hit unless below $F800.
 The source (the line store) must be unchanged: exectest checks that itself.
 """
-INV_SLOT = 9
+INV_SLOTS = (9, 10, 11, 19, 20)
 CANARY = 0xA5
 STACK = (0xF800, 0xFF00)
 TOP = (0xFF04, 0x10000)
@@ -33,12 +36,15 @@ def invariants(S):
     return [("the stack in chunk 6", "SP>BFFFH and SP<E000H"),
             ("a paging depth other than 0 while the program runs",
              "PEEK(%04XH)<>0 and PEEK(%04XH)=0 and PEEK(%04XH)<>0" % (r, n, d)),
-            ("a write to chunk 6 with the EXROM paged in", "MWA>BFFFH and MWA<E000H and PEEK(%04XH)<>0" % d)]
+            ("a write to chunk 6 with the EXROM paged in", "MWA>BFFFH and MWA<E000H and PEEK(%04XH)<>0" % d),
+            ("a tape block sent with the EXROM paged in", "PC=%04XH and PEEK(%04XH)<>0" % (S("STORAGE_SEND_BLOCK"), d)),
+            ("a tape block received with the EXROM paged in",
+             "PC=%04XH and PEEK(%04XH)<>0" % (S("STORAGE_RECEIVE_BLOCK"), d))]
 
 
 def arm(m, on=True):
-    for i, (_, cond) in enumerate(invariants(m.sym)):
-        m.cmd("set-breakpoint %d %s" % (INV_SLOT + i, cond) if on else "set-breakpoint %d" % (INV_SLOT + i))
+    for slot, (_, cond) in zip(INV_SLOTS, invariants(m.sym)):
+        m.cmd("set-breakpoint %d %s" % (slot, cond) if on else "set-breakpoint %d" % slot)
 
 
 def fired(m):

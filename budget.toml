@@ -27,9 +27,9 @@ ranges = [["COMP_PLATFORM_BEGIN", "COMP_PLATFORM_END"]]
 
 [[home.component]]
 id = "tape_block"
-title = "Tape block send/receive (moved from EXROM in Phase 7)"
+title = "Tape block send/receive (moved from EXROM in Phase 7; platform delta D9)"
 budget = 340
-ranges = []
+ranges = [["COMP_TAPE_BEGIN", "COMP_TAPE_END"]]
 
 [[home.component]]
 id = "lexer"
@@ -101,18 +101,17 @@ reserve_floor = 256
 id = "xplatform"
 title = "Retained platform (editor engine, tape headers, integer formatting, sound)"
 budget = 1340
-ranges = [["COMP_XPLATFORM_BEGIN", "STORAGE_SEND_BLOCK"],
-          ["STORAGE_VERSION_WORD", "BASIC_FLOAT_TO_STRING_EXROM"]]
+ranges = [["COMP_XPLATFORM_BEGIN", "BASIC_FLOAT_TO_STRING_EXROM"]]
 
 [[exrom.component]]
 id = "xtape_block"
-title = "Tape block send/receive (in EXROM until Phase 7; ledger L1)"
+title = "Tape block send/receive (in EXROM until Phase 7, ledger L1; moved to HOME, L37)"
 budget = 0
-ranges = [["STORAGE_SEND_BLOCK", "STORAGE_VERSION_WORD"]]
+ranges = []
 
 [[exrom.component]]
 id = "xshell"
-title = "Leap-C shell (entry points, editor glue, commands, messages, chime)"
+title = "Leap-C shell (entry points, editor glue, commands, messages, chime; the tape commands and the library's tape service)"
 budget = 2900
 ranges = [["COMP_XSHELL_BEGIN", "COMP_XCOMP_ENTRY"], ["COMP_XCOMP_ENTRY_END", "COMP_XSHELL_END"]]
 
@@ -153,7 +152,7 @@ component = "xtape_block"
 delta = 331
 reason = """STORAGE_SEND_BLOCK + STORAGE_RECEIVE_BLOCK measure 331 B and stay in the EXROM until
 Phase 7 moves them to HOME (spec.md 8.3, HOME budget tape_block 340). Transitional allocation
-from the EXROM reserve (887 -> 556). Phase 7 removes this entry when the code moves."""
+from the EXROM reserve (887 -> 556). Phase 7 returns it when the code moves (L37)."""
 
 [[ledger]]
 id = "L2"
@@ -593,3 +592,70 @@ tools/gen_diag.py builds from include/leapc_errors.inc (555 B: the 70 distinct w
 its word numbers, a key only where the numbering jumps). Raw texts with their numbers would take 733 B. The shell
 (xshell) measures 1,846 B of its 2,432 B after Phase 6's reports, FREE and COMPILING (+254 B): 586 B stay with it for
 Phase 7 (SAVE, LOAD, VERIFY). 10 B return to the EXROM reserve (448 -> 458 B, floor 256 B)."""
+
+[[ledger]]
+id = "L37"
+date = "2026-10-20"
+milestone = "Phase 7"
+bank = "exrom"
+component = "xtape_block"
+delta = -331
+reason = """Phase 7 moves the tape block I/O to HOME (spec.md 8.3; platform delta D9: storage.asm assembles
+STORAGE_SEND_BLOCK and STORAGE_RECEIVE_BLOCK in HOME only and the header logic in the EXROM only). Measured
+on the production images: the EXROM's 331 B of block I/O are gone (its xplatform part, the header logic,
+still measures 1,337 B, unchanged), so L1's transitional allocation returns to the EXROM reserve (458 -> 789 B
+before L40-L41)."""
+
+[[ledger]]
+id = "L38"
+date = "2026-10-20"
+milestone = "Phase 7"
+bank = "home"
+component = "tape_block"
+delta = -9
+reason = """The block I/O measures 331 B in HOME (STORAGE_SEND_BLOCK 127 B, STORAGE_RECEIVE_BLOCK 204 B), byte for
+byte the vendored routines (D9 is conditional assembly only, so their timing is the verified port's). Their
+trampoline TAPE_BLOCK (14 B: the EXROM paged out around one block, through the depth count) is a paging
+trampoline, counted in page0 (153 of its 160 B). The 340 B budget leaves 9 B, returned to the HOME reserve."""
+
+[[ledger]]
+id = "L39"
+date = "2026-10-20"
+milestone = "Phase 7"
+bank = "home"
+component = "library"
+delta = 47
+reason = """tape_save and tape_load (spec.md 7, 8.3): their HOME part LIB_TAPE measures 47 B: the two entries (a
+one-byte selector), the name's first 11 bytes copied with chunk 6 = RAM (a name may be a string literal in
+image region 1), the arguments, the NOBRK section, the EXROM paged in around the EXROM service (SH_LIBTAPE:
+the name's checks and padding, the header logic, the result codes, in xshell, L41), and its runtime errors
+(4: the name or no bytes; 5: BREAK or SPACE). Shrink protocol: the logic is in the EXROM (step 2); the
+library has no budget left (L33), so the 47 B come from the HOME reserve (749 -> 711 B with L38, floor 512 B)."""
+
+[[ledger]]
+id = "L40"
+date = "2026-10-20"
+milestone = "Phase 7"
+bank = "exrom"
+component = "xcomp"
+delta = 24
+reason = """The compiler's binding of the two tape functions: their LIB_NAMES records (tape_save, tape_load: the
+name, the HOME address, the signature; 12 B each; their parameter list (void *, void *, int) is LP_PPI,
+already in LIB_PARAMS). The library's names measure 709 B with the folding. From the EXROM reserve."""
+
+[[ledger]]
+id = "L41"
+date = "2026-10-20"
+milestone = "Phase 7"
+bank = "exrom"
+component = "xshell"
+delta = 183
+reason = """SAVE, LOAD and VERIFY and the library's EXROM tape service measure +769 B in the shell (2,615 B):
+src/shell/tape.asm 584 B of code (LOAD and VERIFY with the staged LOAD and VERIFY's length rule 161 B; the
+report 54 B; SAVE 38 B; the names 61 B; the record check 40 B; the progress hook with the staging decision
+87 B; the transfers and their result codes 39 B; the platform's block calls through TAPE_BLOCK 36 B; the
+library's service 68 B), the 14 texts 133 B, and in shell.asm the three commands' dispatch (24 B), the word
+matcher that accepts a quote after the word with FREE's first row shared as the tape reports' second
+(SH_WORD, SH_QWORD, SH_SPACES, SH_SOURCE; +25 B) and the library's EXROM entry (3 B). Shrink pass first (the request type set once for the shell's commands, TAPE_DEST cleared
+by the only routine that sets it, cheaper zero tests: -10 B). The shell's remaining 586 B cover most of it;
+183 B come from the EXROM reserve (789 -> 582 B with L40, floor 256 B)."""

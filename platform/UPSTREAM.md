@@ -2,7 +2,7 @@
 
 **Upstream:** 2068-Leap (`~/2068-Leap`, github.com/nchiker/2068-Leap), release tag **`v2.0.1-emu.1`**, commit **`d19b9ead9880b31c5fee59e71519a42f4c0263b0`**. The release images are HOME `3f13ec2c…` and EXROM `24b1ebb0…`.
 
-These are copies, not a link. Frozen V2 is never modified and never imported from: nothing in this repository reads or writes `~/2068-Leap` except `tools/check_platform.py`, which only runs `git show` on the tag.
+These are copies, not a link. Frozen V2 is never modified and never imported from: nothing in this repository reads or writes `~/2068-Leap` except `tools/check_platform.py`, which only runs `git show` on the tag, and (Phase 7) `tools/v2ref.sh`, which only runs `git archive` of the tag and builds the V2 reference ROM from that copy in `build/v2ref/` (checked against the release hashes) for the cross-version tape tests.
 
 Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/` are the V2 paths.
 
@@ -27,7 +27,7 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | pristine |
 | `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | pristine |
 | `rom/v2_ay_beep.asm` | AY beep (HOME pieces; the EXROM piece `AY_BEEP`) | both | pristine |
-| `kernel/storage/storage.asm` | tape | EXROM | pristine |
+| `kernel/storage/storage.asm` | tape: block I/O (HOME), header logic (EXROM) | both | **delta D9** |
 | `rom/exrom_editor.asm` | editor engine | EXROM | pristine |
 | `rom/exrom_sound.asm` | `SOUND` register write | EXROM | pristine |
 | `rom/exrom_format.asm` | integer formatting; float formatting (FP component) | EXROM | pristine |
@@ -59,6 +59,7 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D6 | `kernel/graphics/graphics.asm` | Deletions only: `GFX_SPRITE_INVALIDATE` and its calls in `GFX_CLS`, `GFX_SCROLL_TEXT_UP`, `GFX_SCROLL_TEXT_DOWN` (not assembled in production) and `GFX_SET_MODE` (25 B) | Phase 4 (ledger L24): it cleared V2's sprite-slot display state for BASIC's sprite slots; Leap-C's `sprite_get`/`sprite_put` use the program's buffers, and nothing reads those cells |
 | D7 | `kernel/io/io.asm` | `KEY_ASCII_TABLE_SYMBOL`: SYMBOL SHIFT + A S D F G give `~ \| \ { }`, + U Y give `] [`, + H gives `^` (zeros before). `IO_DECODE_KEY` no longer turns SYMBOL SHIFT + A/S into `KEY_NEXT_ERROR`/`KEY_PREV_ERROR` (−19 B) | Phase 5: the C punctuation key map (`spec.md` §6.2, owner-approved baseline). V2's error-navigation codes had no handler in Leap-C (the editor engine passes them to the shell's navigation hook, which ignores them) |
 | D8 | `kernel/graphics/graphics.asm` | `PUNCT_CHAR_TABLE`: 8 entries for `[ ] { } \| ~ ^ \` (font indices 86-93) and the entries reordered by their frequency in C (each keeps its V2 font index); `FONT_TABLE`: the 8 glyphs (64 B); `GFX_CLEAR_ROW_TEXT` deleted (16 B); the file header's glyph count | Phase 5: the C characters' glyphs (`spec.md` §6.2). The table is scanned linearly for every punctuation character drawn, so C's frequent ones first make the editor's redraw faster (measured with the typing cost). `GFX_CLEAR_ROW_TEXT` was V2's status-bar clear; the Leap-C shell clears rows itself (6 kT instead of 23 kT) and nothing else calls it |
+| D9 | `kernel/storage/storage.asm` | Conditional assembly only (no instruction changes): `IFNDEF STORAGE_NO_BLOCKS` around `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK`, `IFNDEF STORAGE_BLOCKS_ONLY` around the rest (`STORAGE_VERSION_WORD` onwards), and a comment. HOME defines `STORAGE_BLOCKS_ONLY` and assembles the block I/O (331 B, byte for byte the vendored routines); the EXROM defines `STORAGE_NO_BLOCKS` and names its trampolines' callers `STORAGE_SEND_BLOCK` / `STORAGE_RECEIVE_BLOCK` (`src/shell/tape.asm`) | Phase 7 (`spec.md` §8.3, `docs/milestones/M7.md`, ledger L37-L38): the data blocks move with chunk 6 paged out, so `tape_save` / `tape_load` reach any address; the header logic stays in the EXROM |
 
 ## Names the platform expects from Leap-C
 

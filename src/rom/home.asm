@@ -200,6 +200,24 @@ SH_COMPILE:
     call BANK_PAGE_EXROM_IN
     pop  af
     ret
+; ============================================================================
+; TAPE_BLOCK -- one tape block with chunk 6 = RAM (spec.md 8.3): the trampoline through which the EXROM's
+; STORAGE_SAVE and STORAGE_LOAD reach the HOME block I/O (src/shell/shell.asm SH_TAPE_SEND, SH_TAPE_RECV), so
+; a data block is sent from or received into chunk 6 as into any other RAM. The EXROM is paged out for the
+; block and in again after it, both through the depth count (bank rule 2: the stack is never in chunk 6)
+; In:  HL = TAPE_SEND_BLOCK or TAPE_RECV_BLOCK; A, F, IX, DE as that routine takes them; BANK_EXROM_DEPTH 1
+; Out: as that routine (F, DE, IX); BANK_EXROM_DEPTH 1; interrupts on (between blocks)
+; Destroys: AF, AF', BC, DE, HL, IX (the block routine's)
+; ============================================================================
+TAPE_BLOCK:
+    push af
+    call BANK_PAGE_EXROM_OUT
+    pop  af
+    call RT_CALLHL
+    push af
+    call BANK_PAGE_EXROM_IN
+    pop  af
+    ret
 COMP_TRAMP_END:
 COMP_STMT_BEGIN:
     INCLUDE "src/compiler/stmt.asm"
@@ -219,6 +237,16 @@ COMP_LIBRARY_BEGIN:
     INCLUDE "src/runtime/library.asm"
     INCLUDE "src/runtime/libbind.asm"
 COMP_LIBRARY_END:
+
+; ---------------------------------------------------------------- tape block I/O (spec.md 2.2, 8.3; Phase 7)
+; The platform's STORAGE_SEND_BLOCK and STORAGE_RECEIVE_BLOCK (platform delta D9: the header logic stays in
+; the EXROM), reached from the EXROM through TAPE_BLOCK with chunk 6 paged out
+COMP_TAPE_BEGIN:
+    DEFINE STORAGE_BLOCKS_ONLY
+    INCLUDE "kernel/storage/storage.asm"
+COMP_TAPE_END:
+TAPE_SEND_BLOCK     EQU STORAGE_SEND_BLOCK      ; (the EXROM's names for them: there, STORAGE_SEND_BLOCK and
+TAPE_RECV_BLOCK     EQU STORAGE_RECEIVE_BLOCK   ; STORAGE_RECEIVE_BLOCK are its trampolines' callers)
 
 LEAPC_HOME_CODE_END:
     IFDEF LEAPC_TEST

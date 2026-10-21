@@ -12,7 +12,7 @@ in the definition of such a name (EQU closure). Every referenced name whose valu
   - one of the V2 platform cells Leap-C keeps at its V2 address in $F180-$F3FF (PLATFORM_CELLS);
   - a layout boundary (BOUNDARIES: the region symbols of leapc_layout.inc and the platform names
     defined from them), or a value that is not an address (VALUES);
-  - a label of the EXROM image (EXROM code and tables, chunk 6 while paged in).
+  - a label of the EXROM image (EXROM code and tables, chunk 6 while paged in), or an EXROM EQU naming one.
 Anything else -- a cell in the source region, an image region, the stack, $FF00-$FFFF, a V2 cell
 Leap-C has no use for -- is an error. The tool also checks the map itself (the regions tile RAM,
 the cells end below the limit, the compiler's region table in the ROM equals the map) and that no
@@ -141,6 +141,7 @@ def check(build, quiet=False):
     for name, listing, lo, hi, own in (("HOME", "leapc_home.lst", 0, 0x4000, S),
                                         ("EXROM", "leapc_exrom.lst", 0xC000, 0xE000, X)):
         used, equs = census(os.path.join(build, listing), lo, hi)
+        labels = {v for k, v in own.items() if k not in equs and 0xC000 <= v < 0xE000} if name == "EXROM" else set()
         for n, at in sorted(used.items()):
             v = own.get(n, S.get(n, X.get(n)))
             if v is None or v < 0x4000:
@@ -149,6 +150,8 @@ def check(build, quiet=False):
                 kind = "boundary or value"
             elif n not in equs and 0xC000 <= v < 0xE000 and n in X and n not in S:
                 kind = "EXROM label"
+            elif n in equs and v in labels:
+                kind = "EXROM label"                     # (an EXROM name for one: STORAGE_SEND_BLOCK = SH_TAPE_SEND)
             elif 0x4000 <= v < g("LEAPC_SYSVARS_BASE"):
                 kind = "display file 1"
             elif g("LEAPC_SYSVARS_BASE") <= v < g("LEAPC_CELLS_END"):

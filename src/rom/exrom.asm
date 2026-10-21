@@ -46,8 +46,11 @@ COMP_XCOMP_ENTRY:
 COMP_XCOMP_ENTRY_END:
     ASSERT $ == LEAPC_EXROM_BEEP
     jp   AY_BEEP_PLAY                  ; beep() (HOME LIB_BEEP: page in, play, page out)
+    ASSERT $ == LEAPC_EXROM_TAPE
+    jp   SH_LIBTAPE                    ; tape_save(), tape_load() (HOME LIB_TAPE: page in, call, page out)
 ; ---------------------------------------------------------------- shell
     INCLUDE "src/shell/shell.asm"
+    INCLUDE "src/shell/tape.asm"
 COMP_XSHELL_END:
 COMP_XKEYWORDS_BEGIN:
     INCLUDE "src/shell/highlight.asm"
@@ -66,6 +69,11 @@ COMP_XCOMP_END:
 ; ---------------------------------------------------------------- retained platform (spec.md 2.1)
 COMP_XPLATFORM_BEGIN:
     INCLUDE "rom/exrom_editor.asm"
+; the tape: the header logic here; its block I/O is in HOME (platform delta D9), so the platform's calls of
+; STORAGE_SEND_BLOCK / STORAGE_RECEIVE_BLOCK go to the shell's callers of the HOME trampoline TAPE_BLOCK
+STORAGE_SEND_BLOCK      EQU SH_TAPE_SEND
+STORAGE_RECEIVE_BLOCK   EQU SH_TAPE_RECV
+    DEFINE STORAGE_NO_BLOCKS
     INCLUDE "kernel/storage/storage.asm"
     INCLUDE "rom/exrom_sound.asm"
     INCLUDE "rom/v2_ay_beep.asm"

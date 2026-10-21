@@ -173,6 +173,16 @@ SH_STATUS_BUF:  DEFS 33             ; the status row's text (32 characters and t
 SH_REPORT_BUF:  DEFS 33             ; Phase 6: a report's first row (row 22: SH_REPORT)
 SH_IMAGE_SIZE:  DEFS 2              ; Phase 6: the size of the last image compiled (SH_IMAGE; FREE)
 
+; ---- tape (Phase 7: the shell's SAVE, LOAD, VERIFY and the library's tape_save, tape_load; spec.md 8). The
+; platform's STORAGE_* system variables hold the header and the transfer's state.
+TAPE_NAME_LEN   EQU 10              ; a tape name's characters (the header's field)
+TAPE_NAME:      DEFS TAPE_NAME_LEN + 1 ; the name, padded with spaces (the library copies a C string's first 11
+                                    ; bytes here first, from wherever it is: chunk 6 is RAM then)
+TAPE_ABORT:     DEFS 1              ; nonzero: a block was aborted (SPACE) during a SAVE; the blocks after it are
+                                    ; not sent (SH_TAPE_SEND)
+TAPE_DEST:      DEFS 2              ; nonzero: the shell's staged LOAD receives the data block here instead of
+                                    ; at the start of the line store (SH_TAPE_RECV, SH_TAPE_HOOK)
+
 LEAPC_CELLS_END:
     ASSERT LEAPC_CELLS_END <= LEAPC_CELLS_LIMIT
     ORG LEAPC_CELLS_RETURN_ORG

@@ -34,6 +34,8 @@ ZESARUX = os.path.expanduser("~/Applications/ZEsarUX-13.0")
 # 3.4 MT/s at real speed, 8.1 MT/s with these. LEAPC_REALTIME=1 runs at real speed.
 FAST_ARGS = [] if os.environ.get("LEAPC_REALTIME") else ["--emulatorspeed", "1000", "--frameskip", "49"]
 RET_SLOT = 0xFF00          # return address slot for routine calls (spec.md 3.1: unused by the ROM)
+TAPE_SLOTS = (14, 15, 16, 17, 18)  # breakpoint slots of the SAVE capture (set_bps: 1-8; memguard: 9-11; 12-13 ad hoc)
+AUTOLOAD_PC = 0x11F8       # ZEsarUX's TS2068 autoload trigger (storage/tape.c gestionar_autoload_spectrum)
 STOP_ADDR = 0xFF02         # `jr $` written here; routine calls return to it
 GLYPH_PROG = 0xF400        # glyph rendering program (image region 3, free at the idle prompt)
 UNKNOWN = "\u2591"         # screen_rows: a cell that is no glyph
@@ -77,15 +79,23 @@ class ZRCP(ZRCPClient):
 
 
 class ZEsarUXProcess(_ZProcess):
-    """ts2068-debug's ZEsarUX launcher (the same arguments) with FAST_ARGS."""
+    """ts2068-debug's ZEsarUX launcher (the same arguments) with FAST_ARGS. With stdout_path, ZEsarUX's
+    standard output goes to that file line by line (stdbuf): the tape capture's breakpoint actions print
+    there (Machine.tape_capture, Phase 7)."""
+    stdout_path = None
 
     def start(self):
         args = ["./" + self.binary, "--noconfigfile", "--machine", self.machine, "--enable-remoteprotocol",
                 "--remoteprotocol-port", str(self.port), "--vo", "null", "--ao", "null"] + FAST_ARGS
         if self.romfile:
             args += ["--romfile", os.path.abspath(self.romfile)]
-        self._proc = subprocess.Popen(args, cwd=str(self.install_dir), stdout=subprocess.DEVNULL,
-                                      stderr=subprocess.DEVNULL)
+        out = subprocess.DEVNULL
+        if self.stdout_path:
+            out = open(self.stdout_path, "w")
+            args = ["stdbuf", "-oL"] + args
+        self._proc = subprocess.Popen(args, cwd=str(self.install_dir), stdout=out, stderr=subprocess.DEVNULL)
+        if out is not subprocess.DEVNULL:
+            out.close()
 
 
 class InExrom(int):
@@ -221,6 +231,8 @@ class Machine:
             if probe.connect_ex(("127.0.0.1", self.port)) == 0:
                 raise RuntimeError("port %d is in use (an emulator left running?)" % self.port)
         self.proc = ZEsarUXProcess(ZESARUX, port=self.port, romfile=self.rom)
+        self.out_path = os.path.join(self.snapdir, "zesarux.out")
+        self.proc.stdout_path = self.out_path
         self.proc.start()
         self.c = ZRCP(port=self.port, timeout=60)
         self.c.connect(retries=100)
@@ -251,6 +263,65 @@ class Machine:
     def restore(self):
         self.cmd("snapshot-load " + self.snap)
         self._enable_bp()
+
+    # ------------------------------------------------------------- tape (Phase 7)
+    def tape_insert(self, path):
+        """Play `path` (.rwa, .tap, .tzx) through ZEsarUX's real-tape input (the EAR bit of port $FE), from
+        now on in emulated time. ZEsarUX resets the machine on the insert and arms its autoload, which would
+        type LOAD "" into the keyboard reads once the PC reaches AUTOLOAD_PC (a compiler routine in the Leap-C
+        HOME); the harness disarms it at once: the trigger is reached for one instruction and its key
+        sequence is drained by reads of a keyboard row it never answers, which ends it (envia_jload_desactivar).
+        A second trigger must then press nothing (checked on the ENTER row). The machine is left in no useful
+        state: the caller restores the booted editor (restore, Shell.boot / load), and the tape plays on."""
+        self.cmd("realtape-open " + os.path.abspath(path))
+        self.set_bps([])
+        self.setreg("SP", RET_SLOT)
+        self.setreg("PC", AUTOLOAD_PC)
+        self.cmd("run 1")
+        drain = bytes([0x01, 0xFE, 0xFE, 0x11, 0xD0, 0x07, 0xED, 0x78, 0x1B, 0x7A, 0xB3, 0x20, 0xF9, 0x18, 0xFE])
+        self.write(0xFF10, drain)                       # ld bc,$FEFE; ld de,2000; in a,(c) ... jr $
+        self.setreg("PC", 0xFF10)
+        self.run(20_000)
+        self.setreg("PC", AUTOLOAD_PC)
+        self.cmd("run 1")
+        probe = bytes([0x01, 0xFE, 0xBF, 0x16, 0xC8, 0x1E, 0xFF, 0xED, 0x78, 0xA3, 0x5F, 0x15, 0x20, 0xF9,
+                       0x7B, 0x32, 0x40, 0xFF, 0x18, 0xFE])  # ld bc,$BFFE; ld d,200; ld e,$FF; in a,(c); and e...
+        self.write(0xFF20, probe)
+        self.setreg("PC", 0xFF20)
+        self.run(20_000)
+        if not self.read(0xFF40, 1)[0] & 1:
+            raise RuntimeError("ZEsarUX's tape autoload is still armed (ENTER read on row $BF)")
+
+    def tape_eject(self):
+        """End any tape: a moment of silence replaces it (and is disarmed: tape_insert)."""
+        p = os.path.join(self.snapdir, "silence.rwa")
+        open(p, "wb").write(bytes([0x80]) * 64)
+        self.tape_insert(p)
+
+    def tape_capture(self, on=True):
+        """The MIC signal of a SAVE: every `out (PORT_ULA), a` of HOME's STORAGE_SEND_BLOCK gets a breakpoint
+        whose action prints TSTATESP * 16 + (A & 8) on ZEsarUX's standard output without stopping, so the
+        transfer runs undisturbed. on=False clears them and returns the values printed since on=True
+        (tapes.edges_from_capture)."""
+        if on:
+            lo, hi = self.sym("STORAGE_SEND_BLOCK"), self.sym("STORAGE_RECEIVE_BLOCK")
+            code = self.read(lo, hi - lo)
+            outs = [lo + i for i in range(len(code) - 1) if code[i:i + 2] == b"\xD3\xFE"]
+            assert len(outs) == len(TAPE_SLOTS), "STORAGE_SEND_BLOCK: %d `out ($FE), a`" % len(outs)
+            self._cap_at = os.path.getsize(self.out_path)
+            for slot, a in zip(TAPE_SLOTS, outs):
+                self.cmd("set-breakpoint %d PC=%04XH" % (slot, a))
+                self.cmd("set-breakpointaction %d printe TSTATESP*16+(A&8)" % slot)
+            return outs
+        for slot in TAPE_SLOTS:
+            self.cmd("set-breakpoint %d" % slot)
+            self.cmd("set-breakpointaction %d" % slot)
+        self.cmd("noop")
+        time.sleep(0.2)
+        with open(self.out_path, "rb") as f:
+            f.seek(self._cap_at)
+            lines = f.read().decode("latin-1").split("\n")
+        return [int(l) for l in (x.strip() for x in lines) if l.lstrip("-").isdigit()]
 
     def _glyph_table(self):
         """Render chars 32..143 with the real GFX_PUTCHAR (A=char, B=row, C=col) and map each

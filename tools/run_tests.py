@@ -42,10 +42,14 @@ Phase 6 (suite `e2e`, tools/e2etest.py): the compile/run workflow: typed program
 the whole corpus through the shell's RUN path, the diagnostics and the reports. Suite `canary`: the RAM
 canary and banking invariants over the corpus (tools/canary.py), as tasks of the same pool.
 
+Phase 7 (suite `tape`, tools/tapetest.py): cassette SAVE, LOAD and VERIFY and the library's tape_save /
+tape_load on real tape signals (the MIC line captured, ZEsarUX's real-tape input played), their failures and
+recoveries, the host tool's tapes, V2 and Leap-C refusing each other's tapes.
+
 Every suite runs as tasks on a pool of emulators (--workers, default the CPUs less one, at most 8).
 
 Usage: run_tests.py [--port N] [--only SUBSTR] [--workers N]
-                    [--suite boot,lexer,decl,exec,bench,shell,e2e,canary] [--json OUT]"""
+                    [--suite boot,lexer,decl,exec,bench,shell,e2e,tape,canary] [--json OUT]"""
 import argparse
 import glob
 import json
@@ -67,6 +71,7 @@ import memguard         # noqa: E402
 import stmtbench        # noqa: E402
 import shelltest        # noqa: E402
 import e2etest          # noqa: E402
+import tapetest         # noqa: E402
 import canary           # noqa: E402
 from lcharness import Machine   # noqa: E402
 
@@ -652,6 +657,14 @@ t_shell = _case_task(shelltest, "shell", "shell")
 t_e2e = _case_task(e2etest, "e2e", "e2e")
 
 
+def t_tape(m, arg, only, suites):
+    sh = getattr(m, "_shell", None) or shelltest.Shell(m)
+    m._shell = sh
+    r = tapetest.run_case(sh, arg)
+    return dict(rows={"tape": [r]}, failed=int(not r["ok"]),
+                out=["tape: %-34s %s %s" % (arg, "PASS" if r["ok"] else "FAIL", r["detail"] if not r["ok"] else "")])
+
+
 def t_corpus(m, arg, only, suites):
     k, n = arg
     sh = getattr(m, "_shell", None) or shelltest.Shell(m)
@@ -679,7 +692,7 @@ def t_canary(m, arg, only, suites):
 
 
 TASKS = dict(boot=t_boot, decl=t_decl, exec=t_exec, execb=t_exec_builtins, lexer=t_lexer, shell=t_shell,
-             e2e=t_e2e, corpus=t_corpus, canary=t_canary)
+             e2e=t_e2e, tape=t_tape, corpus=t_corpus, canary=t_canary)
 HEAVY = ("typing-cost", "redraw-oracle")
 
 
@@ -691,6 +704,9 @@ def plan(suites, only):
         t += [("shell", "build", c) for c in sc if c in HEAVY]
     if "canary" in suites:
         t += [("canary", "build", (k, SHARDS["canary"])) for k in range(SHARDS["canary"])]
+    if "tape" in suites:                            # (the longest first: the not-found search, the V2 exchange)
+        tc = [n for n, _, _ in tapetest.CASES if not only or only in n]
+        t += [("tape", "build", n) for n in sorted(tc, key=lambda n: n not in tapetest.LONG)]
     if "e2e" in suites:
         t += [("corpus", "build", (k, SHARDS["corpus"])) for k in range(SHARDS["corpus"])]
     if "exec" in suites:
@@ -748,7 +764,7 @@ def main():
     ap.add_argument("--port", type=int, default=10760)
     ap.add_argument("--only")
     ap.add_argument("--json", default=os.path.join(ROOT, "build", "test_results.json"))
-    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench,shell,e2e,canary")
+    ap.add_argument("--suite", default="boot,lexer,decl,exec,bench,shell,e2e,tape,canary")
     ap.add_argument("--workers", type=int, default=max(1, min(8, (os.cpu_count() or 4) - 1)))
     a = ap.parse_args()
     suites = a.suite.split(",")
@@ -782,7 +798,7 @@ def main():
             if p.is_alive():
                 p.terminate()
     got.sort(key=lambda r: r["idx"])
-    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[])
+    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[], tape=[])
     failed = sum(r["failed"] for r in got)
     extra = {}
     canary_rows = []
@@ -869,6 +885,12 @@ def main():
                 print("e2e: FAIL compile errors never reported through RUN with the cursor checked: %s" % missing)
             else:
                 print("e2e: every compile error number (%d) reported through RUN with the cursor on its line" % len(seen))
+    if "tape" in suites:
+        tr = sorted(results["tape"], key=lambda x: x["case"])
+        print("tape: %d/%d cassette cases pass" % (sum(x["ok"] for x in tr), len(tr)))
+        for x in tr:
+            if x["ok"] and x.get("extra"):
+                print("measured: tape %-22s %s" % (x["case"], x["extra"]))
     if "canary" in suites:
         canary_rows.sort(key=lambda r: r["case"])
         cs, line = canary.summary(canary_rows, walls.get("canary", 0))

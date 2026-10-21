@@ -2,23 +2,20 @@
 
 A C language ROM set for the original Timex Sinclair 2068 (48 KB, stock HOME/EXROM banking). It has a full-screen source editor and an on-machine, single-pass, Small-C-style compiler that generates native Z80 code. It is built on the platform services of Leap V2.
 
-- **What is built:** `spec.md` (v0.8).
+- **What is built:** `spec.md` (v0.9).
 - **How and in which order:** `project_plan.md` (v0.1).
 - **Why:** `docs/C_FEASIBILITY_STUDY.md` (closed).
 - **Progress:** one report per milestone in `docs/milestones/`.
 
-**Status:** Phase 6 (the compile/run workflow) is complete (`docs/milestones/M6.md`). `RUN` compiles and runs the program, then reports on the bottom two rows:
-- a compile error as `ERROR n: MESSAGE` and its line, with the cursor on that line;
-- a runtime error as `RUNTIME ERROR n: MESSAGE`, or BREAK, with the line;
-- a normal end as the exit status, the image's size and the free heap.
+**Status:** Phase 7 (the cassette) is complete (`docs/milestones/M7.md`). `SAVE "name"`, `LOAD "name"` / `LOAD ""` and `VERIFY "name"` keep C source on tape in the stock TS2068 two-block format, tagged with the Leap-C version word `$8C00`: V2 BASIC tapes and Leap-C tapes refuse each other with `BAD TAPE VERSION`. A failed LOAD keeps the source whenever the new program fits above it. Programs can save and load data blocks anywhere in RAM, chunk 6 included, with `tape_save(name, addr, len)` and `tape_load(name, addr, max)`. `tools/c2tape.py` makes a program tape (`.tap`/`.tzx`) from a `.c` file on the host.
 
-`FREE` reports the memory. Phases 1-5 are also complete: the compiler, the runtime and library, the memory layout and banking, and the editor with C punctuation and keyword highlighting. The next phase is Phase 7 (cassette SAVE/LOAD).
+Phases 1-6 are also complete: the compiler, the runtime and library, the memory layout and banking, the editor with C punctuation and keyword highlighting, and the compile/run workflow (`RUN` with its reports, `FREE`). The next phase is Phase 8 (library completion and language polish).
 
-Typing a program: letters as usual (CAPS SHIFT for capitals), SYMBOL SHIFT for punctuation, with SYMBOL SHIFT + Y `[`, U `]`, F `{`, G `}`, S `|`, A `~`, H `^`, D `\`. CAPS SHIFT + 5/6/7/8 move the cursor, + 0 deletes, + 1 deletes the line, + ENTER inserts a line; `RUN`, `LIST`, `FREE` and `NEW` are typed on the empty line after the last; a key ends a report.
+Typing a program: letters as usual (CAPS SHIFT for capitals), SYMBOL SHIFT for punctuation, with SYMBOL SHIFT + Y `[`, U `]`, F `{`, G `}`, S `|`, A `~`, H `^`, D `\`. CAPS SHIFT + 5/6/7/8 move the cursor, + 0 deletes, + 1 deletes the line, + ENTER inserts a line; `RUN`, `LIST`, `FREE`, `NEW`, `SAVE "name"`, `LOAD "name"` (or `LOAD ""`) and `VERIFY "name"` are typed on the empty line after the last; a key ends a report. SPACE (or BREAK) stops a tape transfer.
 
 ## Build and test
 
-Needs sjasmplus 1.23, Python 3.11 or later, and, for `make test`, ZEsarUX 13.0 in `~/Applications/ZEsarUX-13.0` and `~/ts2068-debug`.
+Needs sjasmplus 1.23, Python 3.11 or later, and, for `make test`, ZEsarUX 13.0 in `~/Applications/ZEsarUX-13.0`, `~/ts2068-debug`, and the frozen Leap V2 repository `~/2068-Leap` (read only: `tools/v2ref.sh` builds the V2 reference ROM from its tag for the cross-version tape tests).
 
 ```sh
 make            # build/leapc_home.bin, leapc_exrom.bin, leapc_zesarux.bin, leapc_exrom.dck (+ build/test/)
@@ -27,10 +24,12 @@ make budget     # per-component budget table and ROM map
 make inventory  # every HOME routine, table and gap with its referrers
 make test       # ZEsarUX: boot tests (both images), lexer, declaration and executable C tests, measurements,
                 # the shell (editor, keys, glyphs, typing cost), the RUN workflow (typed programs, the corpus
-                # through RUN, diagnostics, reports) and the canary: one pool of emulators, about 6 minutes
+                # through RUN, diagnostics, reports), the cassette (real tape signals) and the canary: one
+                # pool of emulators
 make canary     # the RAM canary and banking invariants over the whole corpus, on its own
 make capacity   # the measured capacity table (build/capacity.json)
 make repro      # two clean builds must give identical hashes
+python3 tools/c2tape.py prog.c prog.tap   # a program tape for LOAD (.tap or .tzx)
 ```
 
 Run in ZEsarUX: `zesarux --machine TS2068 --romfile build/leapc_zesarux.bin`.
@@ -45,9 +44,9 @@ The test harness starts ZEsarUX with `--emulatorspeed 1000 --frameskip 49` (abou
 | `src/rom/` | the HOME and EXROM images |
 | `src/compiler/` | the compiler: lexer (M1.1); symbol table, declarations, types, initialisers, function bodies (M1.2); expressions, code generator, constant folding (EXROM) (M1.3); statements, preprocessor (Phase 2); the library's names (EXROM) (Phase 3) |
 | `src/runtime/` | the helper core (incl. multiply, divide, `switch`), program start and exit, BREAK, runtime errors, the library and its compiler binding |
-| `src/shell/` | the EXROM shell (Phase 5): the editor's glue, commands, RUN and its reports (`shell.asm`), C keyword highlighting (`highlight.asm`), the error messages (`diag.asm`, Phase 6; its table is generated from `include/leapc_errors.inc` by `tools/gen_diag.py`) |
+| `src/shell/` | the EXROM shell (Phase 5): the editor's glue, commands, RUN and its reports (`shell.asm`), C keyword highlighting (`highlight.asm`), the error messages (`diag.asm`, Phase 6; its table is generated from `include/leapc_errors.inc` by `tools/gen_diag.py`), the cassette commands and the library's tape service (`tape.asm`, Phase 7) |
 | `src/test/` | test-build-only hooks (`-DLEAPC_TEST`) |
 | `include/` | RAM layout, cells, tokens, errors, build configuration |
-| `tests/` | test corpus (C sources with expectation headers): `lexer/`, `decl/`, `expr/` (incl. `gen/`, generated by `tools/gen_exprtests.py`), `experr/`, `golden/`, `run/`, `stmt/` (incl. `gen/`, generated by `tools/gen_stmttests.py`), `stmterr/`, `pp/`, `pperr/`, `lib/` (the library), `rt/` (runtime errors, BREAK, soak), `mem/` (memory layout: image regions, `#pragma hires`, stack, heap), `spike/`, `bench/` |
-| `tools/` | build, budget, check and test tools |
+| `tests/` | test corpus (C sources with expectation headers): `lexer/`, `decl/`, `expr/` (incl. `gen/`, generated by `tools/gen_exprtests.py`), `experr/`, `golden/`, `run/`, `stmt/` (incl. `gen/`, generated by `tools/gen_stmttests.py`), `stmterr/`, `pp/`, `pperr/`, `lib/` (the library; `lib/tape/` the tape functions without a tape), `rt/` (runtime errors, BREAK, soak), `mem/` (memory layout: image regions, `#pragma hires`, stack, heap), `spike/`, `bench/`. The cassette's own cases, which need tapes, are in `tools/tapetest.py` |
+| `tools/` | build, budget, check and test tools; `c2tape.py` (host: a `.c` file to a program tape), `tapes.py` (tape files and signals for the tests and the host tools) |
 | `spike/` | feasibility code-shape spike, kept as evidence |

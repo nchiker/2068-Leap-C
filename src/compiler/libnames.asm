@@ -152,4 +152,6 @@ LIB_NAMES:
     LIBFN "malloc", LIB_MALLOC, LR_VOIDP, LP_I
     LIBFN "free", LIB_FREE, LR_VOID, LP_P
     LIBFN "exit", LIB_EXIT, LR_VOID, LP_I
+    LIBFN "tape_save", LIB_TAPE_SAVE, LR_VOID, LP_PPI
+    LIBFN "tape_load", LIB_TAPE_LOAD, LR_INT, LP_PPI
     DB   0

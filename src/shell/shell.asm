@@ -19,8 +19,8 @@
 ;     rows 22-23 (Phase 6: the error's message from the diagnostics, src/shell/diag.asm; the exit
 ;     status, the image's size and the free heap);
 ;   - LIST never splits a line across two pages;
-;   - FREE (Phase 6) reports the source's size, the room left, the last image and the heap.
-; Phase 7 adds SAVE, LOAD and VERIFY.
+;   - FREE (Phase 6) reports the source's size, the room left, the last image and the heap;
+;   - SAVE, LOAD and VERIFY (Phase 7: src/shell/tape.asm) take the name in quotes after the command.
 ;
 ; The shell runs with the EXROM paged in (BANK_EXROM_DEPTH 1): chunk-6 RAM is invisible to it.
 ; It calls HOME directly (the platform, LEX_KEYWORD, RT_RUN) and compiles through SH_COMPILE.
@@ -75,7 +75,8 @@ SH_REENTER:
 
 ; ============================================================================
 ; SH_DISPATCH -- run the command on the append line: RUN, LIST, FREE or NEW, in any case, alone on
-; the line apart from spaces (V2_DISPATCH)
+; the line apart from spaces (V2_DISPATCH); SAVE, LOAD or VERIFY, in any case, then spaces and a quote
+; (no C line starts so): its name and any errors in it are the command's (src/shell/tape.asm)
 ; Out: NC: a command ran (the line is not stored). C: not a command
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
@@ -89,6 +90,15 @@ SH_DISPATCH:
     ld   de, SH_KW_FREE
     call SH_MATCH
     jp   nc, SH_FREE
+    ld   de, SH_KW_SAVE
+    call SH_QWORD
+    jp   nc, SH_SAVE
+    ld   de, SH_KW_LOAD
+    call SH_QWORD
+    jp   nc, SH_LOAD
+    ld   de, SH_KW_VERIFY
+    call SH_QWORD
+    jp   nc, SH_VERIFY
     ld   de, SH_KW_NEW
     call SH_MATCH
     ret  c
@@ -101,8 +111,28 @@ SH_DISPATCH:
 ; SH_MATCH -- is the edit buffer the command named at DE (upper case), in any case, followed only
 ; by spaces? (V2_MATCH_EXACT, V2_MATCH_PREFIX)
 ; Out: NC: yes. Destroys: AF, B, DE, HL
+; SH_QWORD -- does the edit buffer start with the word at DE (upper case), in any case, then spaces and a
+; quote? Out: NC: yes, HL -> after the quote. Destroys: AF, B, DE, HL
+; SH_WORD -- does the edit buffer start with the word at DE (upper case), in any case?
+; Out: NC: yes, A = the character after it and any spaces, HL -> that character. Destroys: AF, B, DE, HL
+; SH_SPACES -- A = the first character from HL on that is not a space, HL -> it. Out: carry clear
 ; ============================================================================
 SH_MATCH:
+    call SH_WORD
+    ret  c
+    or   a
+    ret  z                             ; (carry clear)
+    scf
+    ret
+SH_QWORD:
+    call SH_WORD
+    ret  c
+    inc  hl
+    cp   '"'
+    ret  z                             ; (carry clear)
+    scf
+    ret
+SH_WORD:
     ld   hl, EDIT_LINE_BUF
 .char:
     ld   a, (de)
@@ -121,15 +151,18 @@ SH_MATCH:
     inc  hl
     inc  de
     jr   .char
-.tail:
-    ld   a, (hl)
-    inc  hl
-    or   a
-    ret  z                             ; (carry clear)
-    cp   ' '
-    jr   z, .tail
 .fail:
     scf
+    ret
+.tail:
+SH_SPACES:
+    ld   a, (hl)
+    cp   ' '
+    jr   nz, .end
+    inc  hl
+    jr   SH_SPACES
+.end:
+    or   a
     ret
 
 ; ============================================================================
@@ -372,9 +405,15 @@ SH_LIST:
 ; room left for it) / "IMAGE i B  HEAP h B" (SH_MEMORY: the last image compiled, and the heap a
 ; program would have now); then a key
 ; Out: carry clear. Destroys: AF, BC, DE, HL
+; SH_SOURCE -- append "SOURCE s B  FREE f B" at DE (also the tape commands' second row)
+; Out: DE -> the NUL written after it. Destroys: AF, BC, HL
 ; ============================================================================
 SH_FREE:
     ld   de, SH_REPORT_BUF
+    call SH_SOURCE
+    call SH_MEMORY
+    jp   SH_REPORT
+SH_SOURCE:
     ld   hl, SH_TXT_SOURCE             ; "SOURCE s B"
     call SH_APPEND
     ld   hl, (PROG_END)
@@ -389,9 +428,7 @@ SH_FREE:
     ld   hl, (VARS_START)
     or   a
     sbc  hl, bc
-    call SH_APPEND_BYTES
-    call SH_MEMORY
-    jp   SH_REPORT
+    jr   SH_APPEND_BYTES
 
 ; ============================================================================
 ; SH_MEMORY -- the memory report in SH_STATUS_BUF: "IMAGE i B  HEAP h B". The image is the last
@@ -1248,6 +1285,9 @@ SH_KW_RUN:      DB "RUN", 0
 SH_KW_LIST:     DB "LIST", 0
 SH_KW_FREE:     DB "FREE", 0
 SH_KW_NEW:      DB "NEW", 0
+SH_KW_SAVE:     DB "SAVE", 0
+SH_KW_LOAD:     DB "LOAD", 0
+SH_KW_VERIFY:   DB "VERIFY", 0
 SH_MSG_FULL:    DB "PROGRAM FULL", 0
 SH_MSG_COMPILING: DB "COMPILING", 0
 SH_MSG_RUNTIME: DB "RUNTIME "
@@ -1260,3 +1300,14 @@ SH_TXT_HEAP:    DB "  HEAP ", 0
 SH_TXT_SOURCE:  DB "SOURCE ", 0
 SH_TXT_FREE:    DB "  FREE ", 0
 SH_TXT_B:       DB " B", 0
+SH_TXT_SAVING:  DB "SAVING ", 0
+SH_TXT_LOADING: DB "LOADING ", 0
+SH_TXT_VERIFYING: DB "VERIFYING ", 0
+SH_MSG_SAVED:   DB "SAVED ", 0
+SH_MSG_LOADED:  DB "LOADED ", 0
+SH_MSG_VERIFIED: DB "VERIFIED ", 0
+SH_MSG_LFAIL:   DB "LOAD FAILED", 0
+SH_MSG_VFAIL:   DB "VERIFY FAILED", 0
+SH_MSG_VERSION: DB "BAD TAPE VERSION", 0
+SH_MSG_BADNAME: DB "BAD NAME", 0
+SH_MSG_NOPROG:  DB "NO PROGRAM", 0
