@@ -3,7 +3,7 @@
 
 Every case runs the production ROM in ZEsarUX and moves real tape signals:
   - SAVE (the shell's, and tape_save from a running program) is captured at the MIC line: every
-    `out (PORT_ULA), a` of HOME's STORAGE_SEND_BLOCK prints its T-state and level without stopping the
+    `out (PORT_ULA), a` of HOME's TAPE_SEND_BLOCK prints its T-state and level without stopping the
     machine (lcharness.Machine.tape_capture); tools/tapes.decode() turns the pulses back into blocks and
     measures every width, so the bytes and the timing on tape are both checked;
   - LOAD and VERIFY (and tape_load) read the EAR line through ZEsarUX's real-tape input (`realtape-open`):

@@ -15,7 +15,8 @@ Cases (everything through the keyboard matrix, the screen read back with the ROM
   frames      FRAMES counts every frame while a program runs: integer code, and float code, which pages the
               EXROM in and out for every operation (with V2's DI in the bank routines, 1% of the frame
               interrupts were lost there: the TS2068's INT lasts 32 T; delta D14)
-  save        SAVE recorded by Fuse's tape deck; the recording LOADed back, the source identical
+  save        SAVE recorded by Fuse's tape deck; the recording LOADed back, the source identical; (M11-tape) the
+              recording decoded by fuse-utils' tape2wav + audio2tape into the expected blocks
   wav         a program tape as audio (tapes.Tape.to_wav: the hardware kit's WAV), its samples played as a
               TZX direct recording (Fuse's libspectrum here reads no WAV), LOADed and RUN
   lib         (Phase 10) LIB "shapes" from its .tzx and LIB "testlib" from its WAV on Fuse's tape deck, the
@@ -318,6 +319,18 @@ def load_tape(f, path, name, timeout=120):
     return None if msg == "LOADED %s" % name else "LOAD showed %r" % msg
 
 
+def independent_decode(tzx):
+    """The data lengths of the blocks that fuse-utils' tape2wav + audio2tape find in a recording (an independent
+    decoder of the signal), or None without fuse-utils."""
+    if not (shutil.which("tape2wav") and shutil.which("audio2tape")):
+        return None
+    wav, out = tzx + ".wav", tzx + ".decoded.tzx"
+    subprocess.run(["tape2wav", tzx, wav], capture_output=True)
+    subprocess.run(["audio2tape", wav, out], capture_output=True)
+    listing = subprocess.run(["tzxlist", out], capture_output=True, text=True).stdout
+    return [int(m) for m in re.findall(r"Data length: (\d+) bytes", listing)]
+
+
 @case("save")
 def c_save(out):
     f = new_fuse("save")
@@ -335,6 +348,10 @@ def c_save(out):
             bad.append("SAVE %r, tape_write %s" % (msg, r))
         else:
             listing = subprocess.run(["tzxlist", rec], capture_output=True, text=True).stdout
+            got = independent_decode(rec)                   # (M11-tape: fuse-utils, not Leap-C's decoder)
+            want = [len(b) for b in tapes.file_blocks(tapes.PROGRAM, "fusesave", c2src.records(SAVE_PROGRAM))]
+            if got is not None and got != want:
+                bad.append("audio2tape decoded the recording as blocks of %r bytes, not %r" % (got, want))
             f.new()
             e = load_tape(f, rec, "fusesave")
             if e:

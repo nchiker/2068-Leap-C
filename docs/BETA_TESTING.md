@@ -1,10 +1,10 @@
 # Testing the Leap-C beta
 
-Thank you for trying **Leap-C 1.0.0-beta.1**, a C compiler and editor in the ROMs of the Timex Sinclair 2068. The beta is for finding what the project's own tests missed before release 1.0. Most of you will use an emulator; a few may have a real TS2068.
+Thank you for trying **Leap-C 1.0.0-beta.2**, a C compiler and editor in the ROMs of the Timex Sinclair 2068. The beta is for finding what the project's own tests missed before release 1.0. Most of you will use an emulator; a few may have a real TS2068.
 
 **Status.** Leap-C is qualified on two emulators, Fuse 1.9.1 and ZEsarUX 13.0 (with a patch), by thousands of automated tests: every C program of its test corpus, the editor, tapes, BREAK, power-on memory patterns. It has **not yet run on a physical TS2068**: if you have one, your results are especially valuable (section 5).
 
-You need: an emulator set up as [EMULATORS.md](EMULATORS.md) describes, and the emulator pack (`leapc-1.0.0-beta.1-emulators.zip`) from the [release page](https://github.com/nchiker/2068-Leap-C/releases). [USER_GUIDE.md](USER_GUIDE.md) explains Leap-C itself.
+You need: an emulator set up as [EMULATORS.md](EMULATORS.md) describes, and the emulator pack (`leapc-1.0.0-beta.2-emulators.zip`) from the [release page](https://github.com/nchiker/2068-Leap-C/releases). [USER_GUIDE.md](USER_GUIDE.md) explains Leap-C itself.
 
 ## 1. What to try
 
@@ -28,7 +28,7 @@ A good bug report has:
 
 | | |
 |---|---|
-| **The ROMs** | their SHA-256 hashes (HOME `ba8e0ab6...`, EXROM `9bd71cef...` for this beta; [EMULATORS.md](EMULATORS.md) §1 shows how to check) |
+| **The ROMs** | their SHA-256 hashes (HOME `043becf4...`, EXROM `97fe9523...` for this beta; [EMULATORS.md](EMULATORS.md) §1 shows how to check) |
 | **The emulator** | its name and exact version (Fuse 1.9.1, ZEsarUX 13.0 with the patch, TSRun, ...), and how you started it (the command line, or the settings you changed) |
 | **Your computer** | the operating system and its version (Windows 11, macOS 15, Ubuntu 24.04, ...) |
 | **The program** | the program's text (as text, in a code block), or its tape file attached (zip it: GitHub takes `.zip`) |
@@ -57,6 +57,6 @@ Questions, ideas and wishes are welcome as **Question or suggestion** issues: wh
 
 ## 5. On a real TS2068
 
-If you have a TS2068 with an EPROM programmer (or EPROM cartridges), the release also has a **hardware kit** (`leapc-1.0.0-beta.1-hardware-kit.zip`): the ROMs as EPROM images for a 27128 (HOME) and a 2764 (EXROM) with Intel HEX files and checksums, check programs and examples as `.tap`, `.tzx` and `.wav` (to play into the EAR socket), and **[HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md)**: what to check, and what each check program should show (as both emulators showed it). Work through as much of the checklist as you can, and report each result, a pass too, with the item's number. The kit's ROM images contain code derived from the stock TS2068 ROM, which Amstrad allows to be redistributed free of charge: they are not for sale ([NOTICE](../NOTICE)).
+If you have a TS2068 with an EPROM programmer (or EPROM cartridges), the release also has a **hardware kit** (`leapc-1.0.0-beta.2-hardware-kit.zip`): the ROMs as EPROM images for a 27128 (HOME) and a 2764 (EXROM) with Intel HEX files and checksums, check programs and examples as `.tap`, `.tzx` and `.wav` (to play into the EAR socket), and **[HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md)**: what to check, and what each check program should show (as both emulators showed it). Work through as much of the checklist as you can, and report each result, a pass too, with the item's number. The kit's ROM images contain code derived from the stock TS2068 ROM, which Amstrad allows to be redistributed free of charge: they are not for sale ([NOTICE](../NOTICE)).
 
 Please be careful with your hardware: swapping ROMs means opening the machine, and we cannot be responsible for damage.

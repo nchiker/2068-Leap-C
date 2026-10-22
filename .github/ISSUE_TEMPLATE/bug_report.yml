@@ -39,10 +39,10 @@ body:
     id: hashes
     attributes:
       label: ROM hashes (SHA-256)
-      description: "docs/EMULATORS.md section 1 shows how to get them. The beta's are HOME ba8e0ab6..., EXROM 9bd71cef..., combined f5f8eaff...."
+      description: "docs/EMULATORS.md section 1 shows how to get them. The beta's are HOME 043becf4..., EXROM 97fe9523..., combined 9cc67979...."
       placeholder: |
-        leapc_home.bin  ba8e0ab6...
-        leapc_exrom.bin 9bd71cef...
+        leapc_home.bin  043becf4...
+        leapc_exrom.bin 97fe9523...
       render: text
     validations:
       required: true

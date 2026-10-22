@@ -32,12 +32,17 @@
 #   make repro          two clean builds must give identical image hashes
 #   make release        Phase 11: the release assets in build/release (tools/release.py): the emulator pack and the
 #                       hardware kit as zips, with SHA256SUMS
+#   make tapetol        Phase 11 (M11-tape): the tape receiver's tolerance envelope on Fuse (tools/tapetol.py), the
+#                       beta.1 images (build/beta1, tools/beta1ref.sh: the tag through `git archive`) against the
+#                       current ones: every case beta.1 accepts must still be accepted
+#   make provenance     Phase 11 (M11-tape): the images compared with the stock ROMs ($LEAPC_STOCK_ROMS; also in
+#                       make check when they are there): no common run of 12 bytes or more unless recorded
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
 #   make v2ref          the V2 reference ROM (tag v2.0.1-emu.1) in build/v2ref/, built from the frozen
 #                       repository through `git archive` (the cross-version tape tests)
 # Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
 .PHONY: all build prod testimg libs check budget inventory test test-fast canary capacity repro audit v2ref clean \
-	fuse timing poweron kit qualify release
+	fuse timing poweron kit qualify release tapetol provenance
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -80,6 +85,7 @@ check: build
 	python3 tools/check_ram_layout.py
 	python3 tools/check_ram_layout.py --negative
 	python3 tools/docexamples.py --check
+	python3 tools/provenance.py; r=$$?; [ $$r -eq 0 ] || [ $$r -eq 2 ]
 
 budget: prod
 	python3 tools/budget.py
@@ -126,6 +132,15 @@ repro:
 # The Phase 9 qualification, every suite in sequence (about 70 minutes); then make repro.
 qualify: build
 	tools/qualify.sh
+
+tapetol: prod build/beta1/leapc_home.bin
+	python3 tools/tapetol.py --build build/beta1 --build build
+
+build/beta1/leapc_home.bin:
+	tools/beta1ref.sh
+
+provenance: prod
+	python3 tools/provenance.py
 
 audit:
 	mkdir -p build

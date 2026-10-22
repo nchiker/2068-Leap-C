@@ -16,7 +16,7 @@ The leapc_exrom.dck cartridge is left out: ZEsarUX refuses it (it takes only DOC
 section 10) and it was never tested elsewhere. The zips are reproducible: sorted entries, fixed times and modes, so
 two clean builds give the same zips (and their ROM images are make repro's).
 
-Usage: release.py [--version 1.0.0-beta.1]"""
+Usage: release.py [--version 1.0.0-beta.2]"""
 import argparse
 import hashlib
 import os
@@ -135,7 +135,7 @@ def kit_pack():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="1.0.0-beta.1")
+    ap.add_argument("--version", default="1.0.0-beta.2")
     a = ap.parse_args()
     for need in ("leapc_home.bin", "libs/shapes.tzx", "kit/CHECKSUMS.txt"):
         if not os.path.exists(os.path.join(BUILD, need)):

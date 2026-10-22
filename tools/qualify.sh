@@ -24,6 +24,7 @@ step ram_warm     python3 tools/run_tests.py --ram warm --suite boot,decl,exec,s
 step ram_random7  python3 tools/run_tests.py --ram random:7 --suite boot,decl,exec,shell,e2e --json build/ram_random7.json
 step capacity     make capacity
 step kit_verify   python3 -u tools/hwkit.py --verify --soak-minutes 30
+step tapetol      make tapetol
 step check        make check
 ps -eo pid,args | awk '$2 ~ /\/fuse$/ {print $1}' | xargs -r kill -9      # (a Fuse left by a failed step)
 if [ -n "$FAILED" ]; then echo "QUALIFY: FAIL:$FAILED" | tee -a $SUMMARY; exit 1; fi

@@ -13,6 +13,14 @@ Checks:
   4. with --v2-repo (default $LEAPC_V2_REPO, else ~/2068-Leap, when it exists), the upstream hashes are re-derived from
      the tag with `git show` (read-only).
 
+Cuts (Phase 11, M11-tape: delta D20/D21). A delta may remove upstream text that must not be reproduced in this
+repository (V2's port of the stock ROM's tape routines and block-graphics sequence: NOTICE). Such a file has
+platform/deltas/<file>.cut beside its patch: `cut FIRST LAST SHA256 reason` lines give the removed upstream line
+ranges (1-based, inclusive) with the sha256 of each range's bytes, and `base SHA256` the hash of the upstream file
+with the ranges removed. The patch is then the delta from that base to the current file, so it holds none of the
+removed lines; check 3 reverse-applies it to the base hash, and check 4 (with the V2 repository) also removes the
+ranges from the tag's file and checks the base hash and each range's hash.
+
 Usage: check_platform.py [--v2-repo DIR | --no-v2] [--update]
 --update rewrites MANIFEST current hashes and the patches from the V2 tag (needs the repo)."""
 import argparse
@@ -65,6 +73,37 @@ def patch_path(path):
     return os.path.join(PLAT, "deltas", path.replace("/", "__") + ".patch")
 
 
+def cut_path(path):
+    return os.path.join(PLAT, "deltas", path.replace("/", "__") + ".cut")
+
+
+def read_cut(path):
+    """(base sha256, [(first, last, sha256)]) of the file's cut record, or None."""
+    if not os.path.exists(cut_path(path)):
+        return None
+    base, cuts = None, []
+    for line in open(cut_path(path)):
+        f = line.split()
+        if not f or f[0].startswith("#"):
+            continue
+        if f[0] == "base":
+            base = f[1]
+        elif f[0] == "cut":
+            cuts.append((int(f[1]), int(f[2]), f[3]))
+    return base, cuts
+
+
+def apply_cuts(up, cuts):
+    """The upstream bytes without the cut line ranges; and the list of each range's sha256."""
+    lines = up.splitlines(keepends=True)
+    keep, hashes, drop = [], [], set()
+    for a, z, _ in cuts:
+        hashes.append(sha(b"".join(lines[a - 1:z])))
+        drop.update(range(a - 1, z))
+    keep = [l for i, l in enumerate(lines) if i not in drop]
+    return b"".join(keep), hashes
+
+
 def reverse_apply(path, current):
     """Upstream text reconstructed by reverse-applying the file's patch to its current text."""
     with tempfile.TemporaryDirectory() as t:
@@ -83,6 +122,8 @@ def update(repo):
     for p in platform_files():
         up = upstream_bytes(repo, p)
         cur = open(os.path.join(PLAT, p), "rb").read()
+        cut = read_cut(p)
+        src = apply_cuts(up, cut[1])[0] if cut else up
         status = rows.get(p, (None, None, "pristine"))[2]
         if up == cur:
             status = "pristine"
@@ -93,7 +134,7 @@ def update(repo):
                 sys.exit("update: %s differs from the tag but MANIFEST says pristine; record its delta ids first" % p)
             with tempfile.TemporaryDirectory() as t:
                 a = os.path.join(t, "a")
-                open(a, "wb").write(up)
+                open(a, "wb").write(src)
                 d = subprocess.run(["diff", "-u", "--label", "a/" + p, "--label", "b/" + p, a,
                                     os.path.join(PLAT, p)], capture_output=True).stdout
             os.makedirs(os.path.dirname(patch_path(p)), exist_ok=True)
@@ -126,8 +167,15 @@ def main():
             continue
         up, cur, status = rows[p]
         data = open(os.path.join(PLAT, p), "rb").read()
-        if use_repo and sha(upstream_bytes(a.v2_repo, p)) != up:
-            errs.append("%s: MANIFEST upstream hash differs from %s in %s" % (p, TAG, a.v2_repo))
+        cut = read_cut(p)
+        if use_repo:
+            tagged = upstream_bytes(a.v2_repo, p)
+            if sha(tagged) != up:
+                errs.append("%s: MANIFEST upstream hash differs from %s in %s" % (p, TAG, a.v2_repo))
+            if cut:
+                base, hashes = apply_cuts(tagged, cut[1])
+                if sha(base) != cut[0] or hashes != [h for _, _, h in cut[1]]:
+                    errs.append("%s: its cut record does not match %s" % (p, TAG))
         if status == "pristine":
             npristine += 1
             if sha(data) != up:
@@ -140,7 +188,7 @@ def main():
             errs.append("%s: no patch file for %s" % (p, status))
             continue
         orig = reverse_apply(p, data)
-        if orig is None or sha(orig) != up:
+        if orig is None or sha(orig) != (cut[0] if cut else up):
             errs.append("%s: its patch does not reproduce the upstream file" % p)
     for e in errs:
         print("PLATFORM ERROR: " + e, file=sys.stderr)

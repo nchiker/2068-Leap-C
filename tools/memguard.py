@@ -9,8 +9,8 @@ program. ZEsarUX evaluates them after every instruction; the first one that hold
     (RUNNING set and NOBRK 0: spec.md 3.3; the EXROM trampolines are NOBRK sections);
   - a write to chunk 6 while the EXROM is paged in (bank rule 3: the EXROM-resident compiler parts
     and the trampolines never touch chunk 6; the IM 1 handler never does);
-  - (Phase 7) a tape block sent or received with the EXROM paged in: HOME's STORAGE_SEND_BLOCK and
-    STORAGE_RECEIVE_BLOCK run only through TAPE_BLOCK, with chunk 6 = RAM (spec.md 8.3).
+  - (Phase 7) a tape block sent or received with the EXROM paged in: HOME's TAPE_SEND_BLOCK and
+    TAPE_RECV_BLOCK run only through TAPE_BLOCK, with chunk 6 = RAM (spec.md 8.3).
 
 RAM canary. Before the compile, the RAM no compile may write is filled with CANARY; after it, every
 byte that changed is reported. The same before and after the run. Spans:
@@ -41,9 +41,9 @@ def invariants(S):
             ("a paging depth other than 0 while the program runs",
              "PEEK(%04XH)<>0 and PEEK(%04XH)=0 and PEEK(%04XH)<>0" % (r, n, d)),
             ("a write to chunk 6 with the EXROM paged in", "MWA>BFFFH and MWA<E000H and PEEK(%04XH)<>0" % d),
-            ("a tape block sent with the EXROM paged in", "PC=%04XH and PEEK(%04XH)<>0" % (S("STORAGE_SEND_BLOCK"), d)),
+            ("a tape block sent with the EXROM paged in", "PC=%04XH and PEEK(%04XH)<>0" % (S("TAPE_SEND_BLOCK"), d)),
             ("a tape block received with the EXROM paged in",
-             "PC=%04XH and PEEK(%04XH)<>0" % (S("STORAGE_RECEIVE_BLOCK"), d))]
+             "PC=%04XH and PEEK(%04XH)<>0" % (S("TAPE_RECV_BLOCK"), d))]
 
 
 def arm(m, on=True):

@@ -27,7 +27,7 @@ ranges = [["COMP_PLATFORM_BEGIN", "COMP_PLATFORM_END"]]
 
 [[home.component]]
 id = "tape_block"
-title = "Tape block send/receive (moved from EXROM in Phase 7; platform delta D9)"
+title = "Tape block send/receive: Leap-C's clean-room TAPE_SEND_BLOCK / TAPE_RECV_BLOCK (src/runtime/tapeblock.asm, M11-tape; V2's removed by platform delta D20)"
 budget = 340
 ranges = [["COMP_TAPE_BEGIN", "COMP_TAPE_END"]]
 
@@ -1086,3 +1086,25 @@ with the name the compiler had last looked up (`int total;` then `#define N` twi
 directive never sets NM. PP_DEFINE clears NM_LEN on that error, so a #define's ALREADY DEFINED shows no name, as
 approved (tests/pperr/redefine_after_code.c; the harness now requires a reported name to be a word of the error's
 line or of a #define). 1,482 B; from the EXROM reserve (192 -> 186 B)."""
+
+[[ledger]]
+id = "L76"
+date = "2026-10-22"
+milestone = "M11-tape"
+bank = "home"
+component = "tape_block"
+delta = -15
+reason = """The clean-room block I/O (src/runtime/tapeblock.asm, written from docs/TAPE_SIGNAL_SPEC.md; docs/TAPE_CLEANROOM.md)
+replaces V2's port of the stock ROM's routines (platform delta D20): TAPE_SEND_BLOCK 143 B (with TS_HALF), TAPE_RECV_BLOCK
+173 B (with TR_BYTE, TR_SEDGE, TR_EDGE), 316 B with the border stripes and the closing half-pulse, against the old pair's
+331 B. The 15 B return to the HOME reserve (455 -> 470 B with this entry)."""
+
+[[ledger]]
+id = "L77"
+date = "2026-10-22"
+milestone = "M11-tape"
+bank = "home"
+component = "platform"
+delta = -12
+reason = """Platform delta D21: GFX_CHAR_TO_FONT_OFFSET's block-graphics glyph rewritten clean-room (36 B; V2's, which held the
+stock ROM's PO-GR-2 sequence twice, was 48 B). The 12 B return to the HOME reserve (470 -> 482 B)."""

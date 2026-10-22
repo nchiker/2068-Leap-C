@@ -8,11 +8,11 @@ Blocks, files and signals:
   - tap(blocks), tzx(blocks): the .tap file (each block with its 2-byte length) and the .tzx file (standard
     speed data blocks, ID $10, 1 s pause after each);
   - Tape: an EAR signal as a list of (level, T-states) runs, with the stock ROM's timing (the pulses Leap-C's
-    own SAVE sends: STORAGE_SEND_BLOCK, the real ROM's SA-BYTES); faults can be built in (a dropout, a
+    own SAVE sends: TAPE_SEND_BLOCK, which keeps the stock widths); faults can be built in (a dropout, a
     truncated block, any byte changed, fewer pilot pulses), and it is written as ZEsarUX's raw tape
     format (.rwa: 8-bit unsigned samples, one per scan line) for its real-tape input (`realtape-open`);
   - decode(edges): the blocks in a captured MIC signal: [(T-state, level)] at each `out` of the ROM's
-    STORAGE_SEND_BLOCK (lcharness.Machine.tape_capture), with every pulse width measured;
+    TAPE_SEND_BLOCK (lcharness.Machine.tape_capture), with every pulse width measured;
   - (Phase 9) audio: Tape.to_wav() writes the signal as a WAV file (8-bit unsigned mono PCM, 44.1 kHz,
     point-sampled at the TS2068 clock), the format of the hardware kit's cassette audio (tools/hwkit.py);
     read_wav() reads one back, and the emulators get its samples as their own formats: rwa_from_wav()

@@ -1,6 +1,6 @@
 # Running Leap-C in an emulator
 
-Leap-C is a pair of replacement ROMs for the Timex Sinclair 2068: a C editor and compiler instead of TS2068 BASIC. To try it you need an emulator of the TS2068 and the ROM files from the emulator pack (`leapc-1.0.0-beta.1-emulators.zip`). This page tells you how to set up each emulator on Windows, macOS and Linux, what a correct start looks like, how to type C on a PC keyboard, and how to use tapes.
+Leap-C is a pair of replacement ROMs for the Timex Sinclair 2068: a C editor and compiler instead of TS2068 BASIC. To try it you need an emulator of the TS2068 and the ROM files from the emulator pack (`leapc-1.0.0-beta.2-emulators.zip`). This page tells you how to set up each emulator on Windows, macOS and Linux, what a correct start looks like, how to type C on a PC keyboard, and how to use tapes.
 
 **Which emulator?**
 
@@ -44,9 +44,9 @@ The ROM files are not interchangeable: Fuse needs the two separate files, ZEsarU
 
 | File | SHA-256 |
 |---|---|
-| `leapc_home.bin` | `ba8e0ab6bf277c03f969f8ac9e829a0c32665efe6bed1a12613555196e10a04a` |
-| `leapc_exrom.bin` | `9bd71cefbd78fd80d449609c94d349a2671625f3b3642fd0380b6c8dbfbca47a` |
-| `leapc_zesarux.bin` | `f5f8eaff73928520bf2a971004bb42f06580071179445fd4336c6c1d8ab82af2` |
+| `leapc_home.bin` | `043becf4b2e58e9783ef83b8188648214ed6a84e83a13709458439385df5fba5` |
+| `leapc_exrom.bin` | `97fe95236ff16b7ccb1c5e138d228d67ca25bf31d7b86bdbd15995c85ac207e7` |
+| `leapc_zesarux.bin` | `9cc679793a1f855f7ddcc2d99113e2730bd45c37e7204ea91df0d8f8e4b5af04` |
 
 To check them, in the pack's folder: Linux `sha256sum -c SHA256SUMS`; macOS `shasum -a 256 -c SHA256SUMS`; Windows (PowerShell) `Get-FileHash roms\*.bin` and compare by eye.
 

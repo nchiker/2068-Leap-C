@@ -20,14 +20,14 @@ int main(void)
 - **The library:** text and colour, `printf`, the keyboard, graphics, the AY sound chip, time, strings, the heap, cassette data, built in with no `#include`. Libraries written in assembly load from tape (`LIB "shapes"`).
 - **The machine:** an original 48 KB TS2068, unexpanded. About 18 KB for a program's source and 19 KB for its compiled code; compiling takes about 13 ms a line. Programs and data are saved on cassette.
 
-## Status: public beta 1.0.0-beta.1
+## Status: public beta 1.0.0-beta.2
 
 Leap-C is **feature-complete for release 1** and in **public beta**. It is qualified on two emulators, **Fuse 1.9.1** and **ZEsarUX 13.0** (with a patch), by thousands of automated tests. It has **not yet been run on a physical TS2068**: that, and your reports, come before release 1.0.
 
 ## Quick start (five minutes)
 
 1. **Fastest:** open **[nchiker.github.io/TSRun/?rom=leapc](https://nchiker.github.io/TSRun/?rom=leapc)** in a web browser: the TS2068 with Leap-C, nothing to install (tapes do not load there).
-2. **Or in an emulator:** download `leapc-1.0.0-beta.1-emulators.zip` from the [releases](https://github.com/nchiker/2068-Leap-C/releases) and unzip it. Install **Fuse 1.9.1** ([EMULATORS.md](docs/EMULATORS.md) §2.1: Windows has a ready-made build) and start it with Leap-C's ROMs (on Linux, as below; Windows and macOS: [EMULATORS.md](docs/EMULATORS.md) §2.2):
+2. **Or in an emulator:** download `leapc-1.0.0-beta.2-emulators.zip` from the [releases](https://github.com/nchiker/2068-Leap-C/releases) and unzip it. Install **Fuse 1.9.1** ([EMULATORS.md](docs/EMULATORS.md) §2.1: Windows has a ready-made build) and start it with Leap-C's ROMs (on Linux, as below; Windows and macOS: [EMULATORS.md](docs/EMULATORS.md) §2.2):
 
    ```sh
    fuse --machine ts2068 --rom-ts2068-0 /path/to/pack/roms/leapc_home.bin --rom-ts2068-1 /path/to/pack/roms/leapc_exrom.bin --no-traps --no-auto-load
@@ -70,4 +70,4 @@ The emulator test suites need more ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## License
 
-Leap-C is released under the [MIT License](LICENSE). The ROM images also contain a small part derived from the TS2068's own ROM (the cassette block routines and a block-graphics sequence), copyright Amstrad, which Amstrad allows to be redistributed free of charge; see [NOTICE](NOTICE) for this and for the code that comes from Leap V2 and ts2068-debug (both MIT). Leap-C is an independent community project, not affiliated with Timex, Sinclair or Amstrad.
+Leap-C is released under the [MIT License](LICENSE), the ROM images included: since 1.0.0-beta.2 they contain no code derived from the TS2068's or the Spectrum's ROM (the cassette block routines and the block-graphics glyph, which 1.0.0-beta.2 still took from it, were rewritten clean-room: [docs/TAPE_CLEANROOM.md](docs/TAPE_CLEANROOM.md)). See [NOTICE](NOTICE) for that history and for the code that comes from Leap V2 and ts2068-debug (both MIT). Leap-C is an independent community project, not affiliated with Timex, Sinclair or Amstrad.

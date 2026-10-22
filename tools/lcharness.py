@@ -338,15 +338,17 @@ class Machine:
         self.tape_insert(p)
 
     def tape_capture(self, on=True):
-        """The MIC signal of a SAVE: every `out (PORT_ULA), a` of HOME's STORAGE_SEND_BLOCK gets a breakpoint
+        """The MIC signal of a SAVE: every `out (PORT_ULA), a` of HOME's TAPE_SEND_BLOCK gets a breakpoint
         whose action prints TSTATESP * 16 + (A & 8) on ZEsarUX's standard output without stopping, so the
         transfer runs undisturbed. on=False clears them and returns the values printed since on=True
         (tapes.edges_from_capture)."""
         if on:
-            lo, hi = self.sym("STORAGE_SEND_BLOCK"), self.sym("STORAGE_RECEIVE_BLOCK")
+            names = ("TAPE_SEND_BLOCK", "TAPE_RECV_BLOCK") if "TAPE_RECV_BLOCK" in self.S else \
+                ("STORAGE_SEND_BLOCK", "STORAGE_RECEIVE_BLOCK")     # (Leap-C's; V2's reference ROM: its own)
+            lo, hi = self.sym(names[0]), self.sym(names[1])          # (the send routine first)
             code = self.read(lo, hi - lo)
             outs = [lo + i for i in range(len(code) - 1) if code[i:i + 2] == b"\xD3\xFE"]
-            assert len(outs) == len(TAPE_SLOTS), "STORAGE_SEND_BLOCK: %d `out ($FE), a`" % len(outs)
+            assert 1 <= len(outs) <= len(TAPE_SLOTS), "TAPE_SEND_BLOCK: %d `out ($FE), a`" % len(outs)
             self._cap_at = os.path.getsize(self.out_path)
             for slot, a in zip(TAPE_SLOTS, outs):
                 self.cmd("set-breakpoint %d PC=%04XH" % (slot, a))

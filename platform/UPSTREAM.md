@@ -8,7 +8,7 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 
 ## Files
 
-`MANIFEST` lists each file with its sha256 at the tag, its current sha256 and its status. `make check` runs `tools/check_platform.py`, which checks four things:
+`MANIFEST` lists each file with its sha256 at the tag, its current sha256 and its status. `make check` runs `tools/check_platform.py`, which checks four things (and, since Phase 11, the cut records of deltas D20 and D21: removed upstream text verified by its hash, never stored here):
 
 - Every file is listed.
 - Each pristine file is byte-identical to the tag.
@@ -22,12 +22,12 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `include/sysvars.inc` | platform system variables | both | **delta D1** |
 | `kernel/memory/memory.asm` | line store, fill, shift, cold init (the editor's insert and range delete: EXROM) | both | **deltas D2, D5, D11** |
 | `kernel/io/io.asm` | keyboard | HOME | **delta D7** |
-| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font (the editor's bold and string output: EXROM) | both | **deltas D6, D8, D12, D13** |
+| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font (the editor's bold and string output: EXROM) | both | **deltas D6, D8, D12, D13, D21** |
 | `kernel/math/math.asm` | 16-bit negate, absolute value, signed compare | HOME | **delta D3** |
 | `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | **delta D4** |
 | `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | **delta D14** |
 | `rom/v2_ay_beep.asm` | AY beep (HOME pieces; the EXROM piece `AY_BEEP_PLAY`) | both | **delta D17** |
-| `kernel/storage/storage.asm` | tape: block I/O (HOME), header logic (EXROM) | both | **deltas D9, D18** |
+| `kernel/storage/storage.asm` | tape: the header logic (EXROM); the block I/O is Leap-C's own since D20 | EXROM | **deltas D9, D18, D20** |
 | `rom/exrom_editor.asm` | editor engine | EXROM | **deltas D15, D16, D17** |
 | `rom/exrom_sound.asm` | `SOUND` register write | EXROM | **delta D19** |
 | `rom/exrom_format.asm` | integer formatting (V2's float formatting not assembled) | EXROM | **delta D10** |
@@ -70,6 +70,8 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D17 | `rom/exrom_editor.asm`, `rom/v2_ay_beep.asm` | Deletions only: `EDITOR_BLOCK_DELETE`; the EXROM's `AY_BEEP` entry (`call AY_BEEP_PERIOD`) | Phase 10, Fix 4: no caller (the coverage report's two never-entered routines). The shell deletes lines through its navigation hook; `beep()` calls `AY_BEEP_PERIOD` in HOME, then `AY_BEEP_PLAY` (unchanged) |
 | D18 | `kernel/storage/storage.asm` | Deletions only: `STORAGE_SAVE`'s clamp of the name's length and its padding with spaces | Phase 10, Fix 4: both callers (the shell's SAVE and the library's `tape_save`) pass 10 characters already padded (`SH_NAME`). `STORAGE_VERSION_WORD` stays: its package branch gives Leap-C's library tapes (type 4) their own version word (`spec.md` §8.4) |
 | D19 | `rom/exrom_sound.asm` | `SOUND_EXROM` loses its range check (registers 17 and above) and its carry result | Phase 10, Fix 4: its only caller is the shell's start-up chime, which writes registers 0-10. C's `sound()` is `LIB_SOUND` in HOME, which writes the AY itself and keeps its own 0-15 check (runtime error 4) |
+| D20 | `kernel/storage/storage.asm` | Removed: V2's block I/O (`STORAGE_SEND_BLOCK`, `STORAGE_RECEIVE_BLOCK`), their timing constants, D9's `IFNDEF STORAGE_NO_BLOCKS` around them and the file header that described them (V2's lines 1-106 and 188-592 at the tag), recorded by hash only (`deltas/kernel__storage__storage.asm.cut`; the patch is the delta from the tag's file without those lines). A new header says what is left | Phase 11, M11-tape: they were V2's port of the stock ROM's SA-BYTES / LD-BYTES (Amstrad copyright, `NOTICE`). Leap-C's clean-room `TAPE_SEND_BLOCK` and `TAPE_RECV_BLOCK` (`src/runtime/tapeblock.asm`, HOME, written from `docs/TAPE_SIGNAL_SPEC.md`; `docs/TAPE_CLEANROOM.md`) replace them; the EXROM's `STORAGE_SEND_BLOCK` / `STORAGE_RECEIVE_BLOCK` names still point at the shell's trampoline callers. HOME no longer includes this file |
+| D21 | `kernel/graphics/graphics.asm` | `GFX_CHAR_TO_FONT_OFFSET.is_block_graphics` (the glyph of a block-graphics code 128-143 built in `BLOCK_GFX_SCRATCH`) rewritten: V2's 54 lines (the tag's lines 474-527, recorded by hash only in `deltas/kernel__graphics__graphics.asm.cut`) replaced by a clean-room version (36 B), the same contract and glyphs | Phase 11, M11-tape: V2's version contained the stock ROM's PO-GR-2 sequence twice (`NOTICE`). Written from the screen format alone (`docs/TAPE_CLEANROOM.md`) |
 
 ## Names the platform expects from Leap-C
 

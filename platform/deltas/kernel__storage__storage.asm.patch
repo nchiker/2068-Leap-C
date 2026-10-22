@@ -1,28 +1,35 @@
 --- a/kernel/storage/storage.asm
 +++ b/kernel/storage/storage.asm
-@@ -233,6 +233,11 @@
- STORAGE_LEADER_PILOT EQU $9C    ; LD-LEADER M0126 — initial timing
-                                  ; value for the leader-tone search.
+@@ -1,3 +1,20 @@
++; ============================================================================
++; kernel/storage/storage.asm -- tape SAVE/LOAD: the header logic (V2's)
++;
++; The stock TS2068/Sinclair two-block format: one header block (flag $00: the
++; 17-byte header, see the offsets below) followed by one data block (flag $FF)
++; holding the program or the data, each ending in its XOR checksum.
++;
++; LEAP-C DELTA D20 (Phase 11, M11-tape): V2's block I/O (STORAGE_SEND_BLOCK and
++; STORAGE_RECEIVE_BLOCK, with their timing constants and this file's former
++; header describing them) was a port of the stock ROM's tape routines and is
++; removed. The block I/O is Leap-C's own clean-room code, written from
++; docs/TAPE_SIGNAL_SPEC.md (src/kernel/tapeblock.asm, in HOME: TAPE_SEND_BLOCK,
++; TAPE_RECV_BLOCK); the EXROM's STORAGE_SAVE and STORAGE_LOAD below reach it
++; under these names through TAPE_BLOCK (src/rom/exrom.asm, src/shell/tape.asm).
++; The removed text is recorded by hash only (platform/deltas/
++; kernel__storage__storage.asm.cut; tools/check_platform.py).
++; ============================================================================
  
-+; LEAP-C DELTA D9 (Phase 7): the block I/O (STORAGE_SEND_BLOCK, STORAGE_RECEIVE_BLOCK) is
-+; assembled in the HOME ROM only (STORAGE_NO_BLOCKS leaves it out of the EXROM), and the
-+; header logic from STORAGE_VERSION_WORD on in the EXROM only (STORAGE_BLOCKS_ONLY leaves it
-+; out of the HOME), so data blocks can move with chunk 6 paged out (spec.md 8.3).
-+    IFNDEF STORAGE_NO_BLOCKS
- ; ============================================================================
- ; STORAGE_SEND_BLOCK — ported from the real ROM's SA-BYTES (+ SA-FLAG/
- ; SA-LEADER/SA-SYNC-1/SA-SYNC-2/SA-LOOP/SA-LOOP-P/SA-START/SA-PARITY/
-@@ -589,7 +594,9 @@
-     out  (PORT_ULA), a
-     ret
-     ENDIF
-+    ENDIF ; STORAGE_NO_BLOCKS (D9)
+ STORAGE_TYPE_HEADER EQU $00   ; SA-BYTES/LD-BYTES type-flag byte — this
+                                ; is the value LD-LOOK-H's own real code
+@@ -79,6 +96,7 @@
+                                ; copy search when there's no real second
+                                ; copy left to find).
  
 +    IFNDEF STORAGE_BLOCKS_ONLY ; (D9)
      IFDEF STORAGE_VERSIONED
  ; ============================================================================
  ; STORAGE_VERSION_WORD (R10.9)
-@@ -610,18 +617,14 @@
+@@ -99,18 +117,14 @@
  ; ============================================================================
  ; STORAGE_SAVE
  ; In:  HL = filename pointer, B = filename length, IX = data pointer,
@@ -43,7 +50,7 @@
      push ix
      push de
      ld   (STORAGE_SEND_LEN), de           ; stash the caller's own data
-@@ -653,16 +656,6 @@
+@@ -142,16 +156,6 @@
      djnz .name_copy
      pop  bc
  .name_done:
@@ -60,7 +67,7 @@
      ld   hl, (STORAGE_SEND_LEN)
      ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF), hl
      IFDEF STORAGE_VERSIONED
-@@ -1066,3 +1059,4 @@
+@@ -555,3 +559,4 @@
      ret
  .call_hl:
      jp   (hl)

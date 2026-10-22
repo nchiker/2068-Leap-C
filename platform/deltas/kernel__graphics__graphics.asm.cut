@@ -1,0 +1,5 @@
+# D21 (Phase 11, M11-tape): V2's block-graphics glyph generator in GFX_CHAR_TO_FONT_OFFSET (.is_block_graphics),
+# which contained the stock ROM's PO-GR-2 sequence (NOTICE), removed and recorded here by hash only
+# (tools/check_platform.py). Upstream line ranges at v2.0.1-emu.1, inclusive, with the sha256 of each range's bytes:
+cut 474 527 e4d5b03597629e7b2fd56343791fcadcc94e69757f9911c84e58e1f20d133db6 V2's block-graphics glyph generator (D21)
+base 5d47b5340e04cc0fb169f5b74c6030de9d58fc413bb0c41f1bf0f5ebd250da12

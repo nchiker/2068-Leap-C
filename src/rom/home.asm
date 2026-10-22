@@ -276,15 +276,13 @@ COMP_FLOAT_BEGIN:
     INCLUDE "src/runtime/float.asm"
 COMP_FLOAT_END:
 
-; ---------------------------------------------------------------- tape block I/O (spec.md 2.2, 8.3; Phase 7)
-; The platform's STORAGE_SEND_BLOCK and STORAGE_RECEIVE_BLOCK (platform delta D9: the header logic stays in
-; the EXROM), reached from the EXROM through TAPE_BLOCK with chunk 6 paged out
+; ---------------------------------------------------------------- tape block I/O (spec.md 2.2, 8.3; Phase 7, M11-tape)
+; Leap-C's clean-room block I/O (docs/TAPE_SIGNAL_SPEC.md, docs/TAPE_CLEANROOM.md; platform delta D20 removed
+; V2's), reached from the EXROM's STORAGE_SAVE and STORAGE_LOAD (the header logic) through TAPE_BLOCK with
+; chunk 6 paged out. (In the EXROM, STORAGE_SEND_BLOCK and STORAGE_RECEIVE_BLOCK name the trampolines' callers.)
 COMP_TAPE_BEGIN:
-    DEFINE STORAGE_BLOCKS_ONLY
-    INCLUDE "kernel/storage/storage.asm"
+    INCLUDE "src/runtime/tapeblock.asm"
 COMP_TAPE_END:
-TAPE_SEND_BLOCK     EQU STORAGE_SEND_BLOCK      ; (the EXROM's names for them: there, STORAGE_SEND_BLOCK and
-TAPE_RECV_BLOCK     EQU STORAGE_RECEIVE_BLOCK   ; STORAGE_RECEIVE_BLOCK are its trampolines' callers)
 
 LEAPC_HOME_CODE_END:
     IFDEF LEAPC_TEST

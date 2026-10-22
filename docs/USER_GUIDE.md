@@ -1,6 +1,6 @@
 # Leap-C user guide
 
-**Version 1.0.0-beta.1.** Leap-C turns a Timex Sinclair 2068 into a C computer: you type a program in a full-screen editor, and `RUN` compiles it to Z80 machine code on the machine itself and runs it. This guide covers what you need to use it. [EMULATORS.md](EMULATORS.md) sets up an emulator; [EXAMPLES.md](EXAMPLES.md) has more programs; [spec.md](../spec.md) is the full specification.
+**Version 1.0.0-beta.2.** Leap-C turns a Timex Sinclair 2068 into a C computer: you type a program in a full-screen editor, and `RUN` compiles it to Z80 machine code on the machine itself and runs it. This guide covers what you need to use it. [EMULATORS.md](EMULATORS.md) sets up an emulator; [EXAMPLES.md](EXAMPLES.md) has more programs; [spec.md](../spec.md) is the full specification.
 
 Every program in this guide with `// expect:` lines is a test: the build runs it on the ROMs and checks the results those lines state. The `//` lines are ordinary comments to the compiler, so you can type the programs with or without them.
 

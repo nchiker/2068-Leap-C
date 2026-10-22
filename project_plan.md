@@ -443,10 +443,13 @@ Approved by the owner after Phase 10 (2026-10-22). Phase 11 opens the project to
 - [ ] `docs/milestones/M11-beta.md`: the audit's findings and their handling, the documents, the procedures verified and how, the fresh clone, the assets and their hashes; committed and pushed to the private repository.
 - [ ] The owner given the list of what becomes public, the draft release's link and the commands that publish.
 
+### M11-tape — The tape block routines rewritten clean-room; 1.0.0-beta.2 (done, 2026-10-22)
+
+The owner's option C (M11-beta §2, A8): `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK` (V2's port of the stock ROM's SA-BYTES/LD-BYTES) and the block-graphics glyph (the stock PO-GR-2 sequence) replaced by Leap-C's own code, written by authors who saw only a specification (`docs/TAPE_SIGNAL_SPEC.md`, `docs/TAPE_CLEANROOM.md`): `TAPE_SEND_BLOCK` / `TAPE_RECV_BLOCK` (`src/runtime/tapeblock.asm`, 318 B against 331 B), platform deltas D20 and D21; the tolerance envelope (`tools/tapetol.py`) and the provenance check (`tools/provenance.py`); `NOTICE` loses its exception. Report: `docs/milestones/M11-tape.md`.
+
 ### After the beta (not started)
 
 - **Feedback:** the beta's reports triaged; defects fixed (each a ROM change: new hashes, `make repro`, `make qualify`).
-- **The tape block routines rewritten** from the tape format's specification alone (owner decision, 2026-10-22): `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK` (331 B, HOME) are V2's port of the stock ROM's SA-BYTES/LD-BYTES (Amstrad copyright, `NOTICE`). A clean-room version, the same timing and the same tapes, with the cassette suite, the kit's WAVs and Fuse's tape deck as its tests, so the ROM images can be offered entirely under the MIT License; `NOTICE` then loses its exception.
 - **The manuals:** a user manual (editor, workflow, tape, examples), a language reference (the Release 1 subset, the deviations from C89, the limits, the errors), a library reference, a technical reference (ABI, memory map, ROM map, banking rules), the release notes.
 - **Physical hardware:** the checklist (`docs/HARDWARE_CHECKLIST.md`) run by testers with a TS2068, where available.
 - **The final release qualification** (`make qualify`, `make repro`, the qualification report), accepted by the owner, then the tag v1.0.0.

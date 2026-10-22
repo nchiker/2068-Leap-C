@@ -25,6 +25,7 @@ The tools find the emulators and sibling repositories through these variables. E
 | `LEAPC_TS2068_DEBUG` | `~/ts2068-debug` | the ZEsarUX suites: the ts2068-debug checkout (its `ts2068_debug` package is imported) |
 | `LEAPC_V2_REPO` | `~/2068-Leap` | `tools/v2ref.sh` (`make v2ref`, `make test`), `tools/check_platform.py` (`make check`: the upstream hashes are re-derived from the tag only when this repository exists; without it the check still verifies every file and delta), `spike/` |
 | `LEAPC_FUSE` | `/usr/local/bin/fuse` | `make fuse`, `make timing`, the kit's verification: the unstripped Fuse 1.9.1 binary. If it uses a private libspectrum, set `LD_LIBRARY_PATH` as well |
+| `LEAPC_STOCK_ROMS` | `~/fuse-build/roms` | `tools/provenance.py` (`make provenance`, and `make check` when the files are there): a folder with the stock `48.rom`, `tc2068-0.rom` and `tc2068-1.rom` (Fuse's source tree has them). They are only compared with Leap-C's images, never stored in this repository; without them the check is skipped |
 | `LEAPC_REALTIME` | unset | set to `1` to run ZEsarUX at real speed (the suites otherwise use `--emulatorspeed 1000 --frameskip 49`, which changes no emulated timing) |
 | `SKILLS` (make variable) | `~/z80-skills/skills` | `make audit` |
 

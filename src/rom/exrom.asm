@@ -87,11 +87,11 @@ COMP_XPLATFORM_BEGIN:
 ; the editor's text output (bold keywords, strings): its only callers (platform delta D12, Phase 8)
     DEFINE GFX_EDITOR_TEXT_ONLY
     INCLUDE "kernel/graphics/graphics.asm"
-; the tape: the header logic here; its block I/O is in HOME (platform delta D9), so the platform's calls of
-; STORAGE_SEND_BLOCK / STORAGE_RECEIVE_BLOCK go to the shell's callers of the HOME trampoline TAPE_BLOCK
+; the tape: the header logic here; its block I/O is Leap-C's TAPE_SEND_BLOCK / TAPE_RECV_BLOCK in HOME (platform
+; deltas D9, D20), so the platform's calls of STORAGE_SEND_BLOCK / STORAGE_RECEIVE_BLOCK go to the shell's callers
+; of the HOME trampoline TAPE_BLOCK
 STORAGE_SEND_BLOCK      EQU SH_TAPE_SEND
 STORAGE_RECEIVE_BLOCK   EQU SH_TAPE_RECV
-    DEFINE STORAGE_NO_BLOCKS
     INCLUDE "kernel/storage/storage.asm"
     INCLUDE "rom/exrom_sound.asm"
     INCLUDE "rom/v2_ay_beep.asm"

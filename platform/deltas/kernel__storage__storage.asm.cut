@@ -1,0 +1,6 @@
+# D20 (Phase 11, M11-tape): V2's tape block I/O, a port of the stock ROM's tape routines (NOTICE),
+# removed from kernel/storage/storage.asm and recorded here by hash only (tools/check_platform.py).
+# Upstream line ranges at v2.0.1-emu.1, inclusive, with the sha256 of each range's bytes:
+cut 1 106 279778c0f76b02b18d248b1d739f47b6d8d2434fb5a4314fd41171027993af21 V2's block I/O and its description (D20)
+cut 188 592 348fc1f9d4f7445f93df36cd4df744e5e2121727c5e3075accfd2dbe472df053 V2's block I/O and its description (D20)
+base dccc3f0165b6be373fc40d02191aae2367bbcc47a3b046ebf63f9f936b442723
