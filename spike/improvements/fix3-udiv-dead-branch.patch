@@ -1,0 +1,20 @@
+--- a/src/runtime/helpers.asm
++++ b/src/runtime/helpers.asm
+@@ -125,15 +125,11 @@
+ .bit:                                  ; HL = the dividend, shifting out at the top while the
+     add  hl, hl                        ; quotient shifts in at the bottom
+     ex   de, hl
+-    adc  hl, hl                        ; remainder = remainder * 2 + the dividend's next bit
+-    jr   c, .sub                       ; 17 bits: certainly >= the divisor
+-    sbc  hl, bc                        ; (carry clear)
++    adc  hl, hl                        ; remainder = remainder * 2 + the dividend's next bit (no carry:
++    sbc  hl, bc                        ; before step i the remainder is below 2^(i-1), so 16 bits hold it)
+     jr   nc, .one
+     add  hl, bc
+     jr   .next
+-.sub:
+-    or   a
+-    sbc  hl, bc
+ .one:
+     inc  e                             ; the quotient's bit
+ .next:

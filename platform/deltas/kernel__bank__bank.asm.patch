@@ -1,0 +1,24 @@
+--- a/kernel/bank/bank.asm
++++ b/kernel/bank/bank.asm
+@@ -64,8 +64,9 @@
+ ; every caller before this fix used — page in, do one thing, page
+ ; out — is completely unchanged: depth goes 0->1 here (real page-in
+ ; happens) and 1->0 in BANK_PAGE_EXROM_OUT (real page-out happens).
+-BANK_PAGE_EXROM_IN:
+-    di
++BANK_PAGE_EXROM_IN:                  ; Leap-C (delta D14): no DI. The ISR touches none of this state,
++                                     ; and a DI window of 120 T outlasts the TS2068's 32 T INT: a
++                                     ; frame interrupt was lost (FRAMES 1% slow in float code on Fuse)
+     ld   a, (BANK_EXROM_DEPTH)
+     inc  a
+     ld   (BANK_EXROM_DEPTH), a
+@@ -105,8 +106,7 @@
+ ; Out: none
+ ; Destroys: AF
+ ; ============================================================================
+-BANK_PAGE_EXROM_OUT:
+-    di
++BANK_PAGE_EXROM_OUT:                 ; Leap-C (delta D14): no DI, as BANK_PAGE_EXROM_IN
+     ld   a, (BANK_EXROM_DEPTH)
+     or   a
+     jr   z, .depth_already_zero       ; defensive: an unbalanced OUT

@@ -16,7 +16,8 @@
 ;      operation (division, modulus, >>, comparisons). Phase 8: A = an operation of the float core
 ;      (FOP_*: below TK_ASSIGN or from $80; src/runtime/fpcore.asm XF_OP), the compiler's floating
 ;      constants
-; Out: HL = the result (comparisons and && ||: 0 or 1)
+; Out: HL = the result (comparisons: 0 or 1). && and || never come here: CX_LOGIC decides them when the
+;      left operand is a constant (Phase 9: ROM coverage showed this file's own folding of them dead)
 ; Destroys: AF, BC, DE
 ; ============================================================================
 XC_FOLD:
@@ -46,10 +47,6 @@ XC_FOLD:
     jp   z, .shift
     cp   TK_SHR
     jr   z, .shift
-    cp   TK_ANDAND
-    jr   z, .andand
-    cp   TK_OROR
-    jr   z, .oror
     bit  0, c                          ; comparisons: signed = unsigned with the sign bits flipped
     jr   nz, .ucmp
     ld   a, d
@@ -117,19 +114,6 @@ XC_FOLD:
     xor  e
     ld   l, a
     ret
-.andand:
-    ld   a, d
-    or   e
-    jr   z, .bool
-    ld   a, h
-    or   l
-    jr   .bool
-.oror:
-    ld   a, d
-    or   e
-    or   h
-    or   l
-    jr   .bool
 .div:                                  ; A = TK_SLASH or TK_PERCENT; DE = dividend, HL = divisor
     bit  0, c
     jr   nz, .udiv

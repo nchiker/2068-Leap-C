@@ -1,0 +1,57 @@
+--- a/src/compiler/stmt.asm
++++ b/src/compiler/stmt.asm
+@@ -147,8 +147,14 @@
+     call CHAIN_END
+     ld   a, h
+     or   l
++    jr   z, .next
++    ld   a, (ix + S_LEN)               ; the report names it (NM: the entry's own name)
++    ld   (NM_LEN), a
++    ld   de, S_NAME
++    add  ix, de
++    ld   (NM_PTR), ix
+     ld   a, b
+-    jp   nz, CC_ERROR_AT
++    jp   CC_ERROR_AT
+ .next:
+     ld   l, (ix + S_LINK)
+     ld   h, (ix + S_LINK + 1)
+--- a/src/shell/shell.asm
++++ b/src/shell/shell.asm
+@@ -242,8 +242,13 @@
+     call SH_APPEND
+     ld   hl, (SH_ERR_LINE)
+     call SH_APPEND_NUM
+-    ld   a, (CC_ERRNUM)                ; (0 after a runtime error or BREAK: the compile succeeded)
+-    cp   E_UNDECL
++    ld   a, (NM_LEN)                   ; a name, and an error about it (CC_ERRNUM 0 after a runtime error
++    or   a                             ; or BREAK: the compile succeeded)
++    jr   z, SH_REPORT
++    ld   a, (CC_ERRNUM)
++    ld   hl, SH_NAMED
++    ld   bc, SH_NAMED_N
++    cpir
+     jr   nz, SH_REPORT
+     ld   hl, SH_TXT_NAME               ; Phase 9: "LINE m  'name'", the undeclared identifier's
+     call SH_APPEND                     ; first SH_NAME_MAX characters (left of the swatch). NM is
+@@ -1319,6 +1324,8 @@
+ SH_MSG_BREAK:   DB "BREAK", 0
+ SH_TXT_LINE:    DB "LINE ", 0
+ SH_TXT_NAME:    DB "  '", 0
++SH_NAMED:       DB E_REDECL, E_REDEF, E_UNDECL, E_MEMBER, E_UNDEFFN, E_UNDEFLABEL   ; errors that name NM
++SH_NAMED_N      EQU $ - SH_NAMED
+ SH_NAME_MAX     EQU 15              ; "LINE 9999  '" and 15 characters and "'": 29 columns
+ SH_TXT_EXIT:    DB "EXIT ", 0
+ SH_TXT_IMAGE:   DB "IMAGE ", 0
+--- a/tools/exectest.py
++++ b/tools/exectest.py
+@@ -458,7 +458,8 @@
+     S = m.sym
+     if res.errnum:
+         row = "LINE %d" % res.errline if res.errline else ""
+-        if res.errnum == ER["E_UNDECL"] and row:
++        named = [ER[n] for n in ("E_REDECL", "E_REDEF", "E_UNDECL", "E_MEMBER", "E_UNDEFFN", "E_UNDEFLABEL")]
++        if res.errnum in named and row and m.read(m.sym("NM_LEN"), 1)[0]:
+             row += "  '%s'" % undeclared_name(m, lines)[:UNDECL_NAME_MAX]
+         return (gen_diag.report("E", res.errnum), row)
+     if res.a:

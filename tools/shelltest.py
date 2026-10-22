@@ -84,10 +84,12 @@ class Shell:
         self.m.restore()
         self.boot_sp = self.m.regs()["SP"]
 
-    def _wait(self, maxi):
+    def _wait(self, maxi, on_message=None):
         """Run to the next key wait; returns the message shown on the way: a status-row message's
         text (SH_SHOW_MESSAGE), or a report's two rows (SH_REPORT, Phase 6) as a tuple; else None.
-        With count_cls set, the whole-screen clears on the way (GFX_CLS) are counted in self.cls."""
+        With count_cls set, the whole-screen clears on the way (GFX_CLS) are counted in self.cls.
+        on_message (Phase 9): called when the message or report is reached: keys held on the matrix are let
+        go there, as a person does (SH_WAIT_KEY waits for their release)."""
         m, S = self.m, self.S
         msg = None
         stops = [m.xsym("SH_SHOW_MESSAGE"), m.xsym("SH_REPORT"), S("IO_READ_KEY")] + ([S("GFX_CLS")] if self.count_cls else [])
@@ -96,6 +98,8 @@ class Shell:
             self.cls += 1
             m.cmd("cpu-step")
             pc = m.run_to(stops, maxi)
+        if pc in (S("SH_REPORT"), S("SH_SHOW_MESSAGE")) and on_message:
+            on_message()
         if pc == S("SH_REPORT"):
             msg = tuple(m.read(S(b), 33).split(b"\0")[0].decode("latin-1") for b in ("SH_REPORT_BUF", "SH_STATUS_BUF"))
             pc = m.run_to([S("IO_READ_KEY")], maxi)
@@ -145,7 +149,7 @@ class Shell:
 
     def run_break(self, after=1_500_000, maxi=60_000_000):
         """ENTER on a `run` line, the program runs `after` instructions, then BREAK (CAPS SHIFT + SPACE)
-        is held until the next key wait. Returns (message, RT_BREAKREQ seen)."""
+        is held until the report. Returns (message, RT_BREAKREQ seen)."""
         m, S = self.m, self.S
         m.write(S("KBD_LASTK"), ENTER)
         m.write(S("KBD_KEYHIT"), 0xFF)
@@ -154,13 +158,15 @@ class Shell:
         if pc in (S("IO_READ_KEY"), S("SH_SHOW_MESSAGE"), S("SH_REPORT")):
             raise RuntimeError("the program ended before BREAK (PC=%04X)" % pc)
         running = m.read(S("RUNNING"), 1)[0]
+        def release():
+            for c in (Z_SPACE, Z_CAPS):
+                m.cmd("send-keys-event %d 0" % c)
         for c in (Z_CAPS, Z_SPACE):
             m.cmd("send-keys-event %d 1" % c)
         try:
-            msg = self._wait(maxi)
+            msg = self._wait(maxi, on_message=release)
         finally:
-            for c in (Z_SPACE, Z_CAPS):
-                m.cmd("send-keys-event %d 0" % c)
+            release()
         return msg, running
 
     def load(self, lines, index=0):
@@ -180,7 +186,7 @@ class Shell:
         return self.caller == self.S("EDITOR_LOOP") + 3
 
     def in_run_wait(self):
-        return self.caller == self.S("SH_WAIT_KEY") + 3
+        return self.caller == self.m.S.get("SH_WAIT_KEY.read", self.m.S["SH_WAIT_KEY"]) + 3
 
     def edit_line(self):
         return self.m.read(self.S("EDIT_LINE_BUF"), 128).split(b"\0")[0].decode("latin-1")
@@ -278,6 +284,114 @@ def keys_new_symbols(sh):
         got.append(sh.m.read(sh.S("KBD_LASTK"), 1)[0])
     return expect(bytes(got) == b"[]{}|~^\\" and sh.edit_line() == "[]{}|~^\\", "codes=%r edit=%r" % (bytes(got),
                                                                                                         sh.edit_line()))
+
+
+@case("keys-editing-matrix", "Phase 9: the editing keys typed on the keyboard matrix (CAPS SHIFT + 5 8 7 6 0, + 1 "
+                             "delete line, + ENTER insert line) leave the editor as their codes through the ISR's "
+                             "latch do, key by key; two letters pressed together type nothing (IO_FIND_KEY's "
+                             "ambiguous case), and the keyboard works after")
+def keys_editing_matrix(sh):
+    m, S = sh.m, sh.S
+    matrix = {LEFT: [Z_CAPS, ord("5")], RIGHT: [Z_CAPS, ord("8")], UP: [Z_CAPS, ord("7")], DOWN: [Z_CAPS, ord("6")],
+              DELETE: [Z_CAPS, ord("0")], DELETE_LINE: [Z_CAPS, ord("1")], INSERT_LINE: [Z_CAPS, Z_ENTER],
+              ENTER: [Z_ENTER]}
+    seq = (list("int ab;") + [LEFT, LEFT, DELETE, RIGHT, ENTER] + list("x();") + [ENTER] + list("y();") +
+           [UP, UP, DOWN, INSERT_LINE] + list("z();") + [ENTER, UP, DELETE_LINE, DOWN, DOWN, LEFT, DELETE])
+
+    def state():
+        return sh.store(), sh.edit_line(), sh.index(), m.w16(S("CUR_EDIT_POS"))
+
+    want = []
+    sh.boot()
+    for k in seq:
+        sh.key(ord(k) if isinstance(k, str) else k)
+        want.append(state())
+    sh.boot()
+    bad = []
+    for i, k in enumerate(seq):
+        if isinstance(k, str):
+            sh.press(k)
+        else:
+            sh.press_code(matrix[k], what=k)
+        if state() != want[i]:
+            bad.append("key %d (%r): %r, through the latch %r" % (i, k, state(), want[i]))
+            break
+    before = state()
+    for c in (ord("q"), ord("w")):              # two letters at once: no key
+        m.cmd("send-keys-event %d 1" % c)
+    try:
+        m.cmd("disable-breakpoints")
+        m.run(1_500_000)                        # (about 25 frames)
+    finally:
+        for c in (ord("w"), ord("q")):
+            m.cmd("send-keys-event %d 0" % c)
+    m.run(300_000)
+    if m.read(S("KBD_KEYHIT"), 1)[0] or state() != before:
+        bad.append("two keys at once: KEYHIT %d, %r" % (m.read(S("KBD_KEYHIT"), 1)[0], state()))
+    sh._wait(60_000_000)
+    sh.press("k")
+    if sh.edit_line() != before[1][:before[3]] + "k" + before[1][before[3]:] and sh.edit_line() != before[1] + "k":
+        bad.append("after: edit %r" % sh.edit_line())
+    return expect(not bad and want[-1][0] != want[0][0], "; ".join(bad) or "the sequence changed nothing")
+
+
+@case("editor-line-full", "Phase 9: a line holds 127 characters: a 128th typed is refused, the line unchanged "
+                          "(EDITOR_INSERT_CHAR's refusal; ROM coverage)")
+def editor_line_full(sh):
+    sh.boot()
+    line = ("int x; " * 19)[:127]
+    sh.type(line, enter=False)
+    before = sh.edit_line()
+    sh.key(ord("z"))
+    return expect(before == line and sh.edit_line() == line, "edit %d characters %r" % (len(sh.edit_line()),
+                                                                                         sh.edit_line()[-10:]))
+
+
+@case("report-held-key", "Phase 9: a key held past the ISR's auto-repeat delay (35 frames) does not end a report: "
+                         "BREAK held on a running loop, and RUN's ENTER held over a short program, 100 frames after "
+                         "the report appears; the report waits for the release, then for a new key")
+def report_held_key(sh):
+    m, S = sh.m, sh.S
+    bad = []
+
+    def frames(n):
+        f0 = m.w16(S("FRAMES"))
+        m.cmd("disable-breakpoints")
+        while (m.w16(S("FRAMES")) - f0) & 0xFFFF < n:
+            m.run(100_000)
+
+    for what, lines, keys, want in (("BREAK", ["int main(void)", "{", "    for (;;) ;", "}"], [Z_CAPS, Z_SPACE],
+                                     ("BREAK", "LINE 1")),
+                                    ("ENTER", ["int main(void)", "{", "    return 7;", "}"], [Z_ENTER],
+                                     ("EXIT 7", None))):
+        sh.load(lines, len(lines))
+        for ch in "run":
+            sh.key(ord(ch))
+        if what == "BREAK":
+            m.write(S("KBD_LASTK"), ENTER)
+            m.write(S("KBD_KEYHIT"), 0xFF)
+            m.cmd("cpu-step")
+            m.run_to([m.xsym("SH_REPORT")], 1_500_000)
+        for c in keys:
+            m.cmd("send-keys-event %d 1" % c)
+        try:
+            pc = m.run_to([m.xsym("SH_REPORT")], 60_000_000)
+            frames(100)
+            rows = sh.rows()
+            held = S("SH_WAIT_KEY") <= m.pc() < m.S.get("SH_WAIT_KEY.read", S("SH_WAIT_KEY"))
+        finally:
+            for c in reversed(keys):
+                m.cmd("send-keys-event %d 0" % c)
+        sh._wait(10_000_000)
+        rows2 = sh.rows()
+        if pc != S("SH_REPORT") or not held or rows[22] != want[0] or (want[1] and rows[23] != want[1]):
+            bad.append("%s held: report %r, waiting for the release %s" % (what, rows[22:24], held))
+        if not sh.in_run_wait() or rows2[22:24] != rows[22:24]:
+            bad.append("%s released: not waiting for a key with the report (%r)" % (what, rows2[22:24]))
+        sh.key(ord(" "))
+        if not sh.in_editor():
+            bad.append("%s: a key did not end the report" % what)
+    return expect(not bad, "; ".join(bad))
 
 
 @case("glyphs-new", "the eight new glyphs render with their designed bitmaps (the font table through GFX_PUTCHAR)")

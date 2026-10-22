@@ -147,9 +147,9 @@ def command_to(sh, text, stops, n=1, maxi=400_000_000):
     return pc
 
 
-def finish(sh, maxi=400_000_000):
+def finish(sh, maxi=400_000_000, on_message=None):
     try:
-        msg = sh._wait(maxi)
+        msg = sh._wait(maxi, on_message=on_message)
     finally:
         memguard.arm(sh.m, False)
     rows = sh.rows()
@@ -351,7 +351,7 @@ def load_fail_keeps(sh):
     got = in_data(sh, dest, 20)
     hold_break(m, True)
     try:
-        msg, rows = finish(sh)
+        msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
     finally:
         hold_break(m, False)
     if not got or msg != ("BREAK", source_row(SRC_A)) or state(sh) != st0:
@@ -406,7 +406,7 @@ def load_break_search(sh):
     m.run(200_000)
     hold_break(m, True)
     try:
-        msg, rows = finish(sh)
+        msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
     finally:
         hold_break(m, False)
     return expect(msg == ("BREAK", source_row(SRC_A)) and state(sh) == st0, "%r %r" % (msg, state(sh)))
@@ -437,7 +437,7 @@ def save_break(sh):
         command_to(sh, 'SAVE "a"', [S("TAPE_BLOCK")])
         hold_break(m, True)
         try:
-            msg, rows = finish(sh)
+            msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
         finally:
             hold_break(m, False)
     finally:
@@ -744,7 +744,7 @@ def lib_break(sh):
     got = in_data(sh, m.regs()["IX"], 30)
     hold_break(m, True)
     try:
-        msg, rows = finish(sh)
+        msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
     finally:
         hold_break(m, False)
     st = state(sh)

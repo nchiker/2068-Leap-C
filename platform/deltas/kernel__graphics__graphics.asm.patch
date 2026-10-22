@@ -199,6 +199,28 @@
  
  ; Block-graphics (128-143) and UDG (144-164) character-code ranges —
  ; see GFX_CHAR_TO_FONT_OFFSET's .is_block_graphics/.is_udg. UDG_COUNT
+@@ -1686,8 +1659,8 @@
+     DB   $00, $00, $00, $00, $00, $00, $00, $00
+     ; '0'
+     DB   $70, $88, $98, $A8, $C8, $88, $70, $00
+-    ; '1'
+-    DB   $20, $60, $20, $20, $20, $20, $70, $00
++    ; '1'  (Leap-C delta D13: a flag and a full base, unlike 'l')
++    DB   $20, $60, $A0, $20, $20, $20, $F8, $00
+     ; '2'
+     DB   $70, $88, $08, $10, $20, $40, $F8, $00
+     ; '3'
+@@ -1780,8 +1753,8 @@
+     DB   $10, $00, $30, $10, $10, $10, $90, $60
+     ; 'k'
+     DB   $80, $80, $90, $A0, $C0, $A0, $90, $00
+-    ; 'l'
+-    DB   $60, $20, $20, $20, $20, $20, $70, $00
++    ; 'l'  (Leap-C delta D13: a tail to the right, no base, unlike '1')
++    DB   $60, $20, $20, $20, $20, $20, $18, $00
+     ; 'm'
+     DB   $00, $00, $D0, $A8, $A8, $88, $88, $00
+     ; 'n'
 @@ -1891,6 +1864,22 @@
      ; was added (see that table's header) — mapping and glyph always
      ; ship together per this project's established rule.

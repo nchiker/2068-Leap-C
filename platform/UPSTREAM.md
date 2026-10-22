@@ -22,10 +22,10 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `include/sysvars.inc` | platform system variables | both | **delta D1** |
 | `kernel/memory/memory.asm` | line store, fill, shift, cold init (the editor's insert and range delete: EXROM) | both | **deltas D2, D5, D11** |
 | `kernel/io/io.asm` | keyboard | HOME | **delta D7** |
-| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font (the editor's bold and string output: EXROM) | both | **deltas D6, D8, D12** |
+| `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font (the editor's bold and string output: EXROM) | both | **deltas D6, D8, D12, D13** |
 | `kernel/math/math.asm` | 16-bit negate, absolute value, signed compare | HOME | **delta D3** |
 | `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | pristine |
-| `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | pristine |
+| `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | **delta D14** |
 | `rom/v2_ay_beep.asm` | AY beep (HOME pieces; the EXROM piece `AY_BEEP`) | both | pristine |
 | `kernel/storage/storage.asm` | tape: block I/O (HOME), header logic (EXROM) | both | **delta D9** |
 | `rom/exrom_editor.asm` | editor engine | EXROM | pristine |
@@ -63,6 +63,8 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D10 | `rom/exrom_format.asm` | Conditional assembly only: `IFNDEF LEAPC_FP_CORE` around V2's float formatting (`BASIC_FLOAT_TO_STRING_EXROM`, 236 B) | Phase 8 (`spec.md` §4.9, ledger L43): Leap-C's float core has its own formatter (`XF_FTOA`, V2's exact fixed-point method with a precision); the integer formatting stays |
 | D11 | `kernel/memory/memory.asm` | Conditional assembly only: `IFNDEF MEM_NO_LINE_EDIT` around `MEM_LINE_INSERT` and `MEM_LINE_DELETE_RANGE` (144 B), `IFNDEF MEM_LINE_EDIT_ONLY` around the rest (after the format constants) | Phase 8 (ledger L44-L45): the EXROM editor is their only caller, so the EXROM assembles them (`MEM_LINE_EDIT_ONLY`) and HOME does not (`MEM_NO_LINE_EDIT`): 144 B of HOME for the float work |
 | D12 | `kernel/graphics/graphics.asm` | Conditional assembly only: `IFNDEF GFX_NO_EDITOR_TEXT` around `GFX_PUTCHAR_BOLD` and `GFX_PRINT_STRING` (32 B), `IFNDEF GFX_EDITOR_TEXT_ONLY` around the rest | Phase 8 (ledger L44-L45): the same for the editor's bold keywords and string output; they call HOME's `GFX_CHAR_SETUP` and `GFX_PUTCHAR`, exported to the EXROM |
+| D13 | `kernel/graphics/graphics.asm` | `FONT_TABLE`: the glyphs of the digit `1` (`$20,$60,$A0,$20,$20,$20,$F8,$00`: a flag and a full-width base) and the letter `l` (`$60,$20,$20,$20,$20,$20,$18,$00`: a tail to the right, no base). Data only, no size change | Phase 9 (owner-approved): V2's `1` and `l` differed in two pixels, and a user typing `l.0` for `1.0` could not tell them apart on the screen (`docs/milestones/M9.md`). Both stay distinct from `I`, `|` and `!`, in plain and in bold (the editor's keywords) |
+| D14 | `kernel/bank/bank.asm` | `BANK_PAGE_EXROM_IN` and `BANK_PAGE_EXROM_OUT` lose their `di` (−2 B); each keeps its `ei`, so interrupts are on at the return as before | Phase 9, a defect found by Fuse at the TS2068's own timing (ledger L60): the routines ran about 120 T with interrupts off and the TS2068's INT lasts 32 T, so a frame interrupt arriving then was lost. Float code pages the EXROM in and out for every operation, and `FRAMES` (`frames()`, the keyboard's timing) counted 5,966 of 6,024 frames in a float loop. The ISR touches none of the banking state (the depth, `PORT_FF_SHADOW`, the ports, chunk 6), and a BREAK cannot unwind inside them (every runtime page-in is under `NOBRK`) |
 
 ## Names the platform expects from Leap-C
 

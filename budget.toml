@@ -833,3 +833,69 @@ delta = 5
 reason = """Runtime error 6, NUMBER TOO BIG (a float operation's overflow or division by zero at run time,
 spec.md 5.9): its text in the generated message table (DG_MSGS +5 B, words shared with NUMBER TOO LARGE).
 645 B; from the EXROM reserve."""
+
+[[ledger]]
+id = "L56"
+date = "2026-10-21"
+milestone = "Phase 9"
+bank = "home"
+component = "page0"
+delta = 12
+reason = """Power-on RAM (tools/poweron.py): booting from random or fixed RAM patterns showed every byte the ROM
+defines at the idle prompt identical to a boot from zeroed RAM except the UDG table ($F180, 168 B), which the cold
+start never cleared: codes 144-164 drew whatever the RAM held at power-on (a real TS2068's DRAM), spaces in
+ZEsarUX. COLD_CLEAR (12 B, after the NMI vector: page zero's gap is full) clears it and runs MEM_COLD_INIT;
+COLD_START calls it. 182 B; from the HOME reserve."""
+
+[[ledger]]
+id = "L57"
+date = "2026-10-21"
+milestone = "Phase 9"
+bank = "home"
+component = "float"
+delta = -9
+reason = """ROM coverage (tools/romcov.py, run_tests.py --coverage): F_POP (9 B) had no caller (the compiler
+pops float slots through F_DROP and the loads); removed. 136 B; 9 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L58"
+date = "2026-10-21"
+milestone = "Phase 9"
+bank = "exrom"
+component = "xshell"
+delta = 44
+reason = """Two shell changes (src/shell/shell.asm). (1) Owner-approved: an UNDECLARED IDENTIFIER report names
+the identifier on the status row, "LINE m  'name'" (its first 15 characters: the report row already holds 31 of
+32; the name is the compiler's NM, in the source): +39 B after a shrink pass (no zero-length guard: NM is 1-31
+characters there; the closing quote and NUL written from B = 0). (2) A defect found by Fuse at 60 Hz: a key held
+past the ISR's auto-repeat delay (35 frames) ended a report or message on its own, so BREAK or RUN's ENTER held
+for about half a second made the report vanish before it could be read. SH_WAIT_KEY now waits for every key's
+release and drops a key latched before or meanwhile (+9 B), which replaces SH_REPORT's own clear (-4 B): +5 B.
+2,659 B; from the EXROM reserve (333 -> 289 B, floor 256 B)."""
+
+[[ledger]]
+id = "L59"
+date = "2026-10-21"
+milestone = "Phase 9"
+bank = "exrom"
+component = "xcomp"
+delta = -22
+reason = """ROM coverage (tools/romcov.py): XC_FOLD's folding of && and || (its dispatch and two bodies, 22 B) never
+ran, and cannot: CX_LOGIC (src/compiler/expr.asm) decides && and || itself when the left operand is a constant, and
+never passes them to the folding (tests/expr/misc/fold_logical.c folds them in enumerators and array sizes).
+Removed: 1,459 B; 22 B return to the EXROM reserve (289 -> 311 B, floor 256 B)."""
+
+[[ledger]]
+id = "L60"
+date = "2026-10-21"
+milestone = "Phase 9"
+bank = "home"
+component = "platform"
+delta = -2
+reason = """A defect found by Fuse at the TS2068's own timing (platform delta D14): BANK_PAGE_EXROM_IN and _OUT ran
+with interrupts off for about 120 T, and the TS2068's INT lasts 32 T, so a frame interrupt arriving in that window
+was lost. Float code pages the EXROM in and out for every operation: FRAMES (frames(), the keyboard's timing)
+counted 5,966 of 6,024 frames in a float loop on Fuse 1.9.1. The ISR touches none of the banking state (depth,
+PORT_FF_SHADOW, the ports, chunk 6) and a BREAK cannot unwind inside them (every runtime page-in is under NOBRK), so
+the two DIs go; the EIs stay (interrupts are on at the return, as before). tools/fusetest.py frames: every frame
+counted. 3,122 B; 2 B return to the HOME reserve (586 -> 588 B, floor 512 B)."""

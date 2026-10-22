@@ -122,6 +122,8 @@ def cell_from(scr, row, col):
 
 class Machine:
     """One ZEsarUX running a Leap-C image. `build` is build/ (production) or build/test/."""
+    power_on = None             # Phase 9: f(machine) after reset-cpu, before the boot (tools/poweron.py)
+    coverage = None             # Phase 9: a set: the ROM addresses executed (cov_harvest; tools/romcov.py)
 
     def __init__(self, build, port, snapdir=None):
         self.build = os.path.abspath(build)
@@ -238,6 +240,9 @@ class Machine:
         self.c.connect(retries=100)
         self.cmd("enter-cpu-step")
         self.cmd("reset-cpu")
+        if self.power_on:
+            self.power_on(self)
+        self._cov_on()
         self.tstates_reset()
         t0 = time.time()
         pc = self.run_to([self.sym("IO_READ_KEY")], boot_max)
@@ -246,13 +251,17 @@ class Machine:
         if not self.boot["reached"]:
             raise AssertionError("boot did not reach IO_READ_KEY (PC=%04X)" % pc)
         self.cmd("snapshot-save " + self.snap)
+        self.cov_harvest()
         self.glyphs = self._glyph_table()
+        if self.coverage is not None:           # (the harness's own glyph rendering is no test)
+            self.cmd("cpu-code-coverage clear")
         self.restore()
         return self
 
     def stop(self):
         try:
             if self.c:
+                self.cov_harvest()
                 self.c.quit()
         except Exception:
             pass
@@ -261,8 +270,35 @@ class Machine:
                 self.proc.stop()
 
     def restore(self):
+        self.cov_harvest()
         self.cmd("snapshot-load " + self.snap)
         self._enable_bp()
+        self._cov_on()
+
+    # ------------------------------------------------------------- ROM coverage (Phase 9)
+    def _cov_on(self):
+        if self.coverage is not None:           # (every snapshot-load switches it off)
+            self.cmd("cpu-code-coverage enabled yes")
+            self.cmd("cpu-code-coverage clear")
+
+    def cov_harvest(self):
+        """Add the addresses executed since the last harvest to self.coverage. Chunk 6 is the EXROM or
+        a compiled program's image region 1, whose code runs at the same addresses ($C000 up to the code's
+        end, IMG_LIM): those are dropped, so an EXROM address counts only where no program's code was."""
+        if self.coverage is None:
+            return
+        try:
+            got = self.cmd("cpu-code-coverage get")
+            self.cmd("cpu-code-coverage clear")
+        except ZRCPError:
+            return
+        addrs = {int(x, 16) for x in re.findall(r"\b[0-9A-Fa-f]{4}\b", got or "")}
+        if any(0xC000 <= a < 0xE000 for a in addrs):
+            lim = self.read(self.S["IMG_LIM"], 2)
+            code_end = lim[0] | lim[1] << 8
+            if 0xC000 < code_end <= 0xE000:
+                addrs = {a for a in addrs if not 0xC000 <= a < code_end}
+        self.coverage |= addrs
 
     # ------------------------------------------------------------- tape (Phase 7)
     def tape_insert(self, path):

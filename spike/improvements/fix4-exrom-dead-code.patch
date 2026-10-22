@@ -1,0 +1,271 @@
+--- a/platform/kernel/storage/storage.asm
++++ b/platform/kernel/storage/storage.asm
+@@ -605,13 +605,7 @@
+ ;      include/v2_package_abi.inc defines both.
+ ; Destroys: AF, DE (HL, BC, IX preserved)
+ ; ============================================================================
+-STORAGE_VERSION_WORD:
+-    ld   a, (STORAGE_REQUEST_TYPE)
+-    ld   de, V2_FORMAT_WORD
+-    cp   STORAGE_EXTENSION_TYPE
+-    ret  nz
+-    ld   de, PKG_ABI_WORD
+-    ret
++
+     ENDIF
+ 
+ ; ============================================================================
+@@ -624,11 +618,6 @@
+ ; ============================================================================
+ STORAGE_SAVE:
+     di
+-    ld   a, b
+-    cp   STORAGE_HEADER_FILENAME_LEN + 1
+-    jr   c, .name_len_ok
+-    ld   b, STORAGE_HEADER_FILENAME_LEN   ; transport field is fixed-width
+-.name_len_ok:
+     push ix
+     push de
+     ld   (STORAGE_SEND_LEN), de           ; stash the caller's own data
+@@ -659,23 +648,13 @@
+     inc  de
+     djnz .name_copy
+     pop  bc
+-.name_done:
+-    ld   a, STORAGE_HEADER_FILENAME_LEN
+-    sub  b
+-    jr   z, .len_set
+-    ld   b, a
+-    ld   a, ' '
+-.pad:
+-    ld   (de), a
+-    inc  de
+-    djnz .pad
+-.len_set:
++.name_done:                              ; (Leap-C: the shell passes 10 characters, padded)
+     ld   hl, (STORAGE_SEND_LEN)
+     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF), hl
+     IFDEF STORAGE_VERSIONED
+     ; R10.9: every V2 header carries a version word in the autostart field
+     ; (docs/v2/PACKAGE_ABI.md s6) -- program/array format or package ABI.
+-    call STORAGE_VERSION_WORD             ; DE = word for STORAGE_REQUEST_TYPE
++    ld   de, V2_FORMAT_WORD    ;             ; DE = word for STORAGE_REQUEST_TYPE
+     ELSE
+     ld   a, (STORAGE_REQUEST_TYPE)
+     cp   STORAGE_EXTENSION_TYPE
+@@ -890,7 +869,7 @@
+     ; or the package window.  Rule: tag bit and major must match exactly, the
+     ; tape's minor must not exceed ours.  Clean failure (A = STORAGE_LOAD_BAD_VERSION).
+     ld   hl, (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF)
+-    call STORAGE_VERSION_WORD             ; DE = expected word (IX/HL preserved)
++    ld   de, V2_FORMAT_WORD    ;             ; DE = expected word (IX/HL preserved)
+     ld   a, h
+     cp   d
+     jr   nz, .bad_version                 ; JP: out of JR range
+--- a/platform/rom/exrom_editor.asm
++++ b/platform/rom/exrom_editor.asm
+@@ -71,9 +71,7 @@
+     xor  a
+     ld   hl, 0
+     ld   (EDIT_BUF_OFFSET), hl
+-    ld   (EDITOR_REDRAW_HOOK), hl    ; also 0 — default rendering unless
+                                     ; a caller (e.g. basic/) sets this
+-    ld   (EDITOR_NAV_HOOK), hl        ; also 0 — default (no-op)
+                                     ; UP/DOWN handling unless a caller
+                                     ; sets this
+     ld   hl, EDIT_LINE_BUF
+@@ -126,10 +124,6 @@
+     jp   z, .delete_line_key
+     cp   KEY_INSERT_LINE
+     jp   z, .insert_line
+-    cp   KEY_NEXT_ERROR
+-    jp   z, .next_error
+-    cp   KEY_PREV_ERROR
+-    jp   z, .prev_error
+     cp   $20
+     jr   c, EDITOR_LOOP            ; STUDY (D5b): was `or a / jp z` (A=0 only); every
+                                    ; code < $20 that has no handler above (BREAK $10 ...)
+@@ -218,28 +212,8 @@
+     ld   hl, V2_REDRAW_SCOPE
+     ld   (hl), b                   ; STUDY: UP/DOWN -> the redraw hook may take the cursor-only /
+     ENDIF                          ; two-line path (it verifies the geometry itself)
+-    push af                       ; save direction across the hook check
++.do_nav_only:                     ; (Leap-C: the shell's hook is always set)
+     ld   hl, (EDITOR_NAV_HOOK)
+-    ld   a, h
+-    or   l
+-    jr   nz, .use_nav_hook
+-
+-    pop  af                         ; no hook set — built-in (currently
+-                                    ; no-op) UP/DOWN handling
+-    call EDITOR_MOVE_CURSOR
+-    call EDITOR_REDRAW_SCREEN
+-    jp   EDITOR_LOOP
+-
+-.use_nav_hook:
+-    pop  af                           ; A = EDIR_UP/EDIR_DOWN, for the hook
+-    ; Z80 has no indirect CALL instruction — only indirect JP. The
+-    ; standard idiom: push the address we want control to return to,
+-    ; then JP (HL); the hook's own RET pops that pushed address and
+-    ; lands us back at .hook_returned, same effect as CALL (HL) would
+-    ; have if it existed. The hook itself is a Home address (basic/'s
+-    ; own routine) — reachable via a bare JP regardless of chunk 6's
+-    ; own paging state, since Home ROM is always mapped below $4000;
+-    ; see this file's own header for the full paging reasoning.
+     ld   de, .hook_returned
+     push de
+     jp   (hl)
+@@ -287,39 +261,6 @@
+     ld   a, EDIR_INSERT_LINE
+     jr   .do_nav_only
+ 
+-.next_error:
+-    ld   a, EDIR_NEXT_ERROR
+-    jr   .do_nav_only
+-
+-.prev_error:
+-    ld   a, EDIR_PREV_ERROR
+-    ; fall through to .do_nav_only
+-
+-; EDIR_DELETE_LINE/EDIR_INSERT_LINE/EDIR_NEXT_ERROR/EDIR_PREV_ERROR
+-; dispatch. Unlike .do_nav above
+-; (EDIR_UP/DOWN, which EDITOR_MOVE_CURSOR genuinely implements), these
+-; four have NO built-in kernel/editor meaning at all — so unlike
+-; .do_nav, there's no fallback to EDITOR_MOVE_CURSOR when no hook is
+-; set, just a clean no-op instead. Same indirect-call idiom as .do_nav
+-; otherwise (push a return address, then JP (HL) — see that block's
+-; own comment for why, Z80 has no indirect CALL).
+-.do_nav_only:
+-    push af
+-    ld   hl, (EDITOR_NAV_HOOK)
+-    ld   a, h
+-    or   l
+-    jr   nz, .use_nav_hook_only
+-
+-    pop  af                            ; no hook set — genuine no-op
+-    jp   EDITOR_LOOP
+-
+-.use_nav_hook_only:
+-    pop  af
+-    ld   de, .hook_returned_only
+-    push de
+-    jp   (hl)
+-.hook_returned_only:
+-    jr   .hook_returned            ; identical tail to .hook_returned above
+                                    ; (redraw, then back to the loop) — jump
+                                    ; there instead of duplicating it
+ 
+@@ -532,11 +473,8 @@
+     jr   z, .left
+     cp   EDIR_RIGHT
+     jr   z, .right
+-    cp   EDIR_HOME
+-    jr   z, .home
+-    cp   EDIR_END
+-    jr   z, .end
+-    ret                              ; UP/DOWN/TOP/BOTTOM: no-op, see header
++    ret                              ; UP/DOWN/TOP/BOTTOM: no-op, see header (Leap-C: no key gives
++                                     ; HOME or END)
+ 
+ .left:
+     ld   hl, (EDIT_BUF_OFFSET)
+@@ -565,17 +503,6 @@
+     ld   (EDIT_BUF_OFFSET), hl
+     ret
+ 
+-.home:
+-    ld   hl, 0
+-    ld   (EDIT_BUF_OFFSET), hl
+-    ret
+-
+-.end:
+-    call EDITOR_SCAN_LEN              ; B = content length
+-    ld   h, 0
+-    ld   l, b
+-    ld   (EDIT_BUF_OFFSET), hl
+-    ret
+ 
+ ; ============================================================================
+ ; EDITOR_BLOCK_DELETE
+@@ -591,22 +518,6 @@
+ ; Out: carry clear on success, carry set + program unchanged on abort
+ ; Destroys: AF, BC, DE, HL
+ ; ============================================================================
+-EDITOR_BLOCK_DELETE:
+-    ; Mark-start/mark-end selection mechanism in the editor's input loop
+-    ; still doesn't exist (TODO, unchanged) — HL/DE below are shown as
+-    ; already-resolved positions for now.
+-    ;
+-    ; Non-destructive guarantee (see docs/basic_language_reference.md,
+-    ; "Label table"): before deleting, check the enclosing scope's label
+-    ; table for any label defined inside [HL, DE] that's referenced by a
+-    ; GOTO/GOSUB/RESTORE outside the range but still in that scope. This
+-    ; check is NOT implemented here or in kernel/memory — scanning
+-    ; program text for GOTO/GOSUB/RESTORE references needs a BASIC-syntax
+-    ; parser, which is basic/'s job. kernel/memory only has MEM_LABEL_
+-    ; LOOKUP against the DEFINITION table; the reference-scan half of
+-    ; this guarantee is still an open TODO once basic/ exists, not just
+-    ; an implementation detail to fill in here.
+-    jp KTAB_MEM_LINE_DELETE_RANGE
+ 
+ ; ============================================================================
+ ; EDITOR_REDRAW_SCREEN (internal)
+@@ -625,28 +536,8 @@
+ ; lets basic/ own keyword highlighting without kernel/editor needing to
+ ; know BASIC exists.
+ ; ============================================================================
+-EDITOR_REDRAW_SCREEN:
++EDITOR_REDRAW_SCREEN:                 ; (Leap-C: the shell's hook is always set)
+     ld   hl, (EDITOR_REDRAW_HOOK)
+-    ld   a, h
+-    or   l
+-    jr   nz, .use_hook
+-
+-    call KTAB_GFX_CLS
+-    ld   hl, EDIT_LINE_BUF
+-    ld   b, 0
+-    ld   c, 0
+-    call KTAB_GFX_PRINT_STRING
+-
+-    ld   hl, (EDIT_BUF_OFFSET)
+-    ld   b, 0                     ; cursor's fixed row, matches the print
+-                                  ; above — both will need to track the
+-                                  ; real cursor row once multi-line
+-                                  ; scrolling exists
+-    ld   c, l                      ; EDIT_BUF_OFFSET fits in one byte
+-                                  ; (max 127, column is 0-31 anyway)
+-    jp KTAB_GFX_INVERT_ATTR
+-
+-.use_hook:
+     jp   (hl)                     ; Home address — safe regardless of
+                                   ; chunk 6's own paging state, see this
+                                   ; file's own header
+--- a/platform/rom/exrom_sound.asm
++++ b/platform/rom/exrom_sound.asm
+@@ -41,14 +41,8 @@
+     ENDIF
+     ; MAINT (SOUND0): the stock ROM accepts registers 0-16 (its `DEC A / INC A / JP M` tests
+     ; nothing for 0): only 17 and above are rejected. B and C are preserved.
+-    cp   17
+-    jr   nc, .bad_register             ; register >= 17 -> error
+-    out  (PORT_AY_REG), a
++    out  (PORT_AY_REG), a              ; (Leap-C: its callers pass registers 0-15)
+     ld   a, c
+     out  (PORT_AY_DATA), a
+-    or   a
+-    ret
+-.bad_register:
+-    scf
+     ret
+ 
+--- a/platform/rom/v2_ay_beep.asm
++++ b/platform/rom/v2_ay_beep.asm
+@@ -194,8 +194,6 @@
+ ; ------------------------------------------------------------------ EXROM pieces
+ ; AY_BEEP -- the slot target: HL = semitones, DE = frames.
+     IFDEF V2_MAINT_AYB_PERIOD_HOME
+-AY_BEEP:
+-    call AY_BEEP_PERIOD
+         IFDEF V2_MAINT_AYB_PLAY_HOME
+     jp   AY_BEEP_PLAY
+         ENDIF

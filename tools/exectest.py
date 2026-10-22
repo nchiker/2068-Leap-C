@@ -376,7 +376,7 @@ def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants):
     pc = m.run_to([S("IO_READ_KEY")], 60_000_000)
     assert pc == S("IO_READ_KEY"), "no key wait after the report (PC=%04X)" % pc
     shown = tuple(m.screen_rows()[22:24])
-    res.report = dict(built=built, shown=shown, wait=m.w16(m.regs()["SP"]) == S("SH_WAIT_KEY") + 3)
+    res.report = dict(built=built, shown=shown, wait=m.w16(m.regs()["SP"]) == S("SH_WAIT_KEY.read") + 3)
     sh.key(ord(" "))
     res.after = dict(editor=sh.in_editor(), index=sh.index(), edit=sh.edit_line(),
                      depth=m.read(S("BANK_EXROM_DEPTH"), 1)[0], running=m.read(S("RUNNING"), 1)[0],
@@ -457,12 +457,28 @@ def expected_report(m, res, lines):
     import gen_diag
     S = m.sym
     if res.errnum:
-        return (gen_diag.report("E", res.errnum), "LINE %d" % res.errline if res.errline else "")
+        row = "LINE %d" % res.errline if res.errline else ""
+        if res.errnum == ER["E_UNDECL"] and row:
+            row += "  '%s'" % undeclared_name(m, lines)[:UNDECL_NAME_MAX]
+        return (gen_diag.report("E", res.errnum), row)
     if res.a:
         line = "LINE %d" % res.rtline if res.rtline else ""
         return (gen_diag.report("RT", res.a), line)
     ex = res.hl - 65536 if res.hl & 0x8000 else res.hl
     return ("EXIT %d" % ex, "IMAGE %d B  HEAP %d B" % (image_size(res.limits), heap_free(m.w16(S("PROG_END")))))
+
+
+UNDECL_NAME_MAX = 15                        # the shell shows at most 15 characters (SH_NAME_MAX)
+
+
+def undeclared_name(m, lines):
+    """The name an UNDECLARED IDENTIFIER report shows (Phase 9): the compiler's NM, which must be a
+    whole word of the source (the use, or a macro's body); otherwise a marker that fails the check."""
+    S = m.sym
+    name = m.read(m.w16(S("NM_PTR")), m.read(S("NM_LEN"), 1)[0]).decode("latin-1")
+    ok = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,30}", name) and any(
+        re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), l) for l in lines)
+    return name if ok else "<NM %r is no word of the source>" % name
 
 
 def image_size(limits):

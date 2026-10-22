@@ -169,6 +169,7 @@ SH_SPACES:
 ; SH_RUN -- RUN: compile the program and, if it compiles, run it (spec.md 1, 6.3); then the report
 ; on rows 22 and 23 (SH_REPORT) until a key:
 ;   a compile error  "ERROR n: MESSAGE" / "LINE m": the cursor on the line, its text loaded;
+;                    an undeclared identifier: "LINE m  'name'" (Phase 9);
 ;   a runtime error  "RUNTIME ERROR n: MESSAGE" / "LINE m": the line where the definition of the
 ;                    function that failed starts, the cursor on it (no line when unknown, spec.md 5.9);
 ;   BREAK            "BREAK" / "LINE m", the same;
@@ -241,19 +242,37 @@ SH_RUN:
     call SH_APPEND
     ld   hl, (SH_ERR_LINE)
     call SH_APPEND_NUM
+    ld   a, (CC_ERRNUM)                ; (0 after a runtime error or BREAK: the compile succeeded)
+    cp   E_UNDECL
+    jr   nz, SH_REPORT
+    ld   hl, SH_TXT_NAME               ; Phase 9: "LINE m  'name'", the undeclared identifier's
+    call SH_APPEND                     ; first SH_NAME_MAX characters (left of the swatch). NM is
+    ld   hl, (NM_PTR)                  ; the name CX_PRIMARY looked up (1-31 characters of the
+    ld   a, (NM_LEN)                   ; source, which nothing has changed since)
+    cp   SH_NAME_MAX + 1
+    jr   c, .name
+    ld   a, SH_NAME_MAX
+.name:
+    ld   c, a
+    ld   b, 0
+    ldir
+    ex   de, hl
+    ld   (hl), "'"
+    inc  hl
+    ld   (hl), b                       ; (B = 0: the NUL)
     ; falls into SH_REPORT
 
 ; ============================================================================
 ; SH_REPORT -- a report: the text in SH_REPORT_BUF on row 22 and SH_STATUS_BUF's on the status row,
-; both in the status bar's colours; then wait for a key, and the next redraw is a full one. A key
-; pressed before (during a compile, or left by the program: BREAK) does not end the report
+; both in the status bar's colours; then wait for a key, and the next redraw is a full one
 ; SH_SHOW_MESSAGE -- the text at HL on the status row, the same (V2_SHOW_MESSAGE)
-; SH_WAIT_KEY -- wait for a key
+; SH_WAIT_KEY -- wait for a new key: a key still held from before (the ENTER of RUN or of a command,
+; BREAK) is first let go, and a key latched before or meanwhile (pressed during a compile, left by the
+; program, the held key's auto-repeat) does not end the wait (Phase 9: a key held past the ISR's repeat
+; delay, 35 frames, ended the report on its own before it could be read)
 ; Out: carry clear. Destroys: AF, BC, DE, HL
 ; ============================================================================
 SH_REPORT:
-    xor  a
-    ld   (KBD_KEYHIT), a
     ld   hl, SH_REPORT_BUF
     ld   a, 22
     call SH_BAR_ROW
@@ -263,6 +282,11 @@ SH_SHOW_MESSAGE:
     ld   (V2_REDRAW_SCOPE), a
     call SH_STATUS_ROW
 SH_WAIT_KEY:
+    ld   a, (KBD_CUR_ROW)              ; $FF: the ISR tracks no key (all released)
+    inc  a
+    jr   nz, SH_WAIT_KEY
+    ld   (KBD_KEYHIT), a               ; (A = 0)
+.read:                                 ; (the test harness knows a report's key wait by this call)
     call IO_READ_KEY
     or   a
     ret
@@ -1294,6 +1318,8 @@ SH_MSG_RUNTIME: DB "RUNTIME "
 SH_MSG_ERROR:   DB "ERROR ", 0
 SH_MSG_BREAK:   DB "BREAK", 0
 SH_TXT_LINE:    DB "LINE ", 0
+SH_TXT_NAME:    DB "  '", 0
+SH_NAME_MAX     EQU 15              ; "LINE 9999  '" and 15 characters and "'": 29 columns
 SH_TXT_EXIT:    DB "EXIT ", 0
 SH_TXT_IMAGE:   DB "IMAGE ", 0
 SH_TXT_HEAP:    DB "  HEAP ", 0

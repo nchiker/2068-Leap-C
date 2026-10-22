@@ -39,12 +39,6 @@ F_DROP:
     pop  bc
     pop  bc
     jp   (hl)
-; F_POP -- F_ACC = the slot under the return address, popped (flags not kept)
-F_POP:
-    ld   hl, 2
-    add  hl, sp
-    call F_LD
-    jr   F_DROP
 
 ; ============================================================================
 ; F_X -- operation A of the float core with the EXROM paged in: a BREAK-deferring section (NOBRK,

@@ -12,7 +12,12 @@ Blocks, files and signals:
     truncated block, any byte changed, fewer pilot pulses), and it is written as ZEsarUX's raw tape
     format (.rwa: 8-bit unsigned samples, one per scan line) for its real-tape input (`realtape-open`);
   - decode(edges): the blocks in a captured MIC signal: [(T-state, level)] at each `out` of the ROM's
-    STORAGE_SEND_BLOCK (lcharness.Machine.tape_capture), with every pulse width measured.
+    STORAGE_SEND_BLOCK (lcharness.Machine.tape_capture), with every pulse width measured;
+  - (Phase 9) audio: Tape.to_wav() writes the signal as a WAV file (8-bit unsigned mono PCM, 44.1 kHz,
+    point-sampled at the TS2068 clock), the format of the hardware kit's cassette audio (tools/hwkit.py);
+    read_wav() reads one back, and the emulators get its samples as their own formats: rwa_from_wav()
+    for ZEsarUX's real-tape input (which needs sox for a WAV), tzx_from_wav() as a TZX direct recording
+    (block $15, 80 T a sample = 1/44,100 s at 3.528 MHz) for a Fuse whose libspectrum has no WAV reader.
 
 Derived from 2068-Leap's tools/tape_synth.py and tools/make_extension_tzx.py (V2 reference tag
 v2.0.1-emu.1): the same run-list model, the same sample levels; copied and adapted, not imported. V2
@@ -155,6 +160,73 @@ class Tape:
 
     def seconds(self):
         return sum(t for _, t in self.runs) / CPU_HZ
+
+    def to_wav(self, rate=44100, lead=1.0, tail=1.0, high=0xE0, low=0x20):
+        """The signal as a WAV file's bytes: 8-bit unsigned mono PCM at `rate`, each sample the level at
+        its instant (TS2068 T-states: CPU_HZ), the lead and the tail silent ($80)."""
+        out = bytearray()
+
+        def until(byte, end_t):
+            n = int(end_t * rate / CPU_HZ)
+            if n > len(out):
+                out.extend(bytes([byte]) * (n - len(out)))
+
+        t = lead * CPU_HZ
+        until(0x80, t)
+        for level, dt in self.runs:
+            t += dt
+            until(high if level else low, t)
+        until(0x80, t + tail * CPU_HZ)
+        return wav_bytes(bytes(out), rate)
+
+
+def wav_bytes(samples, rate):
+    """A RIFF WAVE file: 8-bit unsigned mono PCM."""
+    fmt = struct.pack("<HHIIHH", 1, 1, rate, rate, 1, 8)
+    return (b"RIFF" + struct.pack("<I", 4 + 8 + len(fmt) + 8 + len(samples)) + b"WAVE" + b"fmt " +
+            struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(samples)) + samples)
+
+
+def read_wav(data):
+    """(rate, samples) of a PCM WAV file, mono or the first channel, as 8-bit unsigned samples."""
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("not a WAV file")
+    p, fmt, samples = 12, None, None
+    while p + 8 <= len(data):
+        cid, n = data[p:p + 4], struct.unpack_from("<I", data, p + 4)[0]
+        body = data[p + 8:p + 8 + n]
+        if cid == b"fmt ":
+            fmt = struct.unpack_from("<HHIIHH", body)
+        elif cid == b"data":
+            samples = body
+        p += 8 + n + (n & 1)
+    if not fmt or samples is None or fmt[0] != 1 or fmt[5] not in (8, 16):
+        raise ValueError("not 8- or 16-bit PCM")
+    _, channels, rate, _, align, bits = fmt
+    if bits == 8:
+        return rate, bytes(samples[i] for i in range(0, len(samples), align))
+    return rate, bytes(((struct.unpack_from("<h", samples, i)[0] >> 8) + 128) & 0xFF for i in range(0, len(samples), align))
+
+
+def rwa_from_wav(rate, samples, sample_t=SAMPLE_T):
+    """ZEsarUX's raw tape format from a WAV's samples: one sample per `sample_t` T-states (a scan line),
+    each the WAV's sample at that instant (what ZEsarUX's sox conversion does, by point sampling)."""
+    n = int(len(samples) * CPU_HZ / rate / sample_t)
+    return bytes(samples[min(len(samples) - 1, int(j * sample_t * rate / CPU_HZ))] for j in range(n))
+
+
+def tzx_from_wav(rate, samples, threshold=0x80):
+    """A TZX file holding the WAV's samples as one direct-recording block ($15): a bit per sample, 1 at or
+    above `threshold`, CPU_HZ / rate T-states each (Fuse plays TZX T-states at the machine's clock)."""
+    bits = [1 if v >= threshold else 0 for v in samples]
+    data = bytearray()
+    for i in range(0, len(bits), 8):
+        chunk = bits[i:i + 8]
+        data.append(sum(b << (7 - k) for k, b in enumerate(chunk)))
+    used = len(bits) % 8 or 8
+    t_per = round(CPU_HZ / rate)
+    return (b"ZXTape!\x1a" + bytes([1, 20]) + bytes([0x15]) + struct.pack("<HHB", t_per, 0, used) +
+            struct.pack("<I", len(data))[:3] + bytes(data))
 
 
 def edges_from_capture(values):

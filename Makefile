@@ -1,4 +1,4 @@
-# 2068-Leap-C build (project_plan.md section 3 onwards: Phase 1 M1.1-M1.3, Phases 2-8).
+# 2068-Leap-C build (project_plan.md section 3 onwards: Phase 1 M1.1-M1.3, Phases 2-9).
 #   make / make build   production images in build/, test images (-DLEAPC_TEST) in build/test/
 #   make check          strict assembly (build), budgets, platform delta check, test-image check,
 #                       RAM layout guard (static census of the RAM the ROMs reference, with negative
@@ -12,19 +12,28 @@
 #                       layout, regions, stack, heap, banking invariants; the shell; the compile/run
 #                       workflow: typed programs, the corpus through RUN, diagnostics, reports; the
 #                       cassette: SAVE/LOAD/VERIFY and tape_save/tape_load on real tape signals, V2's
-#                       tapes) and the canary, as tasks on a pool of emulators; needs ~/ts2068-debug,
-#                       ZEsarUX 13.0, and ~/2068-Leap (read only) for the V2 reference ROM
+#                       tapes; Phase 9: boots from power-on RAM patterns) and the canary, as tasks on a pool
+#                       of emulators, with ZEsarUX's code coverage (build/coverage.json, reported by
+#                       tools/romcov.py in build/romcov.md); needs ~/ts2068-debug, ZEsarUX 13.0, and
+#                       ~/2068-Leap (read only) for the V2 reference ROM
 #   make test-fast      the development subset (Phase 8): make test without the cassette suite, the corpus
 #                       through the shell's RUN and the typing-cost/redraw measurements, the canary over
 #                       every other program; about a fifth of make test's time. make test stays the gate
 #   make canary         the RAM canary and banking invariants over the whole corpus (4 emulators)
+#   make fuse           Phase 9: the production ROMs on Fuse 1.9.1, headless (tools/fusetest.py: boot, keyboard,
+#                       typed programs, BREAK, SAVE, a WAV, the corpus LOADed from tape and RUN)
+#   make timing         Phase 9: the same programs timed on ZEsarUX and Fuse (tools/timingcmp.py, build/timing.md)
+#   make poweron        Phase 9: the boot from power-on RAM patterns, a corpus slice from each (also in make test)
+#   make kit            Phase 9: the hardware kit in build/kit: EPROM images (27128 HOME, 2764 EXROM) with
+#                       checksums, the hardware check programs and examples as .tap/.tzx/.wav (tools/hwkit.py)
 #   make capacity       the measured capacity table (build/capacity.json, docs/milestones/M4.md)
 #   make repro          two clean builds must give identical image hashes
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
 #   make v2ref          the V2 reference ROM (tag v2.0.1-emu.1) in build/v2ref/, built from the frozen
 #                       repository through `git archive` (the cross-version tape tests)
 # Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
-.PHONY: all build prod testimg check budget inventory test test-fast canary capacity repro audit v2ref clean
+.PHONY: all build prod testimg check budget inventory test test-fast canary capacity repro audit v2ref clean \
+	fuse timing poweron kit qualify
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -66,7 +75,8 @@ inventory: prod
 	python3 tools/rom_inventory.py
 
 test: build build/v2ref/ts2068rom_zesarux.bin
-	python3 tools/run_tests.py
+	python3 tools/run_tests.py --coverage build/coverage.json
+	python3 tools/romcov.py build/coverage.json
 
 test-fast: build
 	python3 tools/run_tests.py --fast --json build/test_fast_results.json
@@ -79,11 +89,27 @@ build/v2ref/ts2068rom_zesarux.bin:
 canary: build
 	python3 tools/canary.py
 
+fuse: build
+	python3 tools/fusetest.py
+
+timing: build
+	python3 tools/timingcmp.py
+
+poweron: build
+	python3 tools/run_tests.py --suite poweron --json build/poweron_results.json
+
+kit: build
+	python3 tools/hwkit.py
+
 capacity: build
 	python3 tools/capacity.py
 
 repro:
 	tools/check_repro.sh
+
+# The Phase 9 qualification, every suite in sequence (about 70 minutes); then make repro.
+qualify: build
+	tools/qualify.sh
 
 audit:
 	mkdir -p build

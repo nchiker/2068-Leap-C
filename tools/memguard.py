@@ -15,8 +15,9 @@ program. ZEsarUX evaluates them after every instruction; the first one that hold
 RAM canary. Before the compile, the RAM no compile may write is filled with CANARY; after it, every
 byte that changed is reported. The same before and after the run. Spans:
   - "cells": the tail of the Leap-C cell area (LEAPC_CELLS_END .. LEAPC_CELLS_LIMIT);
-  - "platform": the V2 platform cells at $F180-$F3FF (UDGs, the editor's line buffer, dead V2
-    cells), except GFX_LINE_X0..Y1, which draw() uses;
+  - "platform": the V2 platform cells at $F180-$F3FF (the editor's line buffer, dead V2 cells), except
+    GFX_LINE_X0..Y1, which draw() uses, and (Phase 9) the UDG table, the glyphs of codes 144-164, which
+    the cold start clears and characters read (tools/poweron.py);
   - "top": $FF04-$FFFF (the ROM never uses $FF00-$FFFF; the harness's return slot is $FF00-$FF03);
   - "region N": each image region's gap between the code (up from its base) and the static data
     (down from its end), from the compiler's limits (IMG_LIM) after the compile. Before the compile
@@ -65,8 +66,9 @@ def regions(S):
 
 def dead_spans(S):
     gl = S("GFX_LINE_X0")
+    assert S("UDG_TABLE") == S("LEAPC_PLAT_BASE"), "the UDG table opens the platform cells"
     return [("cells", S("LEAPC_CELLS_END"), S("LEAPC_CELLS_LIMIT")),
-            ("platform", S("LEAPC_PLAT_BASE"), gl), ("platform", gl + 4, S("LEAPC_PLAT_END")),
+            ("platform", S("EDIT_LINE_BUF"), gl), ("platform", gl + 4, S("LEAPC_PLAT_END")),
             ("top", TOP[0], TOP[1])]
 
 

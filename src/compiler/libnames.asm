@@ -26,6 +26,10 @@
 ;   checks, the default promotions)
 ; ============================================================================
 
+LIB_PARAMS:                            ; (here, mid-page: LIB_FIND indexes it within one page)
+    DB   0, %1, %10, %11, %100, %110, %111, %1110, %1100, %1010, %10000, %100001
+    ASSERT (LIB_PARAMS & $FF) + LP_IIIIP < 256
+
 ; ============================================================================
 ; LIB_FIND -- the library function named NM
 ; In:  NM_PTR, NM_LEN (1-31)
@@ -177,10 +181,6 @@ LP_PII          EQU 8       ; (void *, int, int)
 LP_IPI          EQU 9       ; (int, void *, int)
 LP_IIII         EQU 10      ; (int, int, int, int)
 LP_IIIIP        EQU 11      ; (int, int, int, int, void *)
-LIB_PARAMS:
-    DB   0, %1, %10, %11, %100, %110, %111, %1110, %1100, %1010, %10000, %100001
-    ASSERT (LIB_PARAMS & $FF) + LP_IIIIP < 256
-
     MACRO LIBFN name, routine, ret, params
     DC   name
     DW   routine

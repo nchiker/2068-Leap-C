@@ -53,8 +53,13 @@ Phase 8 (suite `float`, tools/floattest.py): the float core against its bit-exac
 `--fast` (make test-fast): everything but the cassette, the corpus through the shell's RUN (the workflow
 cases still RUN) and the typing-cost and redraw measurements; the canary over every other program.
 
-Usage: run_tests.py [--port N] [--only SUBSTR] [--workers N] [--fast]
-                    [--suite boot,lexer,decl,exec,bench,shell,e2e,tape,float,canary] [--json OUT]"""
+Phase 9 (suite `poweron`, tools/poweron.py): the boot from power-on RAM patterns (random, fixed, the reset
+button after a session) against the boot from zeroed RAM, and a slice of the executable corpus from each
+(the patterns' slices cover the corpus once; half of it with --fast). `--ram PATTERN` boots every emulator
+from that pattern, so any suite runs from it.
+
+Usage: run_tests.py [--port N] [--only SUBSTR] [--workers N] [--fast] [--ram PATTERN]
+                    [--suite boot,lexer,decl,exec,bench,shell,e2e,tape,float,poweron,canary] [--json OUT]"""
 import argparse
 import glob
 import json
@@ -79,6 +84,7 @@ import e2etest          # noqa: E402
 import tapetest         # noqa: E402
 import canary           # noqa: E402
 import floattest        # noqa: E402
+import poweron          # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
@@ -483,11 +489,31 @@ def _shard(items, k, n):
     return items[k::n]
 
 
+_FROZEN = {}      # the case lists, read once before the workers start: a file added during a run must not
+                  # move the shards' boundaries between tasks (Phase 9: a case added mid-run ran one shard twice)
+
+
+def _cases(key, make):
+    if key not in _FROZEN:
+        _FROZEN[key] = make()
+    return _FROZEN[key]
+
+
 def exec_cases(only):
-    cases = []
-    for d in EXEC_DIRS:
-        cases += sorted(glob.glob(os.path.join(ROOT, "tests", d, "**", "*.c"), recursive=True))
-    return [c for c in cases if not only or only in c]
+    def make():
+        cases = []
+        for d in EXEC_DIRS:
+            cases += sorted(glob.glob(os.path.join(ROOT, "tests", d, "**", "*.c"), recursive=True))
+        return cases
+    return [c for c in _cases("exec", make) if not only or only in c]
+
+
+def decl_cases():
+    return _cases("decl", lambda: sorted(glob.glob(os.path.join(ROOT, "tests", "decl", "**", "*.c"), recursive=True)))
+
+
+def corpus_cases():
+    return _cases("corpus", lambda: e2etest.corpus(None))
 
 
 def t_boot(m, arg, only, suites):
@@ -502,7 +528,7 @@ def t_boot(m, arg, only, suites):
 
 def t_decl(m, arg, only, suites):
     k, n = arg
-    cases = sorted(glob.glob(os.path.join(ROOT, "tests", "decl", "**", "*.c"), recursive=True))
+    cases = decl_cases()
     cases = _shard([c for c in cases if not only or only in c], k, n)
     rows, out, extra = [], [], {}
     for c in cases:
@@ -686,7 +712,7 @@ def t_corpus(m, arg, only, suites):
     sh = getattr(m, "_shell", None) or shelltest.Shell(m)
     m._shell = sh
     out = []
-    rows = e2etest.run_corpus(m, sh, _shard(e2etest.corpus([only] if only else None), k, n), out=out.append)
+    rows = e2etest.run_corpus(m, sh, _shard([c for c in corpus_cases() if not only or only in c], k, n), out=out.append)
     return dict(rows={"e2e_corpus": rows}, failed=sum(not r["ok"] for r in rows), out=out)
 
 
@@ -700,7 +726,8 @@ def t_canary(m, arg, only, suites):
         box[0].start()
         return box[0]
     rows = []
-    for rec in canary.check_all(m, _shard(canary.corpus(only)[::stride], k, n), restart):
+    for rec in canary.check_all(m, _shard(_cases(("canary", only), lambda: canary.corpus(only))[::stride], k, n),
+                                restart):
         rows.append(rec)
         if not rec["ok"]:
             out.append("canary: FAIL %s: %s" % (rec["case"], rec["msg"]))
@@ -715,8 +742,29 @@ def t_float(m, arg, only, suites):
                 ["float: the float core against its model: %d/%d checks pass" % (len(rows) - len(bad), len(rows))])
 
 
+def t_poweron(m, arg, only, suites):
+    """Phase 9: boot from power-on RAM pattern `name` (tools/poweron.py): the boot against the zero boot,
+    the idle prompt's boot checks, and slice k of n of the executable corpus from that boot."""
+    name, k, n = arg
+    ref = poweron.boot_state(m, "zero")
+    checks, st, prev = poweron.save_boot(m, name, ref)
+    rows = [dict(case="%s: %s" % (name, w), ok=ok, msg=d, kind="boot") for w, ok, d in checks]
+    try:
+        if st["reached"]:
+            rows += [dict(case="%s: %s" % (name, w), ok=ok, msg=d, kind="boot") for w, ok, d in boot_checks(m)]
+            for c in _shard(exec_cases(only), k, n):
+                ok, msg, info = exectest.check_case(m, c)
+                rows.append(dict(case="%s: %s" % (name, os.path.relpath(c, ROOT)), ok=ok, msg=msg, kind="exec"))
+    finally:
+        m.snap = prev
+        m.restore()
+    bad = [r for r in rows if not r["ok"]]
+    return dict(rows={"poweron": rows}, failed=len(bad),
+                out=["poweron: FAIL %s: %s" % (r["case"], r["msg"]) for r in bad])
+
+
 TASKS = dict(boot=t_boot, decl=t_decl, exec=t_exec, execb=t_exec_builtins, lexer=t_lexer, shell=t_shell,
-             e2e=t_e2e, tape=t_tape, corpus=t_corpus, canary=t_canary, float=t_float)
+             e2e=t_e2e, tape=t_tape, corpus=t_corpus, canary=t_canary, float=t_float, poweron=t_poweron)
 HEAVY = ("typing-cost", "redraw-oracle")
 
 
@@ -733,6 +781,9 @@ def plan(suites, only, fast=False):
         t += [("canary", "build", (k, SHARDS["canary"], 2 if fast else 1)) for k in range(SHARDS["canary"])]
     if "float" in suites and not only:
         t.append(("float", "build", 100 if fast else 300))
+    if "poweron" in suites:                         # each pattern runs its own slice of the corpus
+        np = len(poweron.PATTERNS) * (2 if fast else 1)
+        t += [("poweron", "build", (p, k, np)) for k, p in enumerate(poweron.PATTERNS)]
     if "tape" in suites:                            # (the longest first: the not-found search, the V2 exchange)
         tc = [n for n, _, _ in tapetest.CASES if not only or only in n]
         t += [("tape", "build", n) for n in sorted(tc, key=lambda n: n not in tapetest.LONG)]
@@ -755,7 +806,7 @@ def plan(suites, only, fast=False):
     return t
 
 
-def worker(port, tasks, results, only, suites):
+def worker(port, tasks, results, only, suites, ram=None, coverage=False):
     import signal
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))  # (the finally below stops the emulator)
     m = None
@@ -771,6 +822,10 @@ def worker(port, tasks, results, only, suites):
                     if m is not None:
                         m.stop()
                     m = Machine(os.path.join(ROOT, image), port)
+                    if ram:                         # Phase 9: every suite from a power-on RAM pattern
+                        m.power_on = poweron.power_on(ram)
+                    if coverage:                    # Phase 9: the ROM addresses the suites execute
+                        m.coverage = set()
                     m.start()
                 r = TASKS[kind](m, arg, only, suites)
             except Exception as e:                  # noqa: BLE001 -- a task that crashes fails; new emulator
@@ -781,6 +836,10 @@ def worker(port, tasks, results, only, suites):
                     pass
                 m = None
             r["kind"], r["wall"], r["idx"] = kind, time.time() - t0, idx
+            if m is not None and m.coverage is not None:
+                m.cov_harvest()
+                r["cov"], r["cov_image"] = sorted(m.coverage), image
+                m.coverage = set()
             results.put(r)
     finally:
         if m is not None:
@@ -797,10 +856,16 @@ def main():
     ap.add_argument("--fast", action="store_true", help="make test-fast: no tape, no corpus through RUN, "
                     "no typing measurements, the canary over half the corpus")
     ap.add_argument("--workers", type=int, default=max(1, min(8, (os.cpu_count() or 4) - 1)))
+    ap.add_argument("--ram", default=None, help="boot every emulator from this power-on RAM pattern "
+                    "(tools/poweron.py: ones, alt, addr, random:N, warm)")
+    ap.add_argument("--coverage", default=None, help="write the ROM addresses the suites execute (ZEsarUX's "
+                    "code coverage) to this JSON file, per image (tools/romcov.py reports them)")
     a = ap.parse_args()
-    suites = (a.suite or ("boot,lexer,decl,exec,bench,shell,e2e,float,canary" if a.fast else
-                          "boot,lexer,decl,exec,bench,shell,e2e,tape,float,canary")).split(",")
+    suites = (a.suite or ("boot,lexer,decl,exec,bench,shell,e2e,float,poweron,canary" if a.fast else
+                          "boot,lexer,decl,exec,bench,shell,e2e,tape,float,poweron,canary")).split(",")
     t_start = time.time()
+    exec_cases(None), decl_cases(), corpus_cases()  # frozen here: the workers inherit them (fork)
+    _cases(("canary", a.only), lambda: canary.corpus(a.only))
     tasks = plan(suites, a.only, a.fast)
     nw = max(1, min(a.workers, len(tasks)))
     tq, rq = mp.Queue(), mp.Queue()
@@ -808,7 +873,10 @@ def main():
         tq.put((i, t))
     for _ in range(nw):
         tq.put(None)
-    ps = [mp.Process(target=worker, args=(a.port + w, tq, rq, a.only, suites), daemon=True) for w in range(nw)]
+    ps = [mp.Process(target=worker, args=(a.port + w, tq, rq, a.only, suites, a.ram, bool(a.coverage)), daemon=True)
+          for w in range(nw)]
+    if a.ram:
+        print("run_tests: every emulator boots from power-on RAM pattern %r" % a.ram, flush=True)
     for p in ps:
         p.start()
     print("run_tests: %d tasks on %d emulators" % (len(tasks), nw), flush=True)
@@ -830,7 +898,8 @@ def main():
             if p.is_alive():
                 p.terminate()
     got.sort(key=lambda r: r["idx"])
-    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[], tape=[], float=[])
+    results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[], tape=[], float=[],
+                   poweron=[], ram=a.ram)
     failed = sum(r["failed"] for r in got)
     extra = {}
     canary_rows = []
@@ -923,6 +992,13 @@ def main():
                 for l in r["out"]:
                     if not l.startswith("float: FAIL"):
                         print(l)
+    if "poweron" in suites:
+        pr = results["poweron"]
+        pb = [x for x in pr if x["kind"] == "boot"]
+        pe = [x for x in pr if x["kind"] == "exec"]
+        print("poweron: %d patterns (%s): boot checks %d/%d pass; corpus slices from those boots %d/%d pass" % (
+            len(poweron.PATTERNS), ", ".join(poweron.PATTERNS), sum(x["ok"] for x in pb), len(pb),
+            sum(x["ok"] for x in pe), len(pe)))
     if "tape" in suites:
         tr = sorted(results["tape"], key=lambda x: x["case"])
         print("tape: %d/%d cassette cases pass" % (sum(x["ok"] for x in tr), len(tr)))
@@ -936,6 +1012,13 @@ def main():
         with open(os.path.join(ROOT, "build", "canary.json"), "w") as f:
             json.dump(dict(summary=cs, cases=canary_rows), f, indent=1)
         print(line.replace("; %.0f s" % walls.get("canary", 0), "; %.0f s of emulator time" % walls.get("canary", 0)))
+    if a.coverage:
+        cov = {}
+        for r in got:
+            img = "test" if r.get("cov_image") == "build/test" else "production"
+            cov.setdefault(img, set()).update(r.get("cov") or [])
+        json.dump({k: sorted(v) for k, v in cov.items()}, open(a.coverage, "w"))
+        print("coverage: %s (%s)" % (a.coverage, ", ".join("%s %d addresses" % (k, len(v)) for k, v in cov.items())))
     results["failed"] = failed
     results["wall_s"] = round(time.time() - t_start, 1)
     results["task_wall_s"] = {k: round(v, 1) for k, v in walls.items()}

@@ -123,7 +123,7 @@ TYPED = [
     ("runtime-error", ["int main(void)", "{", '    puts("BEFORE");', "    beep(1, 99);", "    return 0;", "}"],
      {0: "BEFORE"}, "RUNTIME ERROR 4: BAD ARGUMENT", None, False),
     ("compile-error", ["int main(void)", "{", "    int total = 0;", "    totl = 5;", "    return total;", "}"],
-     None, "ERROR 23: UNDECLARED IDENTIFIER", None, False),
+     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'totl'"), None, False),
     # Phase 8: floating point (the '.' typed on the matrix), its runtime error, a missing ';' reported at its line
     ("float", ["float area(float r)", "{", "    return 3.14159 * r * r;", "}", "int main(void)", "{",
                '    printf("%.2f %f", area(2), 1.0 / 8);', "    return area(1) * 100;", "}"],
@@ -132,6 +132,16 @@ TYPED = [
      {0: "DIVIDE"}, "RUNTIME ERROR 6: NUMBER TOO BIG", None, False),
     ("missing-semi", ["int main(void)", "{", "    int x = 1", "    return x;", "}"],
      None, ("ERROR 20: SYNTAX ERROR", "LINE 3"), None, False),
+    # Phase 9: the undeclared identifier's name on the status row: the owner's own mistake (the letter l
+    # typed for the digit 1), a name longer than the 15 characters shown, a name from a macro's body
+    ("undeclared-l", ["int main(void)", "{", "    float third = l.0 / 3;", '    printf("%f", third);',
+                      "    return 0;", "}"],
+     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 3  'l'"), None, True),
+    ("undeclared-long", ["int main(void)", "{", "    int counter_of_items = 0;",
+                         "    return counter_of_itmes + 1;", "}"],
+     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'counter_of_itme'"), None, False),
+    ("undeclared-macro", ["#define LIMIT maximum_value", "int main(void)", "{", "    return LIMIT;", "}"],
+     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'maximum_value'"), None, False),
 ]
 
 
@@ -176,7 +186,7 @@ def typed_case(name, lines, screen, report, keys, matrix):
             want = "IMAGE %d B  HEAP %d B" % (m.w16(S("SH_IMAGE_SIZE")), exectest.heap_free(m.w16(S("PROG_END"))))
             if msg[1] != want:
                 bad.append("memory report %r, expected %r" % (msg[1], want))
-        elif errline and msg[1] != "LINE %d" % errline:
+        elif errline and row23 is None and msg[1] != "LINE %d" % errline:
             bad.append("line report %r (line %d)" % (msg[1], errline))
         if row23 is not None and isinstance(msg, tuple) and msg[1] != row23:
             bad.append("row 23 %r, expected %r" % (msg[1], row23))

@@ -1,6 +1,6 @@
 # 2068-Leap-C — Specification
 
-**Version 0.10, 2026-10-21** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6-v0.9, 2026-10-20). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.11, 2026-10-21** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6-v0.9, 2026-10-20; v0.10, 2026-10-21). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
@@ -20,6 +20,8 @@
 
 **Changes in v0.10 (Phase 8, as built; `docs/milestones/M8.md`):** floating point in Release 1: `float` and `double` as one 5-byte type, floating constants, conversions, expressions, arguments and results, `printf`'s `%f` (§4.1-§4.4, §4.6, §4.9, §5.1-§5.3, §5.8, §5.9, §7). The V2 FP calculator is re-engineered into the float core, which replaces it (§2.1 platform delta D10, §2.2). Cold compiler parts move to the EXROM and two groups of editor-only platform routines with them (deltas D11, D12; §2.1, §2.2). Initialisers: braces around an automatic scalar's (§4.7). Diagnostics: a missing token is reported at the line it belongs to (§6.3). The documentation's examples are tests (§11, `docs/EXAMPLES.md`).
 
+**Changes in v0.11 (Phase 9, as built; `docs/milestones/M9.md`):** emulator qualification on ZEsarUX and Fuse, and the hardware kit. The font tells the digit `1` from the letter `l` (§2.1 platform delta D13). An undeclared identifier's report names it (§6.3). A report or message waits for a key pressed after any held key's release (§6.1, §6.3). The cold start clears the UDG table, so codes 144-164 show as spaces from any power-on RAM (§3.1, §7). The bank switch keeps interrupts on, so float code no longer loses frame interrupts (§2.1 platform delta D14, §7). A frame is 1/60 s on a TS2068; ZEsarUX 13.0 emulates 50 Hz (§7, §10). The validation adds power-on RAM patterns, Fuse, a timing comparison, ROM coverage and the hardware kit (§10, §11). Budgets (§2.2: ledger L56-L60).
+
 **What is fixed and what is tuned:**
 
 - Values marked **baseline** are the starting design. They are tuned *with measurements* during implementation; see `project_plan.md`.
@@ -28,13 +30,13 @@
 
 **Terms:**
 
-| Term | Meaning |
-|---|---|
-| **HOME** | the 16 KB replacement HOME ROM, always mapped at `$0000-$3FFF` |
-| **EXROM** | the 8 KB replacement extension ROM, mapped into chunk 6 (`$C000-$DFFF`) only while paged in |
-| **Chunk 6** | the address range `$C000-$DFFF`: EXROM when paged in, RAM when paged out |
-| **Platform** | the reusable services taken from frozen Leap V2 |
-| **V2 reference** | Leap V2 release `v2.0.1-emu.1` (`d19b9ea`, HOME `3f13ec2c…`, EXROM `24b1ebb0…`) |
+| Term             | Meaning                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| **HOME**         | the 16 KB replacement HOME ROM, always mapped at `$0000-$3FFF`                              |
+| **EXROM**        | the 8 KB replacement extension ROM, mapped into chunk 6 (`$C000-$DFFF`) only while paged in |
+| **Chunk 6**      | the address range `$C000-$DFFF`: EXROM when paged in, RAM when paged out                    |
+| **Platform**     | the reusable services taken from frozen Leap V2                                             |
+| **V2 reference** | Leap V2 release `v2.0.1-emu.1` (`d19b9ea`, HOME `3f13ec2c…`, EXROM `24b1ebb0…`)             |
 
 ---
 
@@ -82,22 +84,22 @@ It replaces Leap V2's BASIC-specific components (compiler, VM, BASIC shell parts
 
 Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTREAM.md` pins the commit, and every Leap-C modification is listed as a delta.
 
-| Module | V2 size | Bank | Leap-C status |
-|---|---:|---|---|
-| Graphics: text, attributes, scrolling, pixels, line, sprite capture/draw, font | 2,071 | HOME | kept. **Delta D12 (v0.10):** the editor's bold and string output (`GFX_PUTCHAR_BOLD`, `GFX_PRINT_STRING`, 32 B; the EXROM editor is their only caller) assembled in the EXROM, conditional assembly only. **Delta D8 (v0.7):** 8 glyphs `[ ] { } \| ~ ^ \` and their punctuation-table entries (§6.2; 80 B). **Delta D6 (v0.6):** V2's sprite-slot invalidation removed (no sprite slots in Leap-C; 25 B) |
-| Memory: line store, fill, shift, cold init | 485 | HOME | kept. **Delta:** re-pointed to the Leap-C memory map (§3); **D5 (v0.6):** `MEM_INIT` no longer clears V2's string-pool, package and sprite-slot cells (25 B); **D11 (v0.10):** the editor's insert and range delete (`MEM_LINE_INSERT`, `MEM_LINE_DELETE_RANGE`, 144 B) assembled in the EXROM, conditional assembly only |
-| Keyboard I/O | 434 | HOME | kept. **Delta D7 (v0.7):** symbol-shift map for the 8 C characters (§6.2), in place in the table; SYMBOL SHIFT + A/S no longer give V2's error-navigation codes, which no Leap-C code handles (−19 B) |
-| 16-bit math (`MATH_NEGATE16`, `ABS16`, `COMPARE16`) | 390 → 39 | HOME | **Delta D3 (v0.3):** multiply and divide moved to the helper core's register-only routines (§5.3); `SQRT16`, `SGN16`, `MULTIPLY16` removed (no Release 1 caller); `RND16` replaced by the library's `rand()` (§7) |
-| Interrupt (IM 1, `FRAMES`, keyboard scan) | 154 | HOME | kept. **Delta D4 (v0.5):** BREAK request for native programs (§5.8): V2's BREAK latch (14 B) replaced by a call to the runtime (8 B) |
-| Bank switching (`BANK_PAGE_EXROM_IN/OUT`, depth-counted) | 46 | HOME | kept unchanged |
-| AY beep (HOME part) | 58 | HOME | kept |
-| `FOLD_UPPER` (was in the BASIC compiler) | 9 → 0 | HOME | not built: C is case-sensitive and nothing calls it |
-| Editor engine | 737 | EXROM | kept unchanged |
-| Tape: `STORAGE_*` | 793 | EXROM | kept. **Delta D9 (v0.9, Phase 7):** block send/receive (331 B, byte for byte) assembled in HOME, the header logic (`STORAGE_SAVE`, `STORAGE_LOAD`, version word, progress) in the EXROM: conditional assembly only (§8.3) |
-| Shell: editor/screen glue, command loop, tape commands, messages, chime, entry slots | 2,754 | EXROM | adapted into the Leap-C shell; BASIC-only parts removed (v0.7, Phase 5: §6.1) |
-| Integer formatting | 79 | EXROM | kept |
-| Sound, AY beep (EXROM part) | 59 | EXROM | kept |
-| FP calculator + float formatting | 2,165 | EXROM | **v0.10: re-engineered into the float core** (`src/runtime/fpcore.asm`, 1,464 B, §4.9), which replaces it: the calculator is no longer assembled, and V2's float formatting is left out by **delta D10** (conditional assembly; the integer formatting stays) |
+| Module                                                                               | V2 size  | Bank  | Leap-C status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------ | --------:| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Graphics: text, attributes, scrolling, pixels, line, sprite capture/draw, font       | 2,071    | HOME  | kept. **Delta D13 (v0.11, owner-approved):** the glyphs of the digit `1` (a flag and a full base) and the letter `l` (a tail, no base), which V2's font drew two pixels apart; data only. **Delta D12 (v0.10):** the editor's bold and string output (`GFX_PUTCHAR_BOLD`, `GFX_PRINT_STRING`, 32 B; the EXROM editor is their only caller) assembled in the EXROM, conditional assembly only. **Delta D8 (v0.7):** 8 glyphs `[ ] { } \| ~ ^ \` and their punctuation-table entries (§6.2; 80 B). **Delta D6 (v0.6):** V2's sprite-slot invalidation removed (no sprite slots in Leap-C; 25 B) |
+| Memory: line store, fill, shift, cold init                                           | 485      | HOME  | kept. **Delta:** re-pointed to the Leap-C memory map (§3); **D5 (v0.6):** `MEM_INIT` no longer clears V2's string-pool, package and sprite-slot cells (25 B); **D11 (v0.10):** the editor's insert and range delete (`MEM_LINE_INSERT`, `MEM_LINE_DELETE_RANGE`, 144 B) assembled in the EXROM, conditional assembly only                                                                                                                                                                                                                                                                     |
+| Keyboard I/O                                                                         | 434      | HOME  | kept. **Delta D7 (v0.7):** symbol-shift map for the 8 C characters (§6.2), in place in the table; SYMBOL SHIFT + A/S no longer give V2's error-navigation codes, which no Leap-C code handles (−19 B)                                                                                                                                                                                                                                                                                                                                                                                         |
+| 16-bit math (`MATH_NEGATE16`, `ABS16`, `COMPARE16`)                                  | 390 → 39 | HOME  | **Delta D3 (v0.3):** multiply and divide moved to the helper core's register-only routines (§5.3); `SQRT16`, `SGN16`, `MULTIPLY16` removed (no Release 1 caller); `RND16` replaced by the library's `rand()` (§7)                                                                                                                                                                                                                                                                                                                                                                             |
+| Interrupt (IM 1, `FRAMES`, keyboard scan)                                            | 154      | HOME  | kept. **Delta D4 (v0.5):** BREAK request for native programs (§5.8): V2's BREAK latch (14 B) replaced by a call to the runtime (8 B)                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Bank switching (`BANK_PAGE_EXROM_IN/OUT`, depth-counted)                             | 44       | HOME  | kept. **Delta D14 (v0.11):** no `di` (each `ei` stays). With interrupts off for about 120 T, longer than the TS2068's 32 T INT, float code (a page-in and page-out per operation) lost about 1% of the frame interrupts (`FRAMES`); found on Fuse                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| AY beep (HOME part)                                                                  | 58       | HOME  | kept                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `FOLD_UPPER` (was in the BASIC compiler)                                             | 9 → 0    | HOME  | not built: C is case-sensitive and nothing calls it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Editor engine                                                                        | 737      | EXROM | kept unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Tape: `STORAGE_*`                                                                    | 793      | EXROM | kept. **Delta D9 (v0.9, Phase 7):** block send/receive (331 B, byte for byte) assembled in HOME, the header logic (`STORAGE_SAVE`, `STORAGE_LOAD`, version word, progress) in the EXROM: conditional assembly only (§8.3)                                                                                                                                                                                                                                                                                                                                                                     |
+| Shell: editor/screen glue, command loop, tape commands, messages, chime, entry slots | 2,754    | EXROM | adapted into the Leap-C shell; BASIC-only parts removed (v0.7, Phase 5: §6.1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Integer formatting                                                                   | 79       | EXROM | kept                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Sound, AY beep (EXROM part)                                                          | 59       | EXROM | kept                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| FP calculator + float formatting                                                     | 2,165    | EXROM | **v0.10: re-engineered into the float core** (`src/runtime/fpcore.asm`, 1,464 B, §4.9), which replaces it: the calculator is no longer assembled, and V2's float formatting is left out by **delta D10** (conditional assembly; the integer formatting stays)                                                                                                                                                                                                                                                                                                                                 |
 
 **Removed:**
 
@@ -116,35 +118,35 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 
 **HOME (16,384 B):**
 
-| Component | Budget |
-|---|---:|
-| Page zero (reset, RST vectors and helper bodies that fit, IM 1, NMI), cold start, trampolines | 160 |
-| Retained platform (graphics, memory, keyboard, math, interrupt, bank, AY) incl. deltas | 3,800 |
-| Tape block send/receive (moved from EXROM in Phase 7) | 340 |
-| **Compiler:** lexer + source streaming + keyword table | 1,100 |
-| **Compiler:** declarations and type system | 2,000 |
-| **Compiler:** scoped symbol table | 800 |
-| **Compiler:** typed expressions | 1,800 |
-| **Compiler:** code generator (templates, fixups, constant folding) | 1,200 |
-| **Compiler:** statements and functions | 1,400 |
-| **Compiler:** preprocessor (object-like `#define`) | 300 |
-| **Runtime:** helper core (§5.3) | 500 |
-| **Runtime:** library (§7) | 1,300 |
-| **Runtime:** start, exit, BREAK, runtime errors | 200 |
-| **Allocated** | **14,900** |
-| **Reserve** | **1,484** |
+| Component                                                                                     | Budget     |
+| --------------------------------------------------------------------------------------------- | ----------:|
+| Page zero (reset, RST vectors and helper bodies that fit, IM 1, NMI), cold start, trampolines | 160        |
+| Retained platform (graphics, memory, keyboard, math, interrupt, bank, AY) incl. deltas        | 3,800      |
+| Tape block send/receive (moved from EXROM in Phase 7)                                         | 340        |
+| **Compiler:** lexer + source streaming + keyword table                                        | 1,100      |
+| **Compiler:** declarations and type system                                                    | 2,000      |
+| **Compiler:** scoped symbol table                                                             | 800        |
+| **Compiler:** typed expressions                                                               | 1,800      |
+| **Compiler:** code generator (templates, fixups, constant folding)                            | 1,200      |
+| **Compiler:** statements and functions                                                        | 1,400      |
+| **Compiler:** preprocessor (object-like `#define`)                                            | 300        |
+| **Runtime:** helper core (§5.3)                                                               | 500        |
+| **Runtime:** library (§7)                                                                     | 1,300      |
+| **Runtime:** start, exit, BREAK, runtime errors                                               | 200        |
+| **Allocated**                                                                                 | **14,900** |
+| **Reserve**                                                                                   | **1,484**  |
 
 **EXROM (8,192 B):**
 
-| Component | Budget |
-|---|---:|
-| Retained platform (editor engine, tape headers, integer formatting, sound) | 1,340 |
-| Leap-C shell (adapted editor glue, command loop, tape commands, messages, chime, entry slots) | 2,900 |
-| C keyword highlighting table | 250 |
-| Compiler diagnostics (message texts, error reporting) | 650 |
-| FP calculator + float formatting (optional component; §4.9) | 2,165 |
-| **Allocated** | **7,305** |
-| **Reserve** | **887** |
+| Component                                                                                     | Budget    |
+| --------------------------------------------------------------------------------------------- | ---------:|
+| Retained platform (editor engine, tape headers, integer formatting, sound)                    | 1,340     |
+| Leap-C shell (adapted editor glue, command loop, tape commands, messages, chime, entry slots) | 2,900     |
+| C keyword highlighting table                                                                  | 250       |
+| Compiler diagnostics (message texts, error reporting)                                         | 650       |
+| FP calculator + float formatting (optional component; §4.9)                                   | 2,165     |
+| **Allocated**                                                                                 | **7,305** |
+| **Reserve**                                                                                   | **887**   |
 
 **Bank rules (fixed):**
 
@@ -153,23 +155,25 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 3. The compiler core runs in **HOME with chunk 6 paged out**, because it writes the program image there. EXROM-resident compiler parts (diagnostics) run only through a trampoline and never touch chunk 6.
 4. The editor and shell run in **EXROM**. While they run, chunk 6 RAM is invisible.
 
+**As built (v0.11): budgets.** After Phase 9 (ledger L56-L60): HOME 15,796 B allocated, **reserve 588 B** (floor 512 B): page zero +12 B (`COLD_CLEAR`, §3.1), the float runtime −9 B (`F_POP`, which had no caller, found by the ROM coverage), the bank switch −2 B (delta D14, §2.1); EXROM 7,881 B allocated, **reserve 311 B** (floor 256 B): the shell +44 B (the undeclared identifier's name, §6.3; the key wait after a report, §6.1), the constant folding −22 B (`XC_FOLD`'s `&&` and `||`, which could not run, found by the ROM coverage).
+
 **As built (v0.10): budgets.** `budget.toml` holds every component's budget, with the ledger of measured changes (L1-L55). After Phase 8: HOME 15,795 B allocated (the float runtime 145 B, the compiler 10,155 B, the platform 3,124 B), **reserve 589 B** (floor 512 B); EXROM 7,859 B allocated (the float core 1,464 B, the EXROM-resident compiler parts 1,481 B), **reserve 333 B** (floor 256 B). Bank rule 3's EXROM-resident compiler parts now include the keyword lookup and its table, `TY_EQUAL`, the library's binding, the directive processor (`#define`, `#undef`, `#include`, `#pragma`) and the float core's compile-time work (floating constants, constant float expressions): HOME reaches them through `CX_XCALL` and `CX_FOLD`, which page the EXROM in through the depth count; none touches chunk 6.
 
 **As built (v0.9): tape blocks.** The EXROM's header logic reaches HOME's block I/O through the trampoline `TAPE_BLOCK` (page zero's trampoline budget, 14 B): it pages the EXROM out through the depth count for the one block and in again after it, so every block moves with chunk 6 = RAM, whether the shell or a program started the transfer. The stack stays outside chunk 6 (rule 2). The test harness checks this as a banking invariant on every transfer: HOME's `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK` never run with the EXROM paged in.
 
 ### 2.3 Page zero and RST assignment (baseline)
 
-| Vector | Use | Body placement |
-|---|---|---|
-| `$00` | reset → cold start | fixed |
-| `$08` | `LDI` (HL = word at HL) | body in the slot (5 B) |
-| `$10` | `STI` (word at DE = HL; HL kept) | body in the slot (6 B) |
-| `$18` | `ENTER n` (frame setup, stack check) | starts in the slot, `jp` to the rest |
-| `$20` | `LEAVE` (frame teardown, return) | body in the slot (5 B) |
-| `$28` | `CMPLT` (signed DE < HL → carry) | `jp` to the body |
-| `$30` | **v0.7:** `LEX_NEXT`, the compiler's next token (owner decision, Phase 5). Was reserved for `LDL`/`STL` of the optional size template set (§5.6) | `jp` to the body |
-| `$38` | IM 1 interrupt (`call KBD_ISR_TICK; ei; reti`) | fixed |
-| `$66` | NMI | fixed |
+| Vector | Use                                                                                                                                              | Body placement                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| `$00`  | reset → cold start                                                                                                                               | fixed                                |
+| `$08`  | `LDI` (HL = word at HL)                                                                                                                          | body in the slot (5 B)               |
+| `$10`  | `STI` (word at DE = HL; HL kept)                                                                                                                 | body in the slot (6 B)               |
+| `$18`  | `ENTER n` (frame setup, stack check)                                                                                                             | starts in the slot, `jp` to the rest |
+| `$20`  | `LEAVE` (frame teardown, return)                                                                                                                 | body in the slot (5 B)               |
+| `$28`  | `CMPLT` (signed DE < HL → carry)                                                                                                                 | `jp` to the body                     |
+| `$30`  | **v0.7:** `LEX_NEXT`, the compiler's next token (owner decision, Phase 5). Was reserved for `LDL`/`STL` of the optional size template set (§5.6) | `jp` to the body                     |
+| `$38`  | IM 1 interrupt (`call KBD_ISR_TICK; ei; reti`)                                                                                                   | fixed                                |
+| `$66`  | NMI                                                                                                                                              | fixed                                |
 
 Measured costs:
 
@@ -191,19 +195,19 @@ Two principles:
 
 The baseline moves the system variables to `$5B00` (assembly-time relocation; the kernel is symbolic apart from literals such as `MEM_COLD_INIT`'s `$8000`, which become symbols). That leaves one contiguous source region above the second display file.
 
-| Range | Bytes | Use | Visible |
-|---|---:|---|---|
-| `$4000-$5AFF` | 6,912 | display file 1 + attributes | always |
-| `$5B00-$5D59` | 602 | kernel system variables (V2 layout, relocated) | always |
-| `$5D5A-$5FFF` | 678 | Leap-C fixed cells: shell/editor state, compiler state, 264-B source chunk window, runtime cells | always |
-| `$6000-$77FF` | 6,144 | display file 2 (dual-screen/hi-res mode) **or** program-image overflow | always |
-| `$7800-$BFFF` | 18,432 | **source store ↑** (line records); compile workspace ↓ (compile); heap (run) | always |
-| `$C000-$DFFF` | 8,192 | **program image region 1** (chunk 6: code ↑ from `$C000`, static data ↓ from `$DFFF`) | EXROM paged out |
-| `$E000-$F17F` | 4,480 | program image region 2 | always |
-| `$F180-$F3FF` | 640 | UDGs, edit buffer, misc. platform cells (V2 addresses) | always |
-| `$F400-$F7FF` | 1,024 | program image region 3 (no V2 packages) | always |
-| `$F800-$FEFF` | 1,792 | machine stack (top `$FF00`); C locals live here | always |
-| `$FF00-$FFFF` | 256 | unused by the ROM (test harness return slot) | always |
+| Range         | Bytes  | Use                                                                                              | Visible         |
+| ------------- | ------:| ------------------------------------------------------------------------------------------------ | --------------- |
+| `$4000-$5AFF` | 6,912  | display file 1 + attributes                                                                      | always          |
+| `$5B00-$5D59` | 602    | kernel system variables (V2 layout, relocated)                                                   | always          |
+| `$5D5A-$5FFF` | 678    | Leap-C fixed cells: shell/editor state, compiler state, 264-B source chunk window, runtime cells | always          |
+| `$6000-$77FF` | 6,144  | display file 2 (dual-screen/hi-res mode) **or** program-image overflow                           | always          |
+| `$7800-$BFFF` | 18,432 | **source store ↑** (line records); compile workspace ↓ (compile); heap (run)                     | always          |
+| `$C000-$DFFF` | 8,192  | **program image region 1** (chunk 6: code ↑ from `$C000`, static data ↓ from `$DFFF`)            | EXROM paged out |
+| `$E000-$F17F` | 4,480  | program image region 2                                                                           | always          |
+| `$F180-$F3FF` | 640    | UDGs, edit buffer, misc. platform cells (V2 addresses)                                           | always          |
+| `$F400-$F7FF` | 1,024  | program image region 3 (no V2 packages)                                                          | always          |
+| `$F800-$FEFF` | 1,792  | machine stack (top `$FF00`); C locals live here                                                  | always          |
+| `$FF00-$FFFF` | 256    | unused by the ROM (test harness return slot)                                                     | always          |
 
 **Fallback layout B.** If the relocation meets a concrete blocker in Phase 4, the system variables stay at `$8000` and the source starts at `$825A`. The image regions are unchanged.
 
@@ -211,12 +215,12 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 
 **As built (v0.6, final).** Baseline layout A is final: the relocation met no blocker (M1.1), so fallback B is not used. What each range holds:
 
-| Range | Holds (measured, `docs/milestones/M4.md`) |
-|---|---|
-| `$5B00-$5D59` | the platform system variables (602 B) |
-| `$5D5A-$5FFF` | the Leap-C cells: 504 B used (`LEAPC_CELLS_END` `$5F52`; v0.7: the shell's 63 B; v0.8: the report's 35 B; v0.9: the tape's 14 B: `TAPE_NAME`, `TAPE_ABORT`, `TAPE_DEST`; v0.10: the float accumulator `F_ACC` 6 B and the previous token's line `TOK_PLINE` 2 B), 174 B free. The float core works in the platform's calculator variables (`CALC_STACK`, 40 B), which nothing else uses since the calculator is gone |
-| `$F180-$F3FF` | the V2 platform cells Leap-C keeps at their V2 addresses: `UDG_TABLE` (`$F180`, 168 B), `EDIT_LINE_BUF` (`$F228`, 128 B), `GFX_LINE_X0..Y1` (`$F3C4`, 4 B). The other 340 B are V2 cells nothing in Leap-C uses |
-| `$F800-$FEFF` | the stack; `ENTER`'s floor `$F900` (§5.3) |
+| Range         | Holds (measured, `docs/milestones/M4.md`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$5B00-$5D59` | the platform system variables (602 B)                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `$5D5A-$5FFF` | the Leap-C cells: 504 B used (`LEAPC_CELLS_END` `$5F52`; v0.7: the shell's 63 B; v0.8: the report's 35 B; v0.9: the tape's 14 B: `TAPE_NAME`, `TAPE_ABORT`, `TAPE_DEST`; v0.10: the float accumulator `F_ACC` 6 B and the previous token's line `TOK_PLINE` 2 B), 174 B free. The float core works in the platform's calculator variables (`CALC_STACK`, 40 B), which nothing else uses since the calculator is gone                                                                                     |
+| `$F180-$F3FF` | the V2 platform cells Leap-C keeps at their V2 addresses: `UDG_TABLE` (`$F180`, 168 B), `EDIT_LINE_BUF` (`$F228`, 128 B), `GFX_LINE_X0..Y1` (`$F3C4`, 4 B). The other 340 B are V2 cells nothing in Leap-C uses. (v0.11) The cold start clears `UDG_TABLE` as well as `$5B00-$BFFF` (`COLD_CLEAR`), so every byte the ROM reads after a boot is defined whatever the RAM held at power-on: from eight power-on patterns the idle prompt's RAM is the zeroed-RAM boot's, to the byte (`tools/poweron.py`) |
+| `$F800-$FEFF` | the stack; `ENTER`'s floor `$F900` (§5.3)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 **The layout guard.** `make check` proves from the listings that every RAM address the HOME and EXROM code references is a system variable or Leap-C cell, a display-file-1 constant, one of the platform cells above, a region boundary or an EXROM label; a cell anywhere else (source region, image region, stack, `$FF00-$FFFF`, an unused V2 cell) fails the build (`tools/check_ram_layout.py`, with 8 negative controls). `make test` runs a RAM canary over the whole corpus (`tools/canary.py`): neither the compile nor the run writes outside the RAM this map gives them.
 
@@ -298,19 +302,19 @@ Leap-C Release 1 is a **documented subset of C89**, roughly Small-C 2.1 plus `un
 
 ### 4.2 Types
 
-| Type | Size | Notes |
-|---|---:|---|
-| `char` | 1 | **unsigned** (Z80-cheap zero-extension). `signed char` / `unsigned char` accepted; `signed char` sign-extends on promotion |
-| `int`, `short`, `signed` | 2 | two's complement, wraparound |
-| `unsigned`, `unsigned int`, `unsigned short` | 2 | |
-| pointers | 2 | flat 16-bit address space; no far pointers |
-| `void` | — | function results, `void *` |
-| arrays | n × element | any element type, including arrays (multi-dimensional) and structs |
-| `struct` | sum of members | no padding (byte-aligned); members of any complete type; self-referential via pointers |
-| `enum` | 2 | constants are `int` |
-| `float`, `double` (v0.10) | 5 | one type: the Sinclair 5-byte floating format, about 9.6 significant digits, magnitudes to about 1.7E38 (§4.9). `long double` is not supported |
-| function | — | definitions, prototypes, pointers to functions |
-| `typedef` | — | names for any of the above |
+| Type                                         | Size           | Notes                                                                                                                                          |
+| -------------------------------------------- | --------------:| ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `char`                                       | 1              | **unsigned** (Z80-cheap zero-extension). `signed char` / `unsigned char` accepted; `signed char` sign-extends on promotion                     |
+| `int`, `short`, `signed`                     | 2              | two's complement, wraparound                                                                                                                   |
+| `unsigned`, `unsigned int`, `unsigned short` | 2              |                                                                                                                                                |
+| pointers                                     | 2              | flat 16-bit address space; no far pointers                                                                                                     |
+| `void`                                       | —              | function results, `void *`                                                                                                                     |
+| arrays                                       | n × element    | any element type, including arrays (multi-dimensional) and structs                                                                             |
+| `struct`                                     | sum of members | no padding (byte-aligned); members of any complete type; self-referential via pointers                                                         |
+| `enum`                                       | 2              | constants are `int`                                                                                                                            |
+| `float`, `double` (v0.10)                    | 5              | one type: the Sinclair 5-byte floating format, about 9.6 significant digits, magnitudes to about 1.7E38 (§4.9). `long double` is not supported |
+| function                                     | —              | definitions, prototypes, pointers to functions                                                                                                 |
+| `typedef`                                    | —              | names for any of the above                                                                                                                     |
 
 **Qualifiers:**
 
@@ -354,14 +358,14 @@ All C89 operators except those on unsupported types:
 
 **Implementation-defined choices:**
 
-| Operation | Behaviour |
-|---|---|
-| Signed `/` | truncates toward zero; the sign of `%` follows the dividend |
-| Division by zero | quotient 0, remainder 0 (the ROM math routines); no trap |
-| `>>` on a signed value | arithmetic shift |
-| Signed overflow | wraps |
+| Operation                                            | Behaviour                                                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Signed `/`                                           | truncates toward zero; the sign of `%` follows the dividend                                   |
+| Division by zero                                     | quotient 0, remainder 0 (the ROM math routines); no trap                                      |
+| `>>` on a signed value                               | arithmetic shift                                                                              |
+| Signed overflow                                      | wraps                                                                                         |
 | Floating overflow, floating division by zero (v0.10) | runtime error 6, `NUMBER TOO BIG`; in a constant expression, compile error `NUMBER TOO LARGE` |
-| Floating underflow (v0.10) | 0 |
+| Floating underflow (v0.10)                           | 0                                                                                             |
 
 ### 4.5 Statements
 
@@ -435,42 +439,42 @@ Until v0.9 floating point was an optional component deferred to an owner decisio
 
 ### 4.10 Limits (baseline; all memory-bound unless stated)
 
-| Item | Limit |
-|---|---|
-| Identifier significance | 31 characters |
-| Line length | 127 characters |
-| Nesting depth (blocks, expressions) | bounded by the compiler's stack guard; at least 32 levels guaranteed (measured, v0.6: §4.10.1) |
-| Function parameters | 16 |
-| Argument words pending at once (v0.6) | 32: the arguments a call pushes and those already pushed by the calls whose arguments contain it ("nesting too deep"). A single call to a function without a prototype (or `printf`) can pass 32 words. It bounds the stack between two frame checks (§3.2). (v0.10) A float argument, and a float operand held while another is computed, counts 3 words |
-| Local frame size | 255 bytes (8-bit frame offsets; larger locals → "frame too large"; use `static` or the heap). A float local takes 5 bytes |
-| `switch` cases | memory-bound (6 B of compile workspace per case) |
-| Macro expansions nested in one another | 8 ("nesting too deep") |
-| Tokens produced by one macro expansion, nested ones included | 255 ("nesting too deep") |
-| String literal length | one line, 126 characters (adjacent literals concatenate) |
+| Item                                                         | Limit                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identifier significance                                      | 31 characters                                                                                                                                                                                                                                                                                                                                             |
+| Line length                                                  | 127 characters                                                                                                                                                                                                                                                                                                                                            |
+| Nesting depth (blocks, expressions)                          | bounded by the compiler's stack guard; at least 32 levels guaranteed (measured, v0.6: §4.10.1)                                                                                                                                                                                                                                                            |
+| Function parameters                                          | 16                                                                                                                                                                                                                                                                                                                                                        |
+| Argument words pending at once (v0.6)                        | 32: the arguments a call pushes and those already pushed by the calls whose arguments contain it ("nesting too deep"). A single call to a function without a prototype (or `printf`) can pass 32 words. It bounds the stack between two frame checks (§3.2). (v0.10) A float argument, and a float operand held while another is computed, counts 3 words |
+| Local frame size                                             | 255 bytes (8-bit frame offsets; larger locals → "frame too large"; use `static` or the heap). A float local takes 5 bytes                                                                                                                                                                                                                                 |
+| `switch` cases                                               | memory-bound (6 B of compile workspace per case)                                                                                                                                                                                                                                                                                                          |
+| Macro expansions nested in one another                       | 8 ("nesting too deep")                                                                                                                                                                                                                                                                                                                                    |
+| Tokens produced by one macro expansion, nested ones included | 255 ("nesting too deep")                                                                                                                                                                                                                                                                                                                                  |
+| String literal length                                        | one line, 126 characters (adjacent literals concatenate)                                                                                                                                                                                                                                                                                                  |
 
 #### 4.10.1 Measured capacity (v0.6)
 
 Measured on the production ROM (`tools/capacity.py`, `make capacity`; every limit is a verified pair: the largest that compiles or runs, and one more that fails with the error shown):
 
-| Item | Measured limit | One more |
-|---|---|---|
-| Source, minimal program (comments and `main`) | 18,412 B of line store (`PROG_END` $BFEC); workspace 20 B | E_NOMEM |
-| Source, typical program (76 modules: a global array, a function with a loop, locals, a call) | 15,087 B of line store, 851 lines (13,385 B of text); workspace 3,255 B; image 11,059 B of code, 1,678 B of data; compile 8.38 ms per line | E_NOMEM |
-| Image: code (macro-expanded statements, 43 functions) | 19,411 B of code and 266 B of data of 19,840 B (region 1: 8,074 code, 116 data, 2 free; region 2: 4,419 code, 60 data, 1 free; region 3: 1,010 code, 12 data, 2 free; region 4: 5,908 code, 78 data, 158 free) | E_TOOBIG |
-| Image: the largest single object | 8,192 B (region 1; an object never spans regions) | E_TOOBIG |
-| Image: all static data, with a minimal program | 19,817 B | E_TOOBIG |
-| Recursion: reference: 1 int parameter, 1 int local | 190 levels from `main` | stack overflow (runtime error 1) |
-| Recursion: no parameter, no local | 381 levels from `main` | stack overflow (runtime error 1) |
-| Recursion: 4 int parameters, 10 int locals | 47 levels from `main` | stack overflow (runtime error 1) |
-| Heap: the largest block, minimal program | 18,316 B (first block's data at $7872) | NULL |
-| Heap: the largest block with a large source | 234 B (18,193 B of source, 300 B below the minimal program's limit; at the limit itself 16 B) | NULL |
-| Nesting: parentheses | 112 levels | E_NESTING |
-| Nesting: held operands | 60 levels | E_NESTING |
-| Nesting: blocks | 154 levels | E_NESTING |
-| Nesting: if | 386 levels | E_NESTING |
-| Nesting: while | 193 levels | E_NESTING |
-| Nesting: nested calls | 60 levels | E_NESTING |
-| Nesting: struct members | 274 levels | E_NOMEM |
+| Item                                                                                         | Measured limit                                                                                                                                                                                                 | One more                         |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Source, minimal program (comments and `main`)                                                | 18,412 B of line store (`PROG_END` $BFEC); workspace 20 B                                                                                                                                                      | E_NOMEM                          |
+| Source, typical program (76 modules: a global array, a function with a loop, locals, a call) | 15,087 B of line store, 851 lines (13,385 B of text); workspace 3,255 B; image 11,059 B of code, 1,678 B of data; compile 8.38 ms per line                                                                     | E_NOMEM                          |
+| Image: code (macro-expanded statements, 43 functions)                                        | 19,411 B of code and 266 B of data of 19,840 B (region 1: 8,074 code, 116 data, 2 free; region 2: 4,419 code, 60 data, 1 free; region 3: 1,010 code, 12 data, 2 free; region 4: 5,908 code, 78 data, 158 free) | E_TOOBIG                         |
+| Image: the largest single object                                                             | 8,192 B (region 1; an object never spans regions)                                                                                                                                                              | E_TOOBIG                         |
+| Image: all static data, with a minimal program                                               | 19,817 B                                                                                                                                                                                                       | E_TOOBIG                         |
+| Recursion: reference: 1 int parameter, 1 int local                                           | 190 levels from `main`                                                                                                                                                                                         | stack overflow (runtime error 1) |
+| Recursion: no parameter, no local                                                            | 381 levels from `main`                                                                                                                                                                                         | stack overflow (runtime error 1) |
+| Recursion: 4 int parameters, 10 int locals                                                   | 47 levels from `main`                                                                                                                                                                                          | stack overflow (runtime error 1) |
+| Heap: the largest block, minimal program                                                     | 18,316 B (first block's data at $7872)                                                                                                                                                                         | NULL                             |
+| Heap: the largest block with a large source                                                  | 234 B (18,193 B of source, 300 B below the minimal program's limit; at the limit itself 16 B)                                                                                                                  | NULL                             |
+| Nesting: parentheses                                                                         | 112 levels                                                                                                                                                                                                     | E_NESTING                        |
+| Nesting: held operands                                                                       | 60 levels                                                                                                                                                                                                      | E_NESTING                        |
+| Nesting: blocks                                                                              | 154 levels                                                                                                                                                                                                     | E_NESTING                        |
+| Nesting: if                                                                                  | 386 levels                                                                                                                                                                                                     | E_NESTING                        |
+| Nesting: while                                                                               | 193 levels                                                                                                                                                                                                     | E_NESTING                        |
+| Nesting: nested calls                                                                        | 60 levels                                                                                                                                                                                                      | E_NESTING                        |
+| Nesting: struct members                                                                      | 274 levels                                                                                                                                                                                                     | E_NOMEM                          |
 
 - **The source region is the binding limit for ordinary programs.** Source and compile workspace share `$7800-$BFFF` (18,432 B); the image has its own 19,840 B. The typical program above reaches *out of memory* with 12.7 KB of image, so about 7 KB of image stays unused. (The feasibility study's 21.5 KB assumed source and code shared one pool.) Its workspace is about 43 B per module; per declaration: 13 B for a global scalar, a local or a struct member (with a 4-character name), 20 B for an array, 24 B for a two-parameter prototype.
 - Locals are on the stack: frames from `main` down to `$F900` (1,522 B from the harness's call; the shell's own frames reduce it slightly).
@@ -482,15 +486,15 @@ Measured on the production ROM (`tools/capacity.py`, `make capacity`; every limi
 
 ### 5.1 Registers
 
-| Register | Role |
-|---|---|
-| HL | primary accumulator, return value (`char` in L with H = 0, or H = sign for `signed char`) |
-| `F_ACC` (a 5-byte RAM cell, v0.10) | the floating accumulator: a float value being computed, and a function's float result |
-| DE | secondary operand |
-| BC, A, flags | scratch |
-| IX | frame base |
-| IY | reserved (unused by compiled code and the kernel) |
-| Alternate set | unused by compiled code. Library routines may use `AF'` within a call (v0.5); nothing keeps a value there |
+| Register                           | Role                                                                                                      |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| HL                                 | primary accumulator, return value (`char` in L with H = 0, or H = sign for `signed char`)                 |
+| `F_ACC` (a 5-byte RAM cell, v0.10) | the floating accumulator: a float value being computed, and a function's float result                     |
+| DE                                 | secondary operand                                                                                         |
+| BC, A, flags                       | scratch                                                                                                   |
+| IX                                 | frame base                                                                                                |
+| IY                                 | reserved (unused by compiled code and the kernel)                                                         |
+| Alternate set                      | unused by compiled code. Library routines may use `AF'` within a call (v0.5); nothing keeps a value there |
 
 The V2 kernel uses no IX/IY (verified).
 
@@ -517,22 +521,22 @@ Calls through a function pointer use `call CALLHL` (`jp (hl)`).
 
 Measured in the code-shape spike unless marked:
 
-| Helper | Entry | Contract |
-|---|---|---|
-| `LDI` | RST `$08` | HL = (HL); destroys A |
-| `STI` | RST `$10` | (DE) = HL; HL kept; DE = address + 1 |
-| `ENTER n` | RST `$18` + byte | push IX; IX = SP; SP -= n; **stack check** against `STACK_LIMIT` (runtime error *stack overflow*). As built (v0.6): the new SP is checked before SP moves, against the page-aligned floor `LEAPC_RT_STACK_FLOOR` = `$F900` (the margin above `$F800` covers what runs between two frame checks, §3.2) |
-| `LEAVE` | RST `$20` | SP = IX; pop IX; return to the caller; HL kept |
-| `CMPLT` | RST `$28` | signed compare: carry ⇔ DE < HL |
-| `CMPULT` | inline | unsigned `or a; sbc hl,de` (3 B) |
-| Shifts by a variable count (`SHL`, `SHR`, `SAR`) | CALL | |
-| `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU` | CALL | the helper core's register-only shift-and-add multiply and restoring divide (v0.3; they replace the V2 math). The compiler's constant arithmetic uses the same routines |
-| `SWITCH` | CALL + inline table address | `call RT_SWITCH / dw table`. The table is static data, made after the switch's body. Sparse: `[n][default]` then `[value][address]` pairs. Dense, when smaller (highest − lowest ≤ 2n − 3): `[range \| $8000][default][lowest]` then one address per value |
-| `CALLHL` | CALL | indirect function call |
-| `F_OP` (v0.10) | CALL + op byte | an operation of the float core (§4.9) on `F_ACC`; a binary one pops its left operand's slot. Through `F_X`, a `NOBRK` section with the EXROM paged in |
-| `F_PUSH`, `F_POP`, `F_DROP` (v0.10) | CALL | `F_ACC` to and from a 3-word stack slot under the return address |
-| `F_LD`, `F_ST`, `F_LDX`, `F_STX`, `F_LDK`, `F_TST`, `F_REST` (v0.10) | CALL (`F_LDX`/`F_STX` + displacement byte, `F_LDK` + 5 bytes) | `F_ACC` from or to the float at HL or at `IX+d`, from an inline constant; Z when `F_ACC` is 0; the value before a postfix `++`/`--` |
-| `LDL`/`STL` (size set only) | CALL + byte (v0.7: RST `$30` is `LEX_NEXT`, §2.3) | local word load/store, as measured in the spike (there through RST `$30`) |
+| Helper                                                               | Entry                                                         | Contract                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LDI`                                                                | RST `$08`                                                     | HL = (HL); destroys A                                                                                                                                                                                                                                                                                 |
+| `STI`                                                                | RST `$10`                                                     | (DE) = HL; HL kept; DE = address + 1                                                                                                                                                                                                                                                                  |
+| `ENTER n`                                                            | RST `$18` + byte                                              | push IX; IX = SP; SP -= n; **stack check** against `STACK_LIMIT` (runtime error *stack overflow*). As built (v0.6): the new SP is checked before SP moves, against the page-aligned floor `LEAPC_RT_STACK_FLOOR` = `$F900` (the margin above `$F800` covers what runs between two frame checks, §3.2) |
+| `LEAVE`                                                              | RST `$20`                                                     | SP = IX; pop IX; return to the caller; HL kept                                                                                                                                                                                                                                                        |
+| `CMPLT`                                                              | RST `$28`                                                     | signed compare: carry ⇔ DE < HL                                                                                                                                                                                                                                                                       |
+| `CMPULT`                                                             | inline                                                        | unsigned `or a; sbc hl,de` (3 B)                                                                                                                                                                                                                                                                      |
+| Shifts by a variable count (`SHL`, `SHR`, `SAR`)                     | CALL                                                          |                                                                                                                                                                                                                                                                                                       |
+| `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU`                                | CALL                                                          | the helper core's register-only shift-and-add multiply and restoring divide (v0.3; they replace the V2 math). The compiler's constant arithmetic uses the same routines                                                                                                                               |
+| `SWITCH`                                                             | CALL + inline table address                                   | `call RT_SWITCH / dw table`. The table is static data, made after the switch's body. Sparse: `[n][default]` then `[value][address]` pairs. Dense, when smaller (highest − lowest ≤ 2n − 3): `[range \| $8000][default][lowest]` then one address per value                                            |
+| `CALLHL`                                                             | CALL                                                          | indirect function call                                                                                                                                                                                                                                                                                |
+| `F_OP` (v0.10)                                                       | CALL + op byte                                                | an operation of the float core (§4.9) on `F_ACC`; a binary one pops its left operand's slot. Through `F_X`, a `NOBRK` section with the EXROM paged in                                                                                                                                                 |
+| `F_PUSH`, `F_POP`, `F_DROP` (v0.10)                                  | CALL                                                          | `F_ACC` to and from a 3-word stack slot under the return address                                                                                                                                                                                                                                      |
+| `F_LD`, `F_ST`, `F_LDX`, `F_STX`, `F_LDK`, `F_TST`, `F_REST` (v0.10) | CALL (`F_LDX`/`F_STX` + displacement byte, `F_LDK` + 5 bytes) | `F_ACC` from or to the float at HL or at `IX+d`, from an inline constant; Z when `F_ACC` is 0; the value before a postfix `++`/`--`                                                                                                                                                                   |
+| `LDL`/`STL` (size set only)                                          | CALL + byte (v0.7: RST `$30` is `LEX_NEXT`, §2.3)             | local word load/store, as measured in the spike (there through RST `$30`)                                                                                                                                                                                                                             |
 
 ### 5.4 Code-generation model (fixed)
 
@@ -609,14 +613,14 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 
 ### 5.9 Runtime errors
 
-| Code | Error |
-|---|---|
-| 1 | stack overflow (from `ENTER`) |
-| 2 | out of heap (`malloc` returns NULL; error only for library calls that cannot report NULL) |
-| 3 | hi-res mode with the image in `$6000-$77FF` |
-| 4 | invalid library argument (where checked) |
-| 5 | BREAK |
-| 6 | (v0.10) a floating overflow or division by zero (`F_OP`) |
+| Code | Error                                                                                     |
+| ---- | ----------------------------------------------------------------------------------------- |
+| 1    | stack overflow (from `ENTER`)                                                             |
+| 2    | out of heap (`malloc` returns NULL; error only for library calls that cannot report NULL) |
+| 3    | hi-res mode with the image in `$6000-$77FF`                                               |
+| 4    | invalid library argument (where checked)                                                  |
+| 5    | BREAK                                                                                     |
+| 6    | (v0.10) a floating overflow or division by zero (`F_OP`)                                  |
 
 The shell shows `RUNTIME ERROR n` with the source line of the failing function's call site where available.
 
@@ -646,15 +650,15 @@ These come from V2's full-screen editor and shell glue, adapted:
 - **Keyword highlighting** uses the C keyword table.
 - **Commands:**
 
-| Command | Action |
-|---|---|
-| `RUN` | compile and execute |
-| `LIST` | list the source |
-| `NEW` | clear the source |
-| `SAVE "name"` | save the source to tape |
-| `LOAD "name"` / `LOAD ""` | load source from tape |
-| `VERIFY "name"` | verify a saved tape |
-| `FREE` | show free source space and the last image size |
+| Command                   | Action                                         |
+| ------------------------- | ---------------------------------------------- |
+| `RUN`                     | compile and execute                            |
+| `LIST`                    | list the source                                |
+| `NEW`                     | clear the source                               |
+| `SAVE "name"`             | save the source to tape                        |
+| `LOAD "name"` / `LOAD ""` | load source from tape                          |
+| `VERIFY "name"`           | verify a saved tape                            |
+| `FREE`                    | show free source space and the last image size |
 
 - No immediate-statement mode in Release 1 (C has no statements outside functions).
 
@@ -671,21 +675,23 @@ These come from V2's full-screen editor and shell glue, adapted:
 - **`LIST`** shows the source a page (23 rows) at a time with keywords bold; a line that does not fit starts the next page; a key shows the next page, BREAK ends the listing.
 - **`SAVE "name"`, `LOAD "name"`, `LOAD ""`, `VERIFY "name"`, `VERIFY ""`** (v0.9, Phase 7; the tapes: §8.1). The word, in any case, then spaces (or none) and a quote make a tape command (no C line starts so); `SAVE` alone, or `save(x);`, is source. The name is 1-10 characters for `SAVE`, 0-10 for `LOAD` and `VERIFY` (`""`: the next program tape, any name); only spaces may follow its closing quote, else `BAD NAME`. While the tape moves, the status row shows `SAVING name`, `LOADING` / `VERIFYING` while it searches, and `LOADING name` / `VERIFYING name` once the header is found (drawn between the blocks, never inside one). Each command ends with a report on rows 22-23 until a key, as `RUN`'s (§6.3); row 23 is `SOURCE s B  FREE f B` (as `FREE`'s first row) for every outcome:
 
-| Command | Row 22 |
-|---|---|
-| `SAVE` | `SAVED name`; `BREAK` (SPACE stopped it: no data block follows); `BAD NAME`; `NO PROGRAM` (an empty source: a block of no bytes cannot be loaded) |
-| `LOAD` | `LOADED name` (the tape's name): the source is replaced, the cursor on the append line after its last line; `LOAD FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME` |
-| `VERIFY` | `VERIFIED name`: the tape holds exactly the source, and ends where it does; `VERIFY FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME`. Nothing is written |
+| Command  | Row 22                                                                                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SAVE`   | `SAVED name`; `BREAK` (SPACE stopped it: no data block follows); `BAD NAME`; `NO PROGRAM` (an empty source: a block of no bytes cannot be loaded)                  |
+| `LOAD`   | `LOADED name` (the tape's name): the source is replaced, the cursor on the append line after its last line; `LOAD FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME` |
+| `VERIFY` | `VERIFIED name`: the tape holds exactly the source, and ends where it does; `VERIFY FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME`. Nothing is written           |
 
   A failed `LOAD` leaves the source and the editor as they were (§8.1: the program arrives above the source and replaces it only when it is whole and sound), except when the tape's program does not fit above the source and part of it was received: then the source is empty, as after `NEW` (V2's rule: it cannot be trusted).
+
+**As built (v0.11): the key after a report.** A report or a status-row message (and `LIST`'s pages) waits for a key pressed after every key held before it is released: a key still down from the command (the ENTER of `RUN`, BREAK) is let go first, and a key latched before or meanwhile, its auto-repeat included, is dropped (`SH_WAIT_KEY`). Until Phase 9 a key held past the keyboard's repeat delay (35 frames, about 0.6 s on a TS2068) ended the report itself, before it could be read: Fuse's 60 Hz keyboard showed it (`docs/milestones/M9.md`). The editing keys on the keyboard matrix (CAPS SHIFT + 5 6 7 8 0, + 1 delete line, + ENTER insert line) are tested against their codes; two letters pressed together type nothing.
 
 ### 6.2 C punctuation (baseline mapping; physical legends need owner confirmation)
 
 The V2 key map cannot produce the 8 characters C needs, and the font lacks their glyphs. Leap-C adds both, using symbol-shift positions that V2 leaves unmapped and that match the Spectrum-family legends where they exist:
 
-| Key (SYMBOL SHIFT +) | Y | U | F | G | S | A | H | D |
-|---|---|---|---|---|---|---|---|---|
-| Character | `[` | `]` | `{` | `}` | `\|` | `~` | `^` | `\` |
+| Key (SYMBOL SHIFT +) | Y   | U   | F   | G   | S    | A   | H   | D   |
+| -------------------- | --- | --- | --- | --- | ---- | --- | --- | --- |
+| Character            | `[` | `]` | `{` | `}` | `\|` | `~` | `^` | `\` |
 
 Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 B HOME (estimate).
 
@@ -707,32 +713,31 @@ Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 
 
 **As built (v0.8, Phase 6).** `RUN` shows `COMPILING` on the status row while it compiles. Every outcome ends with a report on rows 22 and 23 in the status bar's colours (white on black, row 23 with its swatch), drawn over whatever is on the screen (the editor after a compile error, the program's screen otherwise: its rows 0-21 stay), until a key; the key is not typed, and a key pressed before the report (during the compile, or BREAK) does not end it. Then the editor is redrawn with the source intact.
 
-| Outcome | Row 22 | Row 23 | Cursor |
-|---|---|---|---|
-| compile error | `ERROR n: MESSAGE` | `LINE m` | on line m, its text in the edit buffer (the append line when m is past the last line) |
-| runtime error | `RUNTIME ERROR n: MESSAGE` | `LINE m`, or nothing when unknown (§5.9) | on line m, where the definition of the function that failed starts |
-| BREAK | `BREAK` | `LINE m` | as for a runtime error |
-| the program ends | `EXIT n` (main's value or `exit()`'s, signed; 0 for a void `main`) | `IMAGE i B  HEAP h B` | as before `RUN` |
+| Outcome          | Row 22                                                             | Row 23                                                                                            | Cursor                                                                                |
+| ---------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| compile error    | `ERROR n: MESSAGE`                                                 | `LINE m`; (v0.11) for error 23, `LINE m  'name'`: the undeclared identifier's first 15 characters | on line m, its text in the edit buffer (the append line when m is past the last line) |
+| runtime error    | `RUNTIME ERROR n: MESSAGE`                                         | `LINE m`, or nothing when unknown (§5.9)                                                          | on line m, where the definition of the function that failed starts                    |
+| BREAK            | `BREAK`                                                            | `LINE m`                                                                                          | as for a runtime error                                                                |
+| the program ends | `EXIT n` (main's value or `exit()`'s, signed; 0 for a void `main`) | `IMAGE i B  HEAP h B`                                                                             | as before `RUN`                                                                       |
 
 - **The image's size** is its code and static data in the four image regions (§3.2): from the compiler's limits after the compile, each region's bytes less the free bytes between its code and its data; region 4 reserved by `#pragma hires` counts only the data placed there before the pragma.
 - **The free heap** is the largest block `malloc()` can return in that run: from the end of the source, made even, to `LIB_HEAP_END`, less the block's 2-byte header (`malloc(h)` succeeds and `malloc(h + 1)` returns NULL; tested).
 - **The messages** come from a word-compressed table in the EXROM (the diagnostics, 640 B: `src/shell/diag.asm`), built from `include/leapc_errors.inc` by `tools/gen_diag.py`. They run after the compile's trampoline (`SH_COMPILE`) has paged the EXROM back in, read only the compiler's error cells, and never touch chunk 6. Every message fits the report row with its number.
 
-| Group | Number: message |
-|---|---|
-| not supported | `1: NOT SUPPORTED` |
-| lexical | `10: BAD CHARACTER`; `11: UNTERMINATED COMMENT`; `12: UNTERMINATED STRING`; `13: BAD CHARACTER CONSTANT`; `14: BAD ESCAPE`; `15: BAD NUMBER`; `16: NUMBER TOO LARGE`; `17: STRING TOO LONG` |
-| declaration | `20: SYNTAX ERROR`; `21: REDECLARED`; `22: ALREADY DEFINED`; `23: UNDECLARED IDENTIFIER`; `24: BAD TYPE SPECIFIERS`; `25: BAD DECLARATOR`; `26: BAD STORAGE CLASS`; `27: BAD PARAMETER`; `28: BAD INITIALISER`; `29: BAD ARRAY SIZE` |
-| type | `40: TYPE MISMATCH`; `41: INCOMPLETE TYPE`; `42: TYPE TOO LARGE` |
-| expression | `50: CONSTANT REQUIRED`; `51: BAD OPERAND TYPE`; `52: NO SUCH MEMBER`; `53: NOT AN LVALUE`; `54: ASSIGNMENT TO CONST`; `55: WRONG ARGUMENT COUNT` |
-| statement | `70: UNDEFINED FUNCTION`; `71: NO MAIN FUNCTION`; `72: MISPLACED BREAK`; `73: MISPLACED CONTINUE`; `74: MISPLACED CASE`; `75: DUPLICATE CASE`; `76: UNDEFINED LABEL` |
-| limit | `90: NESTING TOO DEEP`; `91: FRAME TOO LARGE`; `92: TOO MANY PARAMETERS` |
-| memory | `100: OUT OF MEMORY`; `101: PROGRAM TOO BIG` |
+| Group         | Number: message                                                                                                                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| not supported | `1: NOT SUPPORTED`                                                                                                                                                                                                                   |
+| lexical       | `10: BAD CHARACTER`; `11: UNTERMINATED COMMENT`; `12: UNTERMINATED STRING`; `13: BAD CHARACTER CONSTANT`; `14: BAD ESCAPE`; `15: BAD NUMBER`; `16: NUMBER TOO LARGE`; `17: STRING TOO LONG`                                          |
+| declaration   | `20: SYNTAX ERROR`; `21: REDECLARED`; `22: ALREADY DEFINED`; `23: UNDECLARED IDENTIFIER`; `24: BAD TYPE SPECIFIERS`; `25: BAD DECLARATOR`; `26: BAD STORAGE CLASS`; `27: BAD PARAMETER`; `28: BAD INITIALISER`; `29: BAD ARRAY SIZE` |
+| type          | `40: TYPE MISMATCH`; `41: INCOMPLETE TYPE`; `42: TYPE TOO LARGE`                                                                                                                                                                     |
+| expression    | `50: CONSTANT REQUIRED`; `51: BAD OPERAND TYPE`; `52: NO SUCH MEMBER`; `53: NOT AN LVALUE`; `54: ASSIGNMENT TO CONST`; `55: WRONG ARGUMENT COUNT`                                                                                    |
+| statement     | `70: UNDEFINED FUNCTION`; `71: NO MAIN FUNCTION`; `72: MISPLACED BREAK`; `73: MISPLACED CONTINUE`; `74: MISPLACED CASE`; `75: DUPLICATE CASE`; `76: UNDEFINED LABEL`                                                                 |
+| limit         | `90: NESTING TOO DEEP`; `91: FRAME TOO LARGE`; `92: TOO MANY PARAMETERS`                                                                                                                                                             |
+| memory        | `100: OUT OF MEMORY`; `101: PROGRAM TOO BIG`                                                                                                                                                                                         |
 
 **As built (v0.10): the line of a missing token.** When the parser expects a token (`;`, `)`, `]`, `}`, `:`, ...) and finds another, the error's line is that of the **previous** token, after which the missing one belongs: a statement or declaration without its `;` is reported at its own line, not at the next line's first token (`tests/stmterr/missing_*.c`). A line that only continues a macro's expansion or follows a directive line may still be reported at the directive's line.
 
 `17: STRING TOO LONG` needs a line longer than the editor makes (a guard). **Compile speed** measured through `RUN` over the corpus: **13.41 ms per line** (10,536 lines; 13.40 ms per line through the direct path), against the target of 25. (v0.10: 13.98 ms per line through `RUN` over 13,670 lines, 13.97 ms through the direct path: the floating constants and the previous token's line cost about 5%.)
-
 
 ---
 
@@ -740,24 +745,23 @@ Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 
 
 All functions are HOME-ROM runtime routines with C prototypes known to the compiler without any header file. Release 1:
 
-| Area | Functions |
-|---|---|
-| Text | `cls()`, `putchar(c)`, `puts(s)`, `print(s)` (no newline), `at(row, col)`, `tab(col)`, `ink(n)`, `paper(n)`, `border(n)`, `bright(n)`, `flash(n)`, `inverse(n)`, `over(n)`, `printf(fmt, …)` with `%d %u %x %c %s %%` and width, (v0.10) `%f` and `%.Nf` |
-| Keyboard | `getkey()` (wait), `inkey()` (0 if none), `gets(buf, max)` (editor-style line input) |
-| Graphics | `plot(x, y)`, `draw(x0, y0, x1, y1)`, `point(x, y)`, `attr(row, col)`, `mode(n)` (0 normal / 1 dual-screen hi-res; §3.2), `sprite_get(row, col, w, h, buf)`, `sprite_put(row, col, w, h, buf)` |
-| Sound | `beep(frames, semitone)`, `sound(reg, value)` |
-| Time and random | `frames()`, `pause(n)`, `rand()`, `srand(n)`: `rand()` returns 0-32767 (`RAND_MAX`) from a 16-bit xorshift generator (period 65,535); `srand(n)` restarts its sequence, with seeds 0 and 1 giving the same one; every run starts with the sequence of `srand(1)` |
-| Low level | `inp(port)`, `outp(port, value)`; memory is accessed with pointers |
-| Strings and memory | `strlen`, `strcpy`, `strncpy`, `strcmp`, `strcat`, `strchr`, `memcpy`, `memmove`, `memset`, `memcmp` |
-| Conversion | `atoi`, `itoa(n, buf, base)`, `abs` |
-| Heap | `malloc`, `free` (first-fit free list in the heap region) |
-| Program | `exit(n)` |
-| Tape (Phase 7) | `tape_save(name, addr, len)`, `tape_load(name, addr, max)` (data blocks; §7.1, §8.3) |
+| Area               | Functions                                                                                                                                                                                                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Text               | `cls()`, `putchar(c)`, `puts(s)`, `print(s)` (no newline), `at(row, col)`, `tab(col)`, `ink(n)`, `paper(n)`, `border(n)`, `bright(n)`, `flash(n)`, `inverse(n)`, `over(n)`, `printf(fmt, …)` with `%d %u %x %c %s %%` and width, (v0.10) `%f` and `%.Nf`         |
+| Keyboard           | `getkey()` (wait), `inkey()` (0 if none), `gets(buf, max)` (editor-style line input)                                                                                                                                                                             |
+| Graphics           | `plot(x, y)`, `draw(x0, y0, x1, y1)`, `point(x, y)`, `attr(row, col)`, `mode(n)` (0 normal / 1 dual-screen hi-res; §3.2), `sprite_get(row, col, w, h, buf)`, `sprite_put(row, col, w, h, buf)`                                                                   |
+| Sound              | `beep(frames, semitone)`, `sound(reg, value)`                                                                                                                                                                                                                    |
+| Time and random    | `frames()`, `pause(n)`, `rand()`, `srand(n)`: `rand()` returns 0-32767 (`RAND_MAX`) from a 16-bit xorshift generator (period 65,535); `srand(n)` restarts its sequence, with seeds 0 and 1 giving the same one; every run starts with the sequence of `srand(1)` |
+| Low level          | `inp(port)`, `outp(port, value)`; memory is accessed with pointers                                                                                                                                                                                               |
+| Strings and memory | `strlen`, `strcpy`, `strncpy`, `strcmp`, `strcat`, `strchr`, `memcpy`, `memmove`, `memset`, `memcmp`                                                                                                                                                             |
+| Conversion         | `atoi`, `itoa(n, buf, base)`, `abs`                                                                                                                                                                                                                              |
+| Heap               | `malloc`, `free` (first-fit free list in the heap region)                                                                                                                                                                                                        |
+| Program            | `exit(n)`                                                                                                                                                                                                                                                        |
+| Tape (Phase 7)     | `tape_save(name, addr, len)`, `tape_load(name, addr, max)` (data blocks; §7.1, §8.3)                                                                                                                                                                             |
 
 **Not built in:** circle and flood fill (V2 has them only as BASIC packages; implementable in C), ULAplus palette, printer. These are candidates for a later library-loading mechanism (§9).
 
 ---
-
 
 ### 7.1 As built (v0.5)
 
@@ -765,38 +769,40 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 
 **Prototypes.** Pointer parameters are `void *` (any object pointer converts); integer parameters are `int`. Return types: `void`, `int`, `unsigned` (`frames`, `strlen`), `char *` (`gets`, `strcpy`, `strncpy`, `strcat`, `strchr`, `itoa`), `void *` (`malloc`, `memcpy`, `memmove`, `memset`). `printf` has no prototype: any arguments, the default promotions. Library functions have addresses (function pointers). v0.9: `void tape_save(void *name, void *addr, int len)`, `int tape_load(void *name, void *addr, int max)`; 50 names in all.
 
-**Screen.** Text rows 0-23, columns 0-31; pixels x 0-255, y 0-191 **from the top** (the platform's convention). Text continues on the next row after column 31; below row 23 the screen scrolls up. `'\n'` moves to the next row's start. Characters without a glyph show as spaces.
+**Screen.** Text rows 0-23, columns 0-31; pixels x 0-255, y 0-191 **from the top** (the platform's convention). Text continues on the next row after column 31; below row 23 the screen scrolls up. `'\n'` moves to the next row's start. Characters without a glyph show as spaces. (v0.11) Codes 128-143 are the block graphics (bit 0 the cell's top-right quarter, bit 1 the top-left, bit 2 the bottom-right, bit 3 the bottom-left); codes 144-164 draw the user-defined graphics, eight bytes each from `UDG_TABLE` (`$F180`), which the cold start clears: they show as spaces until a program writes them.
 
-| Function | As built |
-|---|---|
-| `cls()` | clears to the current colours (inverse not applied); print position (0, 0) |
-| `putchar(c)`, `puts(s)`, `print(s)` | `putchar` returns `c`; `puts` adds `'\n'` and returns 10 |
-| `at(row, col)`, `tab(col)` | row beyond 23 → 23; column & 31 |
-| `ink(n)`, `paper(n)`, `bright(n)`, `flash(n)` | n & 7, n & 7, n & 1, n & 1; used by printing, `plot`, `draw` and `cls` |
-| `inverse(n)`, `over(n)` | n & 1. Inverse swaps ink and paper in the attribute printing and plotting give a cell (a plotted pixel is still set: Sinclair BASIC's `INVERSE 1 PLOT` clears it instead); over XORs characters and pixels |
-| `border(n)` | n & 7 |
-| `printf(fmt, …)` | `%d %u %x %c %s %%`, a decimal width (right-aligned with spaces). (v0.10) `%f`: a float with 6 decimals, `%.Nf` with N (0-9; more counts as 9), rounded half up, every integer digit printed (up to 39), a width right-aligns. **Deviations:** no flags (`- 0 + #` space); another conversion character prints the next argument as a character; the return value is undefined |
-| `getkey()` | waits; ASCII or the editor's control codes (1-4 cursor, 8 DELETE, 13 ENTER) |
-| `inkey()` | the key pressed since the last read (the ISR's latch), else 0 |
-| `gets(buf, max)` | at most `max - 1` printable characters, echoed; DELETE edits; ENTER ends with a new line; returns `buf`; `max` < 1 counts as 1 |
-| `plot(x, y)`, `point(x, y)` | off the screen: nothing / 0. `plot` gives the cell the print attribute |
-| `draw(x0, y0, x1, y1)` | both ends included; off-screen coordinates move to the screen's edge |
-| `attr(row, col)` | the cell's attribute; 0 outside |
-| `mode(n)` | 0 normal, 1 hi-res colour; error 3 if the image uses `$6000-$77FF`; other n: error 4. The end of the program restores mode 0 |
-| `sprite_get/put(row, col, w, h, buf)` | 9 B per cell (8 pixel rows, the attribute), row by row; a rectangle not wholly on the screen, or empty: error 4 |
-| `beep(frames, semitone)` | frames unsigned (0: nothing); semitone -60..69 above middle C (below -39: A0), else error 4; AY channel A, through the EXROM trampoline (§5.8) |
-| `sound(reg, value)` | register 0-15 (else error 4), value & 255 |
-| `frames()`, `pause(n)` | `unsigned`; `pause(0)` returns at once |
-| `inp(port)`, `outp(port, value)` | 16-bit port addresses |
-| `str*`, `mem*` | C89 semantics; characters compared unsigned; `memcpy` is `memmove` (overlap safe) |
-| `atoi(s)` | skips spaces and control characters (1-32), optional sign, decimal digits; wraps beyond 16 bits |
-| `itoa(n, buf, base)` | bases 2-36 (lowercase), negative only in base 10; returns `buf`; another base: error 4 |
-| `abs(n)` | `abs(-32768)` = -32768 |
-| `malloc(n)`, `free(p)` | §3.2; NULL when nothing fits and for n ≥ 32 KB; `free(NULL)` does nothing |
-| `exit(n)` | ends the program with status n, from any depth |
-| `tape_save(name, addr, len)` (v0.9) | `len` bytes from `addr` to tape as a data tape (§8.3) named `name` (a C string of 1-10 characters); returns when both blocks are sent (about 7 s, plus 5-7 ms a byte). A longer or empty name, or `len` 0: error 4. Any address, chunk 6 included |
-| `tape_load(name, addr, max)` (v0.9) | the next data tape named `name` (`""`: any) into `addr`, at most `max` bytes. Returns its length; -1 when nothing was loaded (no such tape before the search gives up, about 2 minutes of silence; a tape longer than `max`; a bad block before the data), `addr` untouched; -2 when the data block failed after part of it was written; -3 for a tape whose version word is not Leap-C's (nothing written). Program tapes are skipped. A name longer than 10 characters: error 4. Any address, chunk 6 included |
-| `tape_save`, `tape_load`: BREAK | BREAK (or SPACE) during the transfer stops it and ends the program with runtime error 5 (§5.8). While a block moves, interrupts are off: `frames()` does not count |
+**Time (v0.11).** A frame, the unit of `frames()`, `pause(n)` and `beep(frames, ...)`, is the display's: **1/60 s on a TS2068** (58,688 T at 3.528 MHz; Fuse emulates it). ZEsarUX 13.0 emulates the TS2068 with the 48K Spectrum's 50 Hz frame (69,888 T), so there a program sees 50 frames a second and `pause(60)` lasts 1.2 s; every T-state measurement in this specification is the same on both (`tools/timingcmp.py`). Every frame is counted, also while float code runs (delta D14; `tools/fusetest.py frames`).
+
+| Function                                      | As built                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cls()`                                       | clears to the current colours (inverse not applied); print position (0, 0)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `putchar(c)`, `puts(s)`, `print(s)`           | `putchar` returns `c`; `puts` adds `'\n'` and returns 10                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `at(row, col)`, `tab(col)`                    | row beyond 23 → 23; column & 31                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `ink(n)`, `paper(n)`, `bright(n)`, `flash(n)` | n & 7, n & 7, n & 1, n & 1; used by printing, `plot`, `draw` and `cls`                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `inverse(n)`, `over(n)`                       | n & 1. Inverse swaps ink and paper in the attribute printing and plotting give a cell (a plotted pixel is still set: Sinclair BASIC's `INVERSE 1 PLOT` clears it instead); over XORs characters and pixels                                                                                                                                                                                                                                                                                                       |
+| `border(n)`                                   | n & 7                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `printf(fmt, …)`                              | `%d %u %x %c %s %%`, a decimal width (right-aligned with spaces). (v0.10) `%f`: a float with 6 decimals, `%.Nf` with N (0-9; more counts as 9), rounded half up, every integer digit printed (up to 39), a width right-aligns. **Deviations:** no flags (`- 0 + #` space); another conversion character prints the next argument as a character; the return value is undefined                                                                                                                                   |
+| `getkey()`                                    | waits; ASCII or the editor's control codes (1-4 cursor, 8 DELETE, 13 ENTER)                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `inkey()`                                     | the key pressed since the last read (the ISR's latch), else 0                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `gets(buf, max)`                              | at most `max - 1` printable characters, echoed; DELETE edits; ENTER ends with a new line; returns `buf`; `max` < 1 counts as 1                                                                                                                                                                                                                                                                                                                                                                                   |
+| `plot(x, y)`, `point(x, y)`                   | off the screen: nothing / 0. `plot` gives the cell the print attribute                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `draw(x0, y0, x1, y1)`                        | both ends included; off-screen coordinates move to the screen's edge                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `attr(row, col)`                              | the cell's attribute; 0 outside                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `mode(n)`                                     | 0 normal, 1 hi-res colour; error 3 if the image uses `$6000-$77FF`; other n: error 4. The end of the program restores mode 0                                                                                                                                                                                                                                                                                                                                                                                     |
+| `sprite_get/put(row, col, w, h, buf)`         | 9 B per cell (8 pixel rows, the attribute), row by row; a rectangle not wholly on the screen, or empty: error 4                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `beep(frames, semitone)`                      | frames unsigned (0: nothing); semitone -60..69 above middle C (below -39: A0), else error 4; AY channel A, through the EXROM trampoline (§5.8)                                                                                                                                                                                                                                                                                                                                                                   |
+| `sound(reg, value)`                           | register 0-15 (else error 4), value & 255                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `frames()`, `pause(n)`                        | `unsigned`; `pause(0)` returns at once                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `inp(port)`, `outp(port, value)`              | 16-bit port addresses                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `str*`, `mem*`                                | C89 semantics; characters compared unsigned; `memcpy` is `memmove` (overlap safe)                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `atoi(s)`                                     | skips spaces and control characters (1-32), optional sign, decimal digits; wraps beyond 16 bits                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `itoa(n, buf, base)`                          | bases 2-36 (lowercase), negative only in base 10; returns `buf`; another base: error 4                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `abs(n)`                                      | `abs(-32768)` = -32768                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `malloc(n)`, `free(p)`                        | §3.2; NULL when nothing fits and for n ≥ 32 KB; `free(NULL)` does nothing                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `exit(n)`                                     | ends the program with status n, from any depth                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `tape_save(name, addr, len)` (v0.9)           | `len` bytes from `addr` to tape as a data tape (§8.3) named `name` (a C string of 1-10 characters); returns when both blocks are sent (about 7 s, plus 5-7 ms a byte). A longer or empty name, or `len` 0: error 4. Any address, chunk 6 included                                                                                                                                                                                                                                                                |
+| `tape_load(name, addr, max)` (v0.9)           | the next data tape named `name` (`""`: any) into `addr`, at most `max` bytes. Returns its length; -1 when nothing was loaded (no such tape before the search gives up, about 2 minutes of silence; a tape longer than `max`; a bad block before the data), `addr` untouched; -2 when the data block failed after part of it was written; -3 for a tape whose version word is not Leap-C's (nothing written). Program tapes are skipped. A name longer than 10 characters: error 4. Any address, chunk 6 included |
+| `tape_save`, `tape_load`: BREAK               | BREAK (or SPACE) during the transfer stops it and ends the program with runtime error 5 (§5.8). While a block moves, interrupts are off: `frames()` does not count                                                                                                                                                                                                                                                                                                                                               |
 
 ## 8. Storage
 
@@ -809,10 +815,10 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 
 **As built (v0.9, Phase 7).** The platform's tape code (V2's port of the stock ROM's SA-BYTES / LD-BYTES: the stock timing, measured on Leap-C's own SAVE: pilot 2,168 T, sync 667 / 735 T, bits 855 / 1,710 T, 8,063 header and 3,223 data pilot pulses) in the stock two-block format:
 
-| Block | Contents |
-|---|---|
+| Block  | Contents                                                                                                                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | header | flag `$00`; type 0; the name, 10 characters padded with spaces; the length; `$8C00` (the autostart field); the program length (= the length); XOR checksum |
-| data | flag `$FF`; the line store, `[length:2][text][CR]` per line, exactly as the editor keeps it; XOR checksum |
+| data   | flag `$FF`; the line store, `[length:2][text][CR]` per line, exactly as the editor keeps it; XOR checksum                                                  |
 
 - **Acceptance** (V2's rule, `STORAGE_LOAD`): the bit 15 tag and the major must be Leap-C's and the tape's minor at most Leap-C's; anything else (V2's `$8101`, a stock tape's `$8000` or autostart line, a later Leap-C minor) is `BAD TAPE VERSION` before any byte is received. Headers of another type or another name are skipped; the search gives up after 15 headers or blocks, or about 2 minutes of silence.
 - **LOAD is staged.** A program that fits in the line store's room above the current source (below `VARS_START`) is received there, then checked and moved down onto the source; otherwise it is received in place. It must be whole (both checksums) and sound: records of 1-128 bytes, each ending in CR, ending exactly at its length, at least one. A tape longer than the line store's room is refused at its header.
@@ -852,7 +858,7 @@ The data tape type uses header type 3 with version word `$8C00`.
 ## 10. Toolchain and repository
 
 - **Assembler:** sjasmplus (as V2), with strict warnings. The ROM images are built by `make`.
-- **Emulator:** ZEsarUX 13.0 is the qualification emulator (as V2). Fuse and EightyOne are courtesy only.
+- **Emulator:** ZEsarUX 13.0 is the qualification emulator (as V2). Fuse and EightyOne are courtesy only. (v0.11) Fuse 1.9.1 runs a qualification suite of its own (`make fuse`); EightyOne is not used (owner instruction, Phase 9).
 - **Test harness:** Python over ZEsarUX ZRCP, derived from V2's `qharness` (vendored with attribution). Test cases are C sources with expectations in header comments (exit value, screen text, memory, compile error and line, runtime error).
 - **Budget tooling:** per-component sizes from the listings; `budget.toml` limits; ROM map report.
 - **Platform vendoring:** `platform/` pinned to the V2 reference with a delta list. V2 itself is never modified.
@@ -860,6 +866,12 @@ The data tape type uses header type 3 with version word `$8C00`.
   - a host tool to turn `.c` files into Leap-C program tapes (v0.9: `tools/c2tape.py FILE.c OUT.tap|OUT.tzx [--name NAME]`: the blocks the ROM's own `SAVE` sends for that source, byte for byte; `.tzx` as standard speed blocks);
   - optionally SDCC as a test oracle (installing it needs owner approval).
 - **Floating point (v0.10):** `tools/fpmodel.py`, a bit-exact Python model of every float-core operation (the host lexer's floating constants and the float tests' expectations); `tools/floattest.py` (the core against the model on the production ROM), `tools/gen_floattests.py` (generated corpus cases).
+- **Phase 9 (v0.11):**
+  - `tools/poweron.py`: the boot from power-on RAM patterns (random from a seed, `$00`, `$FF`, `$55AA`, the address's low byte, the reset button after a session) against the boot from zeroed RAM, and a slice of the corpus from each; `run_tests.py --ram PATTERN` runs any suite from one;
+  - **Fuse 1.9.1** as a second, independent emulator, headless: `tools/fuse/fuseshim.c` (an `LD_PRELOAD` library answering a Unix socket once a frame: Fuse's keyboard matrix, its debugger, its tape deck, its memory), `tools/fusedrive.py` (the driver), `tools/fusetest.py` (`make fuse`); Fuse emulates the TS2068's 60 Hz frame;
+  - `tools/timingcmp.py` (`make timing`): the same programs timed on both emulators (compile and run, in T-states and frames);
+  - ROM coverage: `run_tests.py --coverage` collects ZEsarUX's code coverage over every suite and `tools/romcov.py` reports it per routine (`make test` does both);
+  - the hardware kit: `tools/hwkit.py` (`make kit`): the EPROM images with checksums, the check programs (`docs/hardware/`) and the examples as `.tap`, `.tzx` and `.wav`, verified on both emulators; `tools/tapes.py` writes and reads WAV;
 - **Documentation examples (v0.10):** `tools/docexamples.py` copies every example with expectations from `README.md`, `spec.md` and `docs/EXAMPLES.md` into `tests/doc/`; `make check` fails when they differ.
 
 ---
@@ -878,3 +890,9 @@ Release qualification covers:
 - the corpus;
 - the emulator qualification on ZEsarUX;
 - the physical TS2068 hardware checklist: EPROM HOME + EXROM, keyboard, tape, timing at 60 Hz, display contention.
+
+**As built (v0.11, Phase 9; `docs/milestones/M9.md`):**
+
+- `make test` also boots from eight power-on RAM patterns and runs the corpus from them, and reports the ROM's coverage (`build/romcov.md`).
+- The emulator qualification adds Fuse (`make fuse`: the typed programs, BREAK, SAVE and a WAV on Fuse's tape deck, and the corpus LOADed from tape by the ROM's own loader and RUN), the timing comparison (`make timing`) and the hardware kit's verification (`tools/hwkit.py --verify`).
+- **The physical hardware checklist** (`docs/HARDWARE_CHECKLIST.md`) is **not run: an owner-accepted qualification deviation** (2026-10-21; no TS2068 was available). Its items are recorded as not tested, with what both emulators show.

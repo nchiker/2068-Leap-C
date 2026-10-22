@@ -93,7 +93,7 @@ RT_MODU:
 ; chunk 6 = EXROM (BANK_EXROM_DEPTH 1), interrupts on (IM 1), SP = LEAPC_STACK_TOP.
 COLD_START:
     ld   sp, LEAPC_STACK_TOP
-    call MEM_COLD_INIT                 ; RAM LEAPC_COLD_CLEAR_BASE .. LEAPC_SRC_TOP-1 = 0
+    call COLD_CLEAR                    ; RAM LEAPC_COLD_CLEAR_BASE .. LEAPC_SRC_TOP-1 = 0, the UDGs too
     xor  a
     ld   (PORT_FF_SHADOW), a
     out  (PORT_SCLD), a                ; normal video mode, EXROM select bit clear
@@ -122,6 +122,15 @@ RT_ERROR:
     ASSERT $ <= $0066
     ORG $0066
     retn
+; COLD_CLEAR -- the power-on RAM the ROM defines: MEM_COLD_INIT's range and the UDG table (Phase 9: a
+; real machine powers on with its RAM's contents; codes 144-164 show as spaces until a program
+; defines them, as from zeroed RAM. tools/poweron.py)
+; Destroys: AF, BC, DE, HL
+COLD_CLEAR:
+    ld   hl, UDG_TABLE
+    ld   bc, UDG_COUNT * 8
+    call MEM_FILL_ZERO
+    jp   MEM_COLD_INIT
 
 COMP_PAGE0_END:
 
