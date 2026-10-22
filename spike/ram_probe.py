@@ -13,7 +13,7 @@ import argparse, json, os, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True     # never write a bytecode cache into the frozen V2 tree
-sys.path.insert(0, os.path.expanduser("~/2068-Leap/tools/qual"))
+sys.path.insert(0, os.path.join(os.environ.get("LEAPC_V2_REPO", os.path.expanduser("~/2068-Leap")), "tools/qual"))
 from qharness import Machine        # noqa: E402
 
 V2REF = os.path.join(HERE, "v2ref")

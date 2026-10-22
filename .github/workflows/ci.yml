@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      SJASMPLUS_VERSION: v1.23.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache sjasmplus
+        id: cache-sjasmplus
+        uses: actions/cache@v4
+        with:
+          path: ~/sjasmplus-bin
+          key: sjasmplus-${{ env.SJASMPLUS_VERSION }}-${{ runner.os }}
+
+      - name: Build sjasmplus ${{ env.SJASMPLUS_VERSION }}
+        if: steps.cache-sjasmplus.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --recursive --shallow-submodules --branch "$SJASMPLUS_VERSION" https://github.com/z00m128/sjasmplus.git /tmp/sjasmplus
+          make -C /tmp/sjasmplus -j"$(nproc)"
+          mkdir -p ~/sjasmplus-bin
+          cp /tmp/sjasmplus/sjasmplus ~/sjasmplus-bin/
+
+      - name: Put sjasmplus on the PATH
+        run: |
+          echo "$HOME/sjasmplus-bin" >> "$GITHUB_PATH"
+          "$HOME/sjasmplus-bin/sjasmplus" --version
+
+      - name: Fetch the Leap V2 reference (read only, for the platform check)
+        run: git clone --quiet https://github.com/nchiker/2068-Leap.git "$RUNNER_TEMP/2068-Leap"
+
+      - name: make
+        run: make
+
+      - name: make check
+        run: make check
+        env:
+          LEAPC_V2_REPO: ${{ runner.temp }}/2068-Leap
+
+      - name: make repro
+        run: make repro
+
+      - name: The release images' hashes
+        run: cat build/SHA256SUMS

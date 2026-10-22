@@ -10,7 +10,7 @@ Checks:
   2. a pristine file's current hash equals its upstream hash;
   3. a delta file's current hash is the recorded one, and reverse-applying its patch reproduces
      exactly the upstream hash (so the patch is the complete, exact delta);
-  4. with --v2-repo (default ~/2068-Leap when it exists), the upstream hashes are re-derived from
+  4. with --v2-repo (default $LEAPC_V2_REPO, else ~/2068-Leap, when it exists), the upstream hashes are re-derived from
      the tag with `git show` (read-only).
 
 Usage: check_platform.py [--v2-repo DIR | --no-v2] [--update]
@@ -105,7 +105,7 @@ def update(repo):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--v2-repo", default=os.path.expanduser("~/2068-Leap"))
+    ap.add_argument("--v2-repo", default=os.environ.get("LEAPC_V2_REPO", os.path.expanduser("~/2068-Leap")))
     ap.add_argument("--no-v2", action="store_true")
     ap.add_argument("--update", action="store_true")
     a = ap.parse_args()

@@ -3,7 +3,7 @@
 whether ZRCP can write the ROM. Prints findings; nothing is saved."""
 import os, sys, struct
 sys.dont_write_bytecode = True     # never write a bytecode cache into the frozen V2 tree
-sys.path.insert(0, os.path.expanduser("~/2068-Leap/tools/qual"))
+sys.path.insert(0, os.path.join(os.environ.get("LEAPC_V2_REPO", os.path.expanduser("~/2068-Leap")), "tools/qual"))
 from qharness import Machine, HARNESS_RET_SLOT
 HERE = os.path.dirname(os.path.abspath(__file__))
 m = Machine(os.path.join(HERE, "..", "v2ref"), 10610, label="v2ref").start()

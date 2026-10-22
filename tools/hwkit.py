@@ -107,7 +107,7 @@ def build_kit():
         stem = "%s_%s" % (cid.lower(), name)
         tape_files(open(os.path.join(HW, f)).read(), name, stem)
         tapes_made.append(stem)
-    for p in sorted(os.listdir(os.path.join(ROOT, "tests", "doc"))):
+    for p in sorted(f for f in os.listdir(os.path.join(ROOT, "tests", "doc")) if f.startswith("examples_")):
         n = p.split("_")[-1].split(".")[0]
         stem = "ex%s" % n
         tape_files(open(os.path.join(ROOT, "tests", "doc", p)).read(), "example" + n, stem)

@@ -96,9 +96,9 @@ Each program's WAV (tapes/) loaded through the emulator's tape signal input and 
   - `27012 FRAMES`
   - `15768 ROUNDS, SOAK PASS 0`
 - **Fuse 1.9.1:** LOAD ['LOADED soak', 'SOURCE 1295 B  FREE 17137 B'], source identical; report ['EXIT 0', 'IMAGE 710 B  HEAP 17132 B']
-  - `LEAP-C SOAK 15302`
-  - `42479 FRAMES`
-  - `15303 ROUNDS, SOAK PASS 0`
+  - `LEAP-C SOAK 15308`
+  - `42522 FRAMES`
+  - `15309 ROUNDS, SOAK PASS 0`
 
 ## H11 `lib.c` (lib)
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Beta testing guide
+    url: https://github.com/nchiker/2068-Leap-C/blob/main/docs/BETA_TESTING.md
+    about: What to try, what a good report contains, and the known limitations.
+  - name: Emulator setup
+    url: https://github.com/nchiker/2068-Leap-C/blob/main/docs/EMULATORS.md
+    about: Fuse, ZEsarUX and TSRun on Windows, macOS and Linux, with troubleshooting.

@@ -1,0 +1,15 @@
+name: Question or suggestion
+description: A question about Leap-C, an idea, a wish, or feedback on the documents
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question or suggestion
+    validations:
+      required: true
+  - type: input
+    id: context
+    attributes:
+      label: Emulator or machine, and operating system (if it matters)
+      placeholder: "Fuse 1.9.1 on Windows 11"

@@ -1,68 +1,73 @@
 # 2068-Leap-C
 
-A C language ROM set for the original Timex Sinclair 2068 (48 KB, stock HOME/EXROM banking). It has a full-screen source editor and an on-machine, single-pass, Small-C-style compiler that generates native Z80 code. It is built on the platform services of Leap V2.
+**A C computer for the Timex Sinclair 2068.** Leap-C replaces the TS2068's ROMs with a full-screen C editor and a C compiler that runs on the machine itself: you type a program, `RUN` compiles it to native Z80 code in a moment, and it runs. No cross-compiler, no PC needed. It is built on the platform of [2068-Leap V2](https://github.com/nchiker/2068-Leap).
 
-- **What is built:** `spec.md` (v0.12).
-- **By example:** `docs/EXAMPLES.md` (every example there is a test).
-- **How and in which order:** `project_plan.md` (v0.1).
-- **Why:** `docs/C_FEASIBILITY_STUDY.md` (closed).
-- **Progress:** one report per milestone in `docs/milestones/`.
+| ▶ [**Try it in your browser**](https://nchiker.github.io/TSRun/?rom=leapc) | ⬇ [**Download the beta**](https://github.com/nchiker/2068-Leap-C/releases) | 📖 [**User guide**](docs/USER_GUIDE.md) | 🧪 [**Beta testing**](docs/BETA_TESTING.md) |
+|---|---|---|---|
 
-**Status:** Phase 10 (the recommended fixes and library loading) is complete (`docs/milestones/M10.md`). **Libraries:** `LIB "name"` loads an assembly library from tape into image region 3, and its functions are called from C like the built-in ones, with no declaration; `LIB` alone unloads it. A library reaches the ROM through a fixed jump table of 16 slots at the end of HOME, so it keeps working on later ROMs that keep the slots. The example library `libs/shapes.asm` adds `circle()`, `box()` and `isqrt()`; `tools/lib2tape.py` builds a library's `.tap`, `.tzx` and `.wav` (`make libs`). Phase 10 also made `?:` with a float and an integer operand convert the integer (C89), named the identifier in five more compile errors, put the cursor on the error's column, made unsigned division 112 T faster, removed unreachable vendored EXROM code, and fixed a LOAD that kept a partly overwritten source after BREAK. The next phase is Phase 11 (documentation and release qualification).
-
-Phase 9 (emulator and hardware validation) is complete (`docs/milestones/M9.md`). The production ROMs are qualified on two emulators: **ZEsarUX 13.0** (every suite, now also from random and fixed power-on RAM, with ROM coverage: 99.8% of HOME's and 98.1% of the EXROM's instructions executed) and, independently, **Fuse 1.9.1** (headless: typed programs, BREAK, SAVE and LOAD on its tape deck, the whole corpus LOADed from tape and run, and a timing comparison at the TS2068's real 60 Hz frame). **No physical TS2068 was available: the hardware checks are an owner-accepted qualification deviation**, ready to run from `docs/HARDWARE_CHECKLIST.md` with the kit `make kit` builds (EPROM images for a 27128 and a 2764 with checksums, check programs and examples as `.tap`, `.tzx` and `.wav`). Phase 9 also made the digit `1` and the letter `l` distinct in the font, names an undeclared identifier in its report, and fixed three defects the qualification found: a report could vanish when its key was held past the auto-repeat delay, the UDG characters showed power-on garbage, and float code lost about 1% of the frame interrupts (`frames()` ran slow).
-
-Phase 8 (language and library completion, `docs/milestones/M8.md`): **Floating point is in Release 1:** `float` and `double` (one type, the Sinclair 5-byte format: about 9.6 digits, up to 1.7E38), floating constants, conversions, arithmetic and comparisons, float arguments and results, constant folding, and `printf`'s `%f` / `%.Nf`. It runs on the float core, the V2 calculator re-engineered into a smaller engine that replaces it. Phase 8 also completed the initialisers of `spec.md` §4.7, tested the library's remaining edge cases, reports a missing `;` at the line that lacks it, and made the documentation's examples tests.
-
-Phases 1-7 are also complete: the compiler, the runtime and library, the memory layout and banking, the editor with C punctuation and keyword highlighting, the compile/run workflow (`RUN` with its reports, `FREE`), and the cassette (`SAVE`, `LOAD`, `VERIFY`, `tape_save`, `tape_load`, `tools/c2tape.py`).
-
-Typing a program: letters as usual (CAPS SHIFT for capitals), SYMBOL SHIFT for punctuation, with SYMBOL SHIFT + Y `[`, U `]`, F `{`, G `}`, S `|`, A `~`, H `^`, D `\`. CAPS SHIFT + 5/6/7/8 move the cursor, + 0 deletes, + 1 deletes the line, + ENTER inserts a line; `RUN`, `LIST`, `FREE`, `NEW`, `SAVE "name"`, `LOAD "name"` (or `LOAD ""`), `VERIFY "name"` and `LIB "name"` (or `LIB` alone) are typed on the empty line after the last; a key ends a report (one pressed after the command's own key is released). SPACE (or BREAK) stops a tape transfer. A frame (`frames()`, `pause`, `beep`) is 1/60 s on a TS2068.
-
-## Build and test
-
-Needs sjasmplus 1.23, Python 3.11 or later, and, for `make test`, ZEsarUX 13.0 in `~/Applications/ZEsarUX-13.0`, `~/ts2068-debug`, and the frozen Leap V2 repository `~/2068-Leap` (read only: `tools/v2ref.sh` builds the V2 reference ROM from its tag for the cross-version tape tests).
-
-```sh
-make            # build/leapc_home.bin, leapc_exrom.bin, leapc_zesarux.bin, leapc_exrom.dck (+ build/test/,
-                # and the libraries in build/libs/)
-make libs       # Phase 10: the libraries (libs/shapes.asm, tests/libs/*.asm) as .bin, .sym, .tap, .tzx, .wav
-make check      # strict assembly, ROM budgets (budget.toml), vendored-platform delta check, RAM layout guard,
-                # documentation examples in step with tests/doc/
-make budget     # per-component budget table and ROM map
-make inventory  # every HOME routine, table and gap with its referrers
-make test       # ZEsarUX: boot tests (both images), lexer, declaration and executable C tests, measurements,
-                # the shell (editor, keys, glyphs, typing cost), the RUN workflow (typed programs, the corpus
-                # through RUN, diagnostics, reports), the cassette (real tape signals) and the canary: one
-                # pool of emulators
-make test-fast  # the development subset (about 2 minutes): no cassette, no corpus through RUN, the canary over
-                # every other program; make test stays the acceptance gate
-make canary     # the RAM canary and banking invariants over the whole corpus, on its own
-make capacity   # the measured capacity table (build/capacity.json)
-make fuse       # Phase 9: the ROMs on Fuse 1.9.1, headless (needs the unstripped Fuse 1.9.1 build, gcc, SDL2)
-make timing     # Phase 9: the same programs timed on ZEsarUX and Fuse (build/timing.md)
-make poweron    # Phase 9: the boot from power-on RAM patterns (also in make test)
-make kit        # Phase 9: the hardware kit in build/kit (python3 tools/hwkit.py --verify checks it on both)
-make repro      # two clean builds must give identical hashes
-python3 tools/c2tape.py prog.c prog.tap   # a program tape for LOAD (.tap or .tzx)
-python3 tools/lib2tape.py mylib.asm mylib.tap mylib.wav   # a library's tapes for LIB (include/leapc_lib.inc)
+```c
+// expect: exit 0
+// screen: 0 Hello, TS2068!
+int main(void)
+{
+    cls();
+    printf("Hello, TS2068!\n");
+    return 0;
+}
 ```
 
-Run in ZEsarUX: `zesarux --machine TS2068 --romfile build/leapc_zesarux.bin` (ZEsarUX emulates the TS2068 at 50 Hz). Run in Fuse: `fuse --machine ts2068 --rom-ts2068-0 build/leapc_home.bin --rom-ts2068-1 build/leapc_exrom.bin` (60 Hz, as a TS2068).
+- **The language:** a documented subset of C89: `char`, `int`, `unsigned`, pointers, arrays, `struct`, `enum`, `typedef`, function pointers, recursion, `float`, every operator and statement, `#define`. What is not supported is reported as an error, never miscompiled.
+- **The library:** text and colour, `printf`, the keyboard, graphics, the AY sound chip, time, strings, the heap, cassette data, built in with no `#include`. Libraries written in assembly load from tape (`LIB "shapes"`).
+- **The machine:** an original 48 KB TS2068, unexpanded. About 18 KB for a program's source and 19 KB for its compiled code; compiling takes about 13 ms a line. Programs and data are saved on cassette.
 
-The test harness starts ZEsarUX with `--emulatorspeed 1000 --frameskip 49` (about 2.4 times faster; the emulated machine's timing, and so every T-state measurement, is unchanged); `LEAPC_REALTIME=1` runs it at real speed.
+## Status: public beta 1.0.0-beta.1
 
-## Layout
+Leap-C is **feature-complete for release 1** and in **public beta**. It is qualified on two emulators, **Fuse 1.9.1** and **ZEsarUX 13.0** (with a patch), by thousands of automated tests. It has **not yet been run on a physical TS2068**: that, and your reports, come before release 1.0.
 
-| Path | Contents |
+## Quick start (five minutes)
+
+1. **Fastest:** open **[nchiker.github.io/TSRun/?rom=leapc](https://nchiker.github.io/TSRun/?rom=leapc)** in a web browser: the TS2068 with Leap-C, nothing to install (tapes do not load there).
+2. **Or in an emulator:** download `leapc-1.0.0-beta.1-emulators.zip` from the [releases](https://github.com/nchiker/2068-Leap-C/releases) and unzip it. Install **Fuse 1.9.1** ([EMULATORS.md](docs/EMULATORS.md) §2.1: Windows has a ready-made build) and start it with Leap-C's ROMs (on Linux, as below; Windows and macOS: [EMULATORS.md](docs/EMULATORS.md) §2.2):
+
+   ```sh
+   fuse --machine ts2068 --rom-ts2068-0 /path/to/pack/roms/leapc_home.bin --rom-ts2068-1 /path/to/pack/roms/leapc_exrom.bin --no-traps --no-auto-load
+   ```
+
+3. A chord sounds and the editor appears: a white screen with `LINE 1/0` at the bottom.
+4. Type the program above (without the `//` lines if you like), pressing Enter after each line. On a PC, **Ctrl** is SYMBOL SHIFT: Ctrl + P is `"`, Ctrl + O is `;`, Ctrl + F and Ctrl + G are `{` and `}`, Ctrl + D is `\`, Ctrl + 8 and 9 are `(` and `)`.
+5. On the empty line after the last, type `RUN` and press Enter. The program prints its greeting; the report shows `EXIT 0`. Press a key to go back to the editor.
+
+Then read the [user guide](docs/USER_GUIDE.md), try the [examples](docs/EXAMPLES.md), and see [BETA_TESTING.md](docs/BETA_TESTING.md) for what to try and how to report.
+
+## Documents
+
+| | |
 |---|---|
-| `platform/` | Leap V2 platform sources, vendored from tag `v2.0.1-emu.1` (see `platform/UPSTREAM.md`) |
-| `src/rom/` | the HOME and EXROM images |
-| `src/compiler/` | the compiler: lexer (M1.1); symbol table, declarations, types, initialisers, function bodies (M1.2); expressions, code generator, constant folding (EXROM) (M1.3); statements, preprocessor (Phase 2); the library's names (EXROM) (Phase 3); the keyword lookup, type equality and directives (EXROM, Phase 8) |
-| `src/runtime/` | the helper core (incl. multiply, divide, `switch`), program start and exit, BREAK, runtime errors, the library; floating point: `float.asm` (HOME) and the float core `fpcore.asm` (EXROM, Phase 8) |
-| `src/shell/` | the EXROM shell (Phase 5): the editor's glue, commands, RUN and its reports (`shell.asm`), C keyword highlighting (`highlight.asm`), the error messages (`diag.asm`, Phase 6; its table is generated from `include/leapc_errors.inc` by `tools/gen_diag.py`), the cassette commands and the library's tape service (`tape.asm`, Phase 7) |
-| `src/test/` | test-build-only hooks (`-DLEAPC_TEST`) |
-| `include/` | RAM layout, cells, tokens, errors, build configuration |
-| `tests/` | test corpus (C sources with expectation headers): `lexer/`, `decl/`, `expr/` (incl. `gen/`, generated by `tools/gen_exprtests.py`), `experr/`, `golden/`, `run/`, `stmt/` (incl. `gen/`, generated by `tools/gen_stmttests.py`), `stmterr/`, `pp/`, `pperr/`, `lib/` (the library; `lib/tape/` the tape functions without a tape), `rt/` (runtime errors, BREAK, soak), `mem/` (memory layout: image regions, `#pragma hires`, stack, heap), `float/` (floating point; `float/gen/` generated by `tools/gen_floattests.py`), `doc/` (the documentation's examples, generated by `tools/docexamples.py`), `spike/`, `bench/`, `timing/` (the timing comparison's fixtures, Phase 9). The cassette's own cases, which need tapes, are in `tools/tapetest.py` |
-| `tools/` | build, budget, check and test tools; `c2tape.py` (host: a `.c` file to a program tape), `tapes.py` (tape files, signals and WAV audio for the tests and the host tools), `fpmodel.py` (a bit-exact model of the float core), `docexamples.py` (the documentation's examples as tests); Phase 9: `poweron.py`, `fusedrive.py` / `fusetest.py` / `fuse/fuseshim.c` (Fuse), `timingcmp.py`, `romcov.py`, `hwkit.py` |
-| `docs/hardware/` | the hardware check programs H1-H10 (`docs/HARDWARE_CHECKLIST.md`) |
-| `spike/` | feasibility code-shape spike, kept as evidence |
+| [docs/EMULATORS.md](docs/EMULATORS.md) | setting up Fuse, ZEsarUX and TSRun on Windows, macOS and Linux; the PC keyboard; tapes; troubleshooting |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | the editor, the commands, the C you can use, the library, errors, limits |
+| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Leap-C by example: 27 short programs (every one is a test) |
+| [docs/BETA_TESTING.md](docs/BETA_TESTING.md) | what to test, how to report, known limitations |
+| [docs/HARDWARE_CHECKLIST.md](docs/HARDWARE_CHECKLIST.md) | for a real TS2068: the EPROM images, tapes and checks |
+| [spec.md](spec.md) | the full specification: ROM architecture, memory map, language, runtime, library, storage |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | building, testing and contributing |
+| [project_plan.md](project_plan.md), [docs/milestones/](docs/milestones/) | how it was built, phase by phase, with every measurement |
+
+## Reporting problems
+
+Open an issue: **[Bug report](https://github.com/nchiker/2068-Leap-C/issues/new?template=bug_report.yml)** or **[Question or suggestion](https://github.com/nchiker/2068-Leap-C/issues/new?template=question.yml)**. Give the emulator and its version, your operating system, the ROM hashes, the program, the steps and a screenshot ([BETA_TESTING.md](docs/BETA_TESTING.md) §2).
+
+## Building from source
+
+Needs [sjasmplus](https://github.com/z00m128/sjasmplus) 1.23.1 and Python 3.11 or later:
+
+```sh
+make          # the ROM images in build/ (leapc_home.bin, leapc_exrom.bin, leapc_zesarux.bin) and the libraries
+make check    # sizes, checks, the documentation's examples in step
+make repro    # two clean builds give identical images
+```
+
+The emulator test suites need more ([CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## License
+
+Leap-C is released under the [MIT License](LICENSE). The ROM images also contain a small part derived from the TS2068's own ROM (the cassette block routines and a block-graphics sequence), copyright Amstrad, which Amstrad allows to be redistributed free of charge; see [NOTICE](NOTICE) for this and for the code that comes from Leap V2 and ts2068-debug (both MIT). Leap-C is an independent community project, not affiliated with Timex, Sinclair or Amstrad.

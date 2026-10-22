@@ -101,7 +101,7 @@ STORAGE_RECEIVE_BLOCK   EQU SH_TAPE_RECV
 COMP_XPLATFORM_END:
 
 ; ---------------------------------------------------------------- the float core (spec.md 4.9; Phase 8: the
-; re-engineered V2 calculator, rom/exrom_calc.asm, which is no longer assembled)
+; re-engineered V2 calculator, V2's rom/exrom_calc.asm, not vendored since Phase 11)
 COMP_XFP_BEGIN:
     INCLUDE "src/runtime/fpcore.asm"
 COMP_XFP_END:

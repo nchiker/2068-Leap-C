@@ -1,7 +1,7 @@
 ; ============================================================================
 ; src/runtime/fpcore.asm -- the float core: Leap-C's floating point (spec.md 4.9; Phase 8), EXROM
 ;
-; The re-engineered V2 calculator (platform/rom/exrom_calc.asm, 1,929 B, and V2's float formatting
+; The re-engineered V2 calculator (V2's rom/exrom_calc.asm at its tag v2.0.1-emu.1, 1,929 B, and V2's float formatting
 ; in rom/exrom_format.asm, 236 B: the optional FP component of spec.md 2.1). What is kept:
 ;   - the number format, the Sinclair 5-byte float: [exponent][sign | mantissa bits 30-24][23-16]
 ;     [15-8][7-0], value 0.1m x 2^(exponent - 128) (the leading 1 is implicit), 0 for exponent 0.

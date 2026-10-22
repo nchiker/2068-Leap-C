@@ -31,10 +31,10 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `rom/exrom_editor.asm` | editor engine | EXROM | **deltas D15, D16, D17** |
 | `rom/exrom_sound.asm` | `SOUND` register write | EXROM | **delta D19** |
 | `rom/exrom_format.asm` | integer formatting (V2's float formatting not assembled) | EXROM | **delta D10** |
-| `rom/exrom_calc.asm` | FP calculator: **not assembled since Phase 8**; kept as the reference the float core (`src/runtime/fpcore.asm`, `spec.md` §4.9) was re-engineered from | — | pristine |
 
 **Not vendored:**
 
+- `rom/exrom_calc.asm`, the FP calculator: vendored pristine until Phase 11 as the reference the float core (`src/runtime/fpcore.asm`, `spec.md` §4.9) was re-engineered from, though not assembled since Phase 8; removed for the public beta because parts of it are ported from the Spectrum ROM's calculator (Amstrad copyright, `NOTICE`). It is at the V2 tag;
 - the BASIC VM, compiler and symbol table;
 - SAVE ALL, session undo and the Array Store;
 - the package registry and the package ABI;

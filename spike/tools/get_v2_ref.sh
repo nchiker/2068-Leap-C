@@ -4,7 +4,7 @@
 # symbol tables the spike needs into spike/v2ref/build/. Verifies the published release hashes.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-repo="${LEAP_V2_REPO:-$HOME/2068-Leap}"
+repo="${LEAPC_V2_REPO:-${LEAP_V2_REPO:-$HOME/2068-Leap}}"
 tag="v2.0.1-emu.1"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

@@ -72,7 +72,7 @@ When a component would exceed its budget, apply these in order:
 | 8 | Language library completion and language polish | within existing budgets | 3, 7 |
 | 9 | Emulator and physical hardware validation | — | 8 |
 | 10 | Recommended fixes and library loading (owner-approved after Phase 9) | HOME +133, EXROM +125; floors 384 / 128 | 9 |
-| 11 | Documentation and release qualification | — | 10 |
+| 11 | Public beta, documentation and release qualification: the beta (M11-beta), then the manuals, the tape routines' rewrite, the final qualification and 1.0 | — | 10 |
 
 ---
 
@@ -399,7 +399,7 @@ Phase 5 can start after M1.1, in parallel with Phases 2-4.
 
 ## 12. Phase 10 — Recommended fixes and library loading
 
-Approved by the owner after Phase 9 (the improvements report, `spike/improvements/`), before documentation and release qualification, which became Phase 11.
+Approved by the owner after Phase 9 (the improvements report, `docs/history/IMPROVEMENTS_REPORT.md`; its prototypes were in `spike/improvements/` until Phase 11), before documentation and release qualification, which became Phase 11.
 
 **Deliverables:**
 
@@ -418,20 +418,40 @@ Approved by the owner after Phase 9 (the improvements report, `spike/improvement
 
 ---
 
-## 13. Phase 11 — Documentation and release qualification
+## 13. Phase 11 — Public beta, documentation and release qualification
+
+Approved by the owner after Phase 10 (2026-10-22). Phase 11 opens the project to testers before release 1.0: a public beta on emulators first, then the manuals, the final qualification and the 1.0 tag, informed by the beta's feedback.
+
+### M11-beta — Public beta 1.0.0-beta.1 on emulators (first milestone)
 
 **Deliverables:**
 
-- **User manual:** editor, workflow, tape, examples.
-- **Language reference:** the Release 1 subset, deviations from C89, limits, error lists.
-- **Library reference.**
-- **Technical reference:** ABI, memory map, ROM map, banking rules.
-- **Release notes.**
-- **Reproducible build check.**
-- **Release assets:** ROM images, `.dck`, example tapes, documents.
-- **Qualification report.**
+- **Emulator instructions** (`docs/EMULATORS.md`): Fuse 1.9.1, ZEsarUX 13.0 and TSRun on Windows, macOS and Linux: getting them, installing the ROMs (command line and menus), the settings Leap-C needs and why, a correct start, the PC keyboard and C's punctuation, tapes both ways, 50/60 Hz, troubleshooting; every procedure verified, or marked not verified.
+- **Basic documentation:** `docs/USER_GUIDE.md` (from `spec.md`, `docs/EXAMPLES.md` and the README, no new design), `docs/BETA_TESTING.md`, a public `README.md`; their examples are tests.
+- **An audit of everything that becomes public** (every tracked file and the whole history): secrets, personal data, paths, private links, provenance and licensing; findings reported to the owner before changes.
+- **Licensing:** `LICENSE` (MIT) and `NOTICE` (the vendored V2 platform, the tools derived from V2 and ts2068-debug, the code derived from the stock ROM).
+- **A fresh clone builds:** every tool path configurable (`LEAPC_*`, `CONTRIBUTING.md`); `make`, `make libs`, `make check`, `make repro` with only the documented prerequisites.
+- **GitHub project files:** issue templates (bug report; question or suggestion), a pull-request template, `CONTRIBUTING.md`, a CI workflow (sjasmplus 1.23.1, `make`, `make check`, `make repro`); the repository's description and topics prepared.
+- **The release, prepared, not published:** the emulator pack and the hardware kit as assets (`make release`), from a clean clone, with `make repro`'s hashes; a draft pre-release v1.0.0-beta.1 with release notes; TSRun's `?rom=leapc` prepared in the owner's TSRun fork.
+
+**Owner decisions:** MIT; v1.0.0-beta.1 as a GitHub pre-release; ZEsarUX 13.0 and Fuse 1.9.1 supported, other emulators untested; the history kept, never rewritten; the owner makes the repository public, publishes the release and changes settings. During the milestone: `Investigate/`, `spike/improvements/` and the unassembled `platform/rom/exrom_calc.asm` leave the tree (they stay in the history); the stock-ROM-derived tape block routines ship under an Amstrad notice, with their rewrite planned (below); Fuse first, ZEsarUX as 13.0 with V2's EXROM patch, reported upstream; TSRun pushed with the release.
 
 **Completion criteria:**
+
+- [ ] Every documentation example passes as a test (`tools/docexamples.py`, `make check`, the corpus suites).
+- [ ] The qualification: with the ROMs unchanged, `make check`, `make repro`, `make test-fast`, `make fuse` and the fresh-clone build; if ROM code or anything the tests use changed, `make repro` then `make qualify`.
+- [ ] `docs/milestones/M11-beta.md`: the audit's findings and their handling, the documents, the procedures verified and how, the fresh clone, the assets and their hashes; committed and pushed to the private repository.
+- [ ] The owner given the list of what becomes public, the draft release's link and the commands that publish.
+
+### After the beta (not started)
+
+- **Feedback:** the beta's reports triaged; defects fixed (each a ROM change: new hashes, `make repro`, `make qualify`).
+- **The tape block routines rewritten** from the tape format's specification alone (owner decision, 2026-10-22): `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK` (331 B, HOME) are V2's port of the stock ROM's SA-BYTES/LD-BYTES (Amstrad copyright, `NOTICE`). A clean-room version, the same timing and the same tapes, with the cassette suite, the kit's WAVs and Fuse's tape deck as its tests, so the ROM images can be offered entirely under the MIT License; `NOTICE` then loses its exception.
+- **The manuals:** a user manual (editor, workflow, tape, examples), a language reference (the Release 1 subset, the deviations from C89, the limits, the errors), a library reference, a technical reference (ABI, memory map, ROM map, banking rules), the release notes.
+- **Physical hardware:** the checklist (`docs/HARDWARE_CHECKLIST.md`) run by testers with a TS2068, where available.
+- **The final release qualification** (`make qualify`, `make repro`, the qualification report), accepted by the owner, then the tag v1.0.0.
+
+**Completion criteria (release 1.0):**
 
 - [ ] Documentation examples pass as tests.
 - [ ] Reproducible release hashes.

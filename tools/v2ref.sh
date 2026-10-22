@@ -4,10 +4,10 @@
 # package tape, which Leap-C's LIB must refuse (the same header type as a library tape). The frozen V2 repository
 # is only read, through `git archive` of the tag; the build runs in build/v2ref/src. The images must have the
 # V2 reference hashes (HOME 3f13ec2c..., EXROM 24b1ebb0...).
-# Usage: tools/v2ref.sh [V2_REPO]   (default ~/2068-Leap)
+# Usage: tools/v2ref.sh [V2_REPO]   (default $LEAPC_V2_REPO, else ~/2068-Leap)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-REPO=${1:-$HOME/2068-Leap}
+REPO=${1:-${LEAPC_V2_REPO:-$HOME/2068-Leap}}
 OUT=build/v2ref
 HOME_SHA=3f13ec2cc4ef02c1b9694ccd3d40c02658ff4ddef100e16f50230d3002306f1c
 EXROM_SHA=24b1ebb0b1377aad8e2e6caee443a9c5611cfad2f0eab495311e07df43b22b7e

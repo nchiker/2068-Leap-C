@@ -4,8 +4,9 @@ Derived from 2068-Leap's tools/qual/qharness.py (tag v2.0.1-emu.1, the V2 qualif
 the same approach (one headless ZEsarUX per worker, a snapshot of the booted machine restored
 before every case, routines called with SP = $FF00 and a return slot, the screen read back with the
 ROM's own font rendered by the real GFX_PUTCHAR). Copied and adapted, not imported: nothing here
-reads or writes ~/2068-Leap. Needs ~/ts2068-debug (ZRCP client and process control) and
-ZEsarUX 13.0 in ~/Applications/ZEsarUX-13.0.
+reads or writes ~/2068-Leap. Needs ts2068-debug (ZRCP client and process control; $LEAPC_TS2068_DEBUG,
+default ~/ts2068-debug) and ZEsarUX 13.0 ($LEAPC_ZESARUX, default ~/Applications/ZEsarUX-13.0;
+CONTRIBUTING.md).
 
 What is real: the assembled ROM images (production or -DLEAPC_TEST), cold start through the
 EXROM shell to its idle key wait, the lexer reading the line store, banking, interrupts.
@@ -22,12 +23,12 @@ import tempfile
 import time
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, os.path.expanduser("~/ts2068-debug"))
+sys.path.insert(0, os.environ.get("LEAPC_TS2068_DEBUG", os.path.expanduser("~/ts2068-debug")))
 from ts2068_debug.zrcp import ZRCPClient, ZRCPError      # noqa: E402
 from ts2068_debug.process import ZEsarUXProcess as _ZProcess  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ZESARUX = os.path.expanduser("~/Applications/ZEsarUX-13.0")
+ZESARUX = os.environ.get("LEAPC_ZESARUX", os.path.expanduser("~/Applications/ZEsarUX-13.0"))
 # ZEsarUX's own speed settings (Phase 5): --emulatorspeed shortens the real-time wait after each
 # frame (10-1000 %) and --frameskip skips drawing frames; neither changes the emulated machine (the
 # T-states per frame, the interrupts), so every measurement is unchanged. Measured on the idle editor:

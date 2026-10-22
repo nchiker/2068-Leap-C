@@ -1,0 +1,84 @@
+name: Bug report
+description: Something in Leap-C (the ROMs, the tools or the documents) does not work as described
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing Leap-C. Please check the open issues and the known limitations in
+        [docs/BETA_TESTING.md](https://github.com/nchiker/2068-Leap-C/blob/main/docs/BETA_TESTING.md#3-known-limitations) first.
+        The shortest program that shows the problem helps most.
+  - type: dropdown
+    id: emulator
+    attributes:
+      label: Emulator or machine
+      options:
+        - Fuse 1.9.1
+        - ZEsarUX 13.0 (built with the EXROM patch)
+        - TSRun (browser)
+        - A real TS2068
+        - Another emulator or version (say which below)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Emulator version and how it was started
+      description: The exact version (Help / About, or --version), and the command line or the settings you changed.
+      placeholder: "Fuse 1.9.1, fuse --machine ts2068 --rom-ts2068-0 ... --no-traps --no-auto-load"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 / macOS 15.1 (Apple Silicon) / Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: hashes
+    attributes:
+      label: ROM hashes (SHA-256)
+      description: "docs/EMULATORS.md section 1 shows how to get them. The beta's are HOME ba8e0ab6..., EXROM 9bd71cef..., combined f5f8eaff...."
+      placeholder: |
+        leapc_home.bin  ba8e0ab6...
+        leapc_exrom.bin 9bd71cef...
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: program
+    attributes:
+      label: The program, or its tape
+      description: Paste the program's text, or attach its tape file (zip it). Say "none" if no program is involved.
+      render: c
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: What you typed or pressed, from a fresh start.
+      placeholder: |
+        1. Start Fuse as above
+        2. Type the program, then RUN
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened, and what you expected
+      description: The exact messages from the report rows (for example "ERROR 23: UNDECLARED IDENTIFIER", "LINE 5").
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Drag an image of the emulator's window here.
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else
+      description: Does it also happen in the other emulator? Anything you tried?

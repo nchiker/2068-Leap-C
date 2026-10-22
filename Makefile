@@ -16,8 +16,8 @@
 #                       cassette: SAVE/LOAD/VERIFY and tape_save/tape_load on real tape signals, V2's
 #                       tapes; Phase 9: boots from power-on RAM patterns) and the canary, as tasks on a pool
 #                       of emulators, with ZEsarUX's code coverage (build/coverage.json, reported by
-#                       tools/romcov.py in build/romcov.md); needs ~/ts2068-debug, ZEsarUX 13.0, and
-#                       ~/2068-Leap (read only) for the V2 reference ROM
+#                       tools/romcov.py in build/romcov.md); needs ts2068-debug, ZEsarUX 13.0 with the EXROM patch,
+#                       and 2068-Leap (read only) for the V2 reference ROM (where: CONTRIBUTING.md, LEAPC_* variables)
 #   make test-fast      the development subset (Phase 8): make test without the cassette suite, the corpus
 #                       through the shell's RUN and the typing-cost/redraw measurements, the canary over
 #                       every other program; about a fifth of make test's time. make test stays the gate
@@ -30,12 +30,14 @@
 #                       checksums, the hardware check programs and examples as .tap/.tzx/.wav (tools/hwkit.py)
 #   make capacity       the measured capacity table (build/capacity.json, docs/milestones/M4.md)
 #   make repro          two clean builds must give identical image hashes
+#   make release        Phase 11: the release assets in build/release (tools/release.py): the emulator pack and the
+#                       hardware kit as zips, with SHA256SUMS
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
 #   make v2ref          the V2 reference ROM (tag v2.0.1-emu.1) in build/v2ref/, built from the frozen
 #                       repository through `git archive` (the cross-version tape tests)
 # Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
 .PHONY: all build prod testimg libs check budget inventory test test-fast canary capacity repro audit v2ref clean \
-	fuse timing poweron kit qualify
+	fuse timing poweron kit qualify release
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -111,6 +113,9 @@ poweron: build
 
 kit: build
 	python3 tools/hwkit.py
+
+release: kit
+	python3 tools/release.py
 
 capacity: build
 	python3 tools/capacity.py

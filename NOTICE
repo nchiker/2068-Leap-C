@@ -1,0 +1,83 @@
+2068-Leap-C: licensing and provenance notice
+=============================================
+
+2068-Leap-C (Leap-C) is released under the MIT License (LICENSE), copyright (c) 2026 Charlie Day,
+except for the parts listed under "Not covered by the MIT License" below. This file records where
+the code that Leap-C did not write from scratch came from.
+
+Leap-C is an independent community project. It is not affiliated with or endorsed by Timex,
+Sinclair Research, Amstrad, Sky, the Fuse project or the ZEsarUX project; those names belong to
+their owners. No emulator and no stock ROM image is included in this repository or its releases.
+
+
+1. The vendored Leap V2 platform (MIT)
+--------------------------------------
+
+platform/ is a copy of platform sources from 2068-Leap V2 (https://github.com/nchiker/2068-Leap),
+release tag v2.0.1-emu.1, commit d19b9ead9880b31c5fee59e71519a42f4c0263b0, MIT License, copyright
+(c) 2026 Charlie Day. platform/UPSTREAM.md and platform/MANIFEST record each file and every Leap-C
+change to it (deltas D1-D19, as patches in platform/deltas/); tools/check_platform.py verifies them
+against the V2 tag. Section 3 lists the parts of platform/ that V2 itself took from the stock ROM.
+
+The font (platform/kernel/graphics/graphics.asm, FONT_TABLE) is V2's own design, with Leap-C's
+glyphs for [ ] { } | ~ ^ \ (delta D8) and for 1 and l (delta D13). It is not taken from the
+Spectrum or TS2068 font: no glyph is byte-identical to a stock glyph. Six simple 5-pixel shapes
+(a, o, x, y, z and one punctuation mark) equal a stock glyph shifted by one pixel.
+
+
+2. Tools derived from Leap V2 and ts2068-debug (MIT)
+----------------------------------------------------
+
+- tools/lcharness.py is derived from 2068-Leap's tools/qual/qharness.py (tag v2.0.1-emu.1). It
+  imports the ZRCP client and the ZEsarUX process control of ts2068-debug
+  (https://github.com/nchiker/2068-Debug, MIT License, copyright (c) 2026 Charlie Day) at run time,
+  from a separate checkout (CONTRIBUTING.md), and subclasses and adapts them. ts2068-debug is not
+  copied into this repository.
+- tools/tapes.py is derived from 2068-Leap's tools/tape_synth.py and tools/make_extension_tzx.py.
+- tools/sjasm_strict.sh is derived from 2068-Leap's tools/sjasmplus_strict.sh.
+- tools/make_dck.sh is derived from 2068-Leap's .dck builder.
+- tools/canary.py and tools/check_ram_layout.py follow the ideas of V2's qcanary.py and
+  check_ram_layout.py; no code was copied.
+- tools/fuse/fuseshim.c is Leap-C's own code. It is loaded into Fuse (GNU GPL v2 or later) by the
+  test harness at run time, and declares the layout of one Fuse 1.9.1 structure (memory_page) so
+  that it can read Fuse's memory map. It contains no Fuse source code. Fuse is not distributed here.
+
+
+3. Not covered by the MIT License: code derived from the stock ROM (Amstrad)
+---------------------------------------------------------------------------
+
+The TS2068's ROM is Timex's adaptation of the ZX Spectrum ROM. The Spectrum ROM's code is
+copyright Amstrad plc (formerly Sinclair Research Ltd); Timex's modifications are generally
+treated as public domain (the Fuse project's roms/README.copyright).
+
+Leap-C contains code derived from it:
+
+- STORAGE_SEND_BLOCK and STORAGE_RECEIVE_BLOCK in platform/kernel/storage/storage.asm (the tape
+  block I/O, 331 bytes, assembled into the HOME ROM between COMP_TAPE_BEGIN and COMP_TAPE_END) are
+  V2's port of the stock ROM's SA-BYTES and LD-BYTES routines, checked instruction by instruction
+  against the TS2068 EXROM, with the adaptations its header lists.
+- The block-graphics quarter generator in GFX_CHAR_TO_FONT_OFFSET (platform/kernel/graphics/
+  graphics.asm, two 12-byte sequences) is the stock ROM's PO-GR-2 sequence.
+
+These parts, and the ROM and EPROM images built from them (leapc_home.bin, leapc_zesarux.bin, and
+the kit's leapc_home_27128.bin and .hex), are not offered under the MIT License. They are
+redistributed free of charge under Amstrad's published permission to redistribute its Spectrum ROM
+code, including modified versions, provided its copyright is retained and no charge is made for
+it. Amstrad plc retains the copyright in that code. Do not sell it, and do not charge for it as
+part of anything else.
+
+Everything else in the ROM images is Leap-C's or V2's own code under the MIT License. (A 15-byte
+character test in src/shell/highlight.asm, SH_IDCHAR, happens to be byte-identical to the stock
+ROM's ALPHA routine: it is the usual way to write a range test on the Z80, written for Leap-C.)
+
+The project plans to replace the derived tape routines with code written from the tape format's
+specification alone after the public beta (project_plan.md, Phase 11), so that the ROM images can
+be offered entirely under the MIT License.
+
+
+4. References used, not included
+--------------------------------
+
+Comments in the source cite, without copying them: the "Timex Sinclair 2068 ROM Disassembly"
+(David Anderson, 2023) and the annotated ZX Spectrum ROM disassembly at skoolkid.github.io. The
+test harnesses compare against stock ROM behaviour in emulators; no stock ROM image is stored here.
