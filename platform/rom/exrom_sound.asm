@@ -31,6 +31,8 @@
 ; In:  B = register (1-16), C = data (0-255)
 ; Out: carry set if the register is out of range (nothing written to
 ;      either port); carry clear on success
+;      (Leap-C, delta D19: no range check and no carry; the callers, the
+;      shell's chime, write registers 0-10)
 ; Destroys: AF
 ; ============================================================================
 SOUND_EXROM:
@@ -41,14 +43,8 @@ SOUND_EXROM:
     ENDIF
     ; MAINT (SOUND0): the stock ROM accepts registers 0-16 (its `DEC A / INC A / JP M` tests
     ; nothing for 0): only 17 and above are rejected. B and C are preserved.
-    cp   17
-    jr   nc, .bad_register             ; register >= 17 -> error
     out  (PORT_AY_REG), a
     ld   a, c
     out  (PORT_AY_DATA), a
-    or   a
-    ret
-.bad_register:
-    scf
     ret
 

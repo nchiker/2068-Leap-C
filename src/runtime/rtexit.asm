@@ -132,8 +132,9 @@ RT_ERRLOC:
 ;      return, the interrupted PC
 ; Out: no program running: returns (an ordinary key, the editor's). NOBRK > 0: BRK_HALT set, returns
 ;      (the section's end honours it, RT_NOBRK_END). Else the program ends with runtime error 5 at the
-;      interrupted address, or, in the ROM, at its last library call: does not return (the ISR's
-;      frame goes with the program's stack)
+;      interrupted address, or, in the ROM or (Phase 10) a loaded library's code (image region 3 holds
+;      no program code then), at its last library call: does not return (the ISR's frame goes with the
+;      program's stack)
 ; Destroys: AF, HL
 ; RT_BREAK -- end the program for a deferred BREAK (interrupts on). Does not return
 ; ============================================================================
@@ -151,6 +152,10 @@ RT_BREAKREQ:
     ei
     ld   a, h
     cp   LEAPC_IMG4_BASE >> 8
+    jr   c, RT_BREAK                   ; in the ROM
+    ld   a, (LIB_LOADED)               ; LEAPC_IMG3_BASE >> 8 with a library loaded, else 0: at or above
+    dec  a                             ; it, the library's code
+    cp   h
     jr   nc, RT_BREAKAT                ; in the program's image
 RT_BREAK:
     ld   hl, (LIB_CALLER)

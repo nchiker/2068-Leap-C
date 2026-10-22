@@ -4,7 +4,8 @@
 Usage: budget.py [--check] [--json OUT] [--build DIR]
 Reads budget.toml and the production symbol files build/leapc_home.sym, build/leapc_exrom.sym.
 Prints the budget table and the ROM map. With --check, exits 1 when a component exceeds its budget,
-when code is not covered by exactly one component, or when a reserve falls below its floor."""
+when code is not covered by exactly one component, or when a reserve falls below its floor. A ledger entry
+whose component is "reserve_floor" changes the bank's floor (Phase 10, owner decision)."""
 import argparse
 import json
 import os
@@ -30,6 +31,7 @@ def bank_report(name, cfg, syms, ledger):
     errors = []
     comps = []
     intervals = []
+    pinned = []
     for c in cfg["component"]:
         delta = sum(e["delta"] for e in ledger if e["bank"] == name and e["component"] == c["id"])
         size = 0
@@ -39,7 +41,7 @@ def bank_report(name, cfg, syms, ledger):
             if hi < lo:
                 errors.append("%s: range %s..%s is negative" % (c["id"], a, b))
             rs.append((lo, hi))
-            intervals.append((lo, hi, c["id"]))
+            (pinned if c.get("pinned") else intervals).append((lo, hi, c["id"]))
             size += hi - lo
         budget = c["budget"] + delta
         comps.append(dict(id=c["id"], title=c["title"], base_budget=c["budget"], ledger=delta,
@@ -59,14 +61,19 @@ def bank_report(name, cfg, syms, ledger):
         pos = max(pos, hi)
     if pos != end:
         errors.append("components end at $%04X, code ends at $%04X" % (pos, end))
-    used = end - base
+    for lo, hi, cid in pinned:              # (a pinned component lies above the code at a fixed address:
+        if lo < end:                        # Phase 10, the library slots at the end of HOME)
+            errors.append("%s at $%04X overlaps the code (ends $%04X)" % (cid, lo, end))
+    used = end - base + sum(hi - lo for lo, hi, _ in pinned)
     allocated = sum(c["budget"] for c in comps)
     reserve = cfg["size"] - allocated
-    if reserve < cfg["reserve_floor"]:
-        errors.append("reserve %d B is below the floor of %d B" % (reserve, cfg["reserve_floor"]))
+    floor = cfg["reserve_floor"] + sum(e["delta"] for e in ledger if e["bank"] == name and e["component"] == "reserve_floor")
+    if reserve < floor:
+        errors.append("reserve %d B is below the floor of %d B" % (reserve, floor))
     return dict(bank=name, size=cfg["size"], base=base, used=used, free=cfg["size"] - used,
-                allocated=allocated, reserve=reserve, reserve_floor=cfg["reserve_floor"],
-                components=comps, intervals=[i for i in intervals if i[0] != i[1]], errors=errors)
+                allocated=allocated, reserve=reserve, reserve_floor=floor,
+                components=comps, intervals=[i for i in intervals if i[0] != i[1]], pinned=sorted(pinned),
+                code_end=end, errors=errors)
 
 
 def print_report(r):
@@ -81,7 +88,10 @@ def print_report(r):
     print("  ROM map:")
     for lo, hi, cid in r["intervals"]:
         print("    $%04X-$%04X %6d  %s" % (lo, hi - 1, hi - lo, cid))
-    print("    $%04X-$%04X %6d  (free)" % (r["base"] + r["used"], r["base"] + r["size"] - 1, r["free"]))
+    top = r["pinned"][0][0] if r["pinned"] else r["base"] + r["size"]
+    print("    $%04X-$%04X %6d  (free)" % (r["code_end"], top - 1, r["free"]))
+    for lo, hi, cid in r["pinned"]:
+        print("    $%04X-$%04X %6d  %s" % (lo, hi - 1, hi - lo, cid))
 
 
 def main():

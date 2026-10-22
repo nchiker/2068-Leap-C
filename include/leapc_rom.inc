@@ -61,9 +61,10 @@ FOP_DIVR        EQU $87
 FOP_CMP         EQU $88     ; C: left < right, Z: equal
 FOP_CMPR        EQU $89
 
-; Tape version words the platform's STORAGE_VERSION_WORD stamps and checks (spec.md section 8.1).
-; Leap-C has no package tapes; both names give the Leap-C word.
+; Tape version words the platform's STORAGE_VERSION_WORD stamps and checks (spec.md sections 8.1, 8.4):
+; program and data tapes carry the Leap-C word; V2's package tapes (header type STORAGE_EXTENSION_TYPE) are
+; Leap-C's library tapes (Phase 10), whose word is the library ABI's (include/leapc_lib.inc)
 V2_FORMAT_WORD      EQU LEAPC_TAPE_VERSION
-PKG_ABI_WORD        EQU LEAPC_TAPE_VERSION
+PKG_ABI_WORD        EQU LX_WORD
 
     ENDIF

@@ -18,10 +18,13 @@ Cases (everything through the keyboard matrix, the screen read back with the ROM
   save        SAVE recorded by Fuse's tape deck; the recording LOADed back, the source identical
   wav         a program tape as audio (tapes.Tape.to_wav: the hardware kit's WAV), its samples played as a
               TZX direct recording (Fuse's libspectrum here reads no WAV), LOADed and RUN
+  lib         (Phase 10) LIB "shapes" from its .tzx and LIB "testlib" from its WAV on Fuse's tape deck, the
+              reports, programs typed and RUN with their functions, BREAK in the library's code, LIB alone
   corpus      the executable corpus (and the declaration cases): each program made a tape (tools/c2tape.py),
               LOADed by the ROM's own loader from Fuse's tape deck (traps off), RUN, its report and screen
               checked against the case's expectations; one Fuse session runs a whole slice (a soak of
-              hundreds of LOAD/RUN cycles without a reset)
+              hundreds of LOAD/RUN cycles without a reset); (Phase 10) a case that needs a library gets it
+              by LIB from the library's tape first (build/libs/NAME.tzx), and LIB alone unloads it after
 
 Usage: fusetest.py [--workers N] [--json OUT] [--only SUBSTR] [CASE ...]   (default: every case)
 """
@@ -55,6 +58,8 @@ C_CHARS = ("abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 "
            "!\"#%&'()*+,-./:;<=>?[\\]^_{|}~ $@")
 IGNORED = {"maxi", "noaudit", "mem", "golden", "region", "rundepth", "ay", "attr", "pixel", "cell", "breakpc",
            "stacklow", "breakdeferred"}     # memory-level expectations: the ZEsarUX suites check them
+NAMED = {21, 22, 23, 52, 70, 76}            # the errors whose report names the identifier (Phase 9: 23; Phase 10)
+LIBS = os.path.join(BUILD, "libs")
 
 
 def new_fuse(name, speed=20000):
@@ -73,18 +78,41 @@ def memory_row(f):
     return "IMAGE %d B  HEAP %d B" % (image_size(f), exectest.heap_free(f.w16(f.S["PROG_END"])))
 
 
-def undeclared_name(f, lines):
+def undeclared_name(f, lines, line=None):
     name = f.peek(f.w16(f.S["NM_PTR"]), f.peek(f.S["NM_LEN"], 1)[0]).decode("latin-1")
+    where = lines if not line or line > len(lines) else \
+        [lines[line - 1]] + [l for l in lines if l.lstrip().startswith("#") and "define" in l]
     ok = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,30}", name) and any(
-        re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), l) for l in lines)
+        re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), l) for l in where)
     return name[:exectest.UNDECL_NAME_MAX] if ok else "<NM %r>" % name
 
 
 def error_rows(f, n, line, lines):
     row = "LINE %d" % line
-    if n == 23:
-        row += "  '%s'" % undeclared_name(f, lines)
+    if n in NAMED and f.peek(f.S["NM_LEN"], 1)[0]:
+        row += "  '%s'" % undeclared_name(f, lines, line)
     return [gen_diag.report("E", n, MSGS), row]
+
+
+def lib_command(f, name, path=None):
+    """LIB "name" from the tape at `path` (default build/libs/NAME.tzx), or LIB alone (name None): the report or
+    message; then a key back to the editor. Returns None, or what went wrong."""
+    if name is None:
+        f.command("lib")
+        msg = f.rows()[23].rstrip()
+        f.key(" ")
+        return None if msg == "NO LIBRARY" and not f.peek(f.S["LIB_LOADED"], 1)[0] else "LIB alone showed %r" % msg
+    r = f.cmd("tape_open %s" % (path or os.path.join(LIBS, name + ".tzx")))
+    if r != "0":
+        return "tape_open: %s" % r
+    f.command('lib "%s"' % name, timeout=120)
+    msg = f.rows()[22]
+    f.key(" ")
+    img = open(os.path.join(LIBS, name + ".bin"), "rb").read()
+    want = "LIBRARY %s: %d FUNCTIONS" % (name, img[2])
+    if msg != want or f.peek(0xF400, len(img)) != img or f.peek(f.S["LIB_LOADED"], 1)[0] != 0xF4:
+        return "LIB showed %r, expected %r (image %s)" % (msg, want, f.peek(0xF400, len(img)) == img)
+    return None
 
 
 def editor_back(f, lines, line):
@@ -171,7 +199,7 @@ def c_typed(out):
     try:
         for name, lines, screen, report, keys, _matrix in TYPED:
             n += 1
-            report, row23 = report if isinstance(report, tuple) else (report, None)
+            report, row23, col = (report + (None,))[:3] if isinstance(report, tuple) else (report, None, None)
             f.enter_program(lines)
             bad = []
             if f.store() != lines:
@@ -191,6 +219,8 @@ def c_typed(out):
                 if rows[:22] != want:
                     bad.append("screen %r" % [r for r in rows[:22] if r])
             f.key(" ")
+            if col is not None and f.w16(f.S["EDIT_BUF_OFFSET"]) != col:
+                bad.append("cursor at column %d, expected %d" % (f.w16(f.S["EDIT_BUF_OFFSET"]), col))
             if bad:
                 fails.append("%s: %s" % (name, "; ".join(bad)))
         out("fuse: typed: %d/%d typed programs pass" % (n - len(fails), n))
@@ -348,6 +378,61 @@ def c_wav(out):
         f.stop()
 
 
+LIB_SHAPES = ["int main(void)", "{", "    circle(128, 96, 40);", "    box(10, 10, 60, 40);",
+              '    printf("%u", isqrt(10000));', "    return isqrt(1000);", "}"]
+LIB_SPIN = ["int spin(void)", "{", "    return t_spin(30000);", "}", "int main(void)", "{", "    return spin();", "}"]
+
+
+@case("lib")
+def c_lib(out):
+    f = new_fuse("lib")
+    bad = []
+    try:
+        e = lib_command(f, "shapes")                        # the .tzx: lib2tape's standard speed blocks
+        if e:
+            bad.append("shapes: " + e)
+        f.enter_program(LIB_SHAPES)
+        rows = f.run()
+        if rows[0] != "100" or rows[22] != "EXIT 31" or rows[23] != memory_row(f):
+            bad.append("shapes run %r %r" % (rows[0], rows[22:24]))
+        f.key(" ")
+        wav = open(os.path.join(LIBS, "testlib.wav"), "rb").read()   # the WAV, as a direct recording
+        tzx = os.path.join(f.wdir, "testlib_wav.tzx")
+        open(tzx, "wb").write(tapes.tzx_from_wav(*tapes.read_wav(wav)))
+        e = lib_command(f, "testlib", tzx)
+        if e:
+            bad.append("testlib: " + e)
+        f.enter_program(LIB_SPIN)                           # BREAK in the library's own code (image region 3)
+        f.to_append_line()
+        f.chords([chord(c) for c in "run"] + [[0x100]], settle=False)
+        f.wait_frames(60)
+        if f.at_key_wait():
+            bad.append("the program ended before BREAK: %r" % f.rows()[22:])
+        for k in BREAK:                                     # (the report waits for the release)
+            f.cmd("press %d" % k)
+        try:
+            f.wait_frames(60)
+        finally:
+            for k in reversed(BREAK):
+                f.cmd("release %d" % k)
+        f.wait(f.at_key_wait, 60, "the report's key wait")
+        rows = f.rows()
+        if rows[22:24] != ["BREAK", "LINE 1"]:
+            bad.append("BREAK in the library %r" % rows[22:24])
+        f.key(" ")
+        e = lib_command(f, None)
+        if e:
+            bad.append(e)
+        f.enter_program(["int main(void)", "{", "    return t_args(1, 2, 3);", "}"])
+        rows = f.run()
+        if rows[22:24] != ["ERROR 70: UNDEFINED FUNCTION", "LINE 3  't_args'"]:
+            bad.append("after LIB alone %r" % rows[22:24])
+        f.key(" ")
+        return not bad, "; ".join(bad), None
+    finally:
+        f.stop()
+
+
 # =========================================================================== the corpus
 def corpus_cases(only=None):
     out = []
@@ -383,6 +468,8 @@ def expectations(path):
         elif k == "screen":
             row, _, txt = body.partition(" ")
             want["screen"][int(row)] = txt
+        elif k == "library":
+            want["library"] = body.strip()
     if os.sep + "decl" + os.sep in path:
         de = decl_expect(path)
         want["kind"] = ("error",) + de if de else ("nomain",)
@@ -392,6 +479,12 @@ def expectations(path):
 
 
 def check_corpus_case(f, path, lines, want, tapedir):
+    lib = want.get("library")                   # (Phase 10) the library the case needs: LIB from its tape, or
+    if lib != getattr(f, "library", None):      # LIB alone to unload the one loaded for the case before
+        e = lib_command(f, lib)
+        if e:
+            return False, e
+        f.library = lib
     tap = os.path.join(tapedir, "case.tap")
     open(tap, "wb").write(tapes.tap(c2tape.program_blocks("\n".join(lines) + "\n", "case")))
     e = load_tape(f, tap, "case")

@@ -2,26 +2,30 @@
 
 A C language ROM set for the original Timex Sinclair 2068 (48 KB, stock HOME/EXROM banking). It has a full-screen source editor and an on-machine, single-pass, Small-C-style compiler that generates native Z80 code. It is built on the platform services of Leap V2.
 
-- **What is built:** `spec.md` (v0.11).
+- **What is built:** `spec.md` (v0.12).
 - **By example:** `docs/EXAMPLES.md` (every example there is a test).
 - **How and in which order:** `project_plan.md` (v0.1).
 - **Why:** `docs/C_FEASIBILITY_STUDY.md` (closed).
 - **Progress:** one report per milestone in `docs/milestones/`.
 
-**Status:** Phase 9 (emulator and hardware validation) is complete (`docs/milestones/M9.md`). The production ROMs are qualified on two emulators: **ZEsarUX 13.0** (every suite, now also from random and fixed power-on RAM, with ROM coverage: 99.8% of HOME's and 98.1% of the EXROM's instructions executed) and, independently, **Fuse 1.9.1** (headless: typed programs, BREAK, SAVE and LOAD on its tape deck, the whole corpus LOADed from tape and run, and a timing comparison at the TS2068's real 60 Hz frame). **No physical TS2068 was available: the hardware checks are an owner-accepted qualification deviation**, ready to run from `docs/HARDWARE_CHECKLIST.md` with the kit `make kit` builds (EPROM images for a 27128 and a 2764 with checksums, check programs and examples as `.tap`, `.tzx` and `.wav`). Phase 9 also made the digit `1` and the letter `l` distinct in the font, names an undeclared identifier in its report, and fixed three defects the qualification found: a report could vanish when its key was held past the auto-repeat delay, the UDG characters showed power-on garbage, and float code lost about 1% of the frame interrupts (`frames()` ran slow).
+**Status:** Phase 10 (the recommended fixes and library loading) is complete (`docs/milestones/M10.md`). **Libraries:** `LIB "name"` loads an assembly library from tape into image region 3, and its functions are called from C like the built-in ones, with no declaration; `LIB` alone unloads it. A library reaches the ROM through a fixed jump table of 16 slots at the end of HOME, so it keeps working on later ROMs that keep the slots. The example library `libs/shapes.asm` adds `circle()`, `box()` and `isqrt()`; `tools/lib2tape.py` builds a library's `.tap`, `.tzx` and `.wav` (`make libs`). Phase 10 also made `?:` with a float and an integer operand convert the integer (C89), named the identifier in five more compile errors, put the cursor on the error's column, made unsigned division 112 T faster, removed unreachable vendored EXROM code, and fixed a LOAD that kept a partly overwritten source after BREAK. The next phase is Phase 11 (documentation and release qualification).
+
+Phase 9 (emulator and hardware validation) is complete (`docs/milestones/M9.md`). The production ROMs are qualified on two emulators: **ZEsarUX 13.0** (every suite, now also from random and fixed power-on RAM, with ROM coverage: 99.8% of HOME's and 98.1% of the EXROM's instructions executed) and, independently, **Fuse 1.9.1** (headless: typed programs, BREAK, SAVE and LOAD on its tape deck, the whole corpus LOADed from tape and run, and a timing comparison at the TS2068's real 60 Hz frame). **No physical TS2068 was available: the hardware checks are an owner-accepted qualification deviation**, ready to run from `docs/HARDWARE_CHECKLIST.md` with the kit `make kit` builds (EPROM images for a 27128 and a 2764 with checksums, check programs and examples as `.tap`, `.tzx` and `.wav`). Phase 9 also made the digit `1` and the letter `l` distinct in the font, names an undeclared identifier in its report, and fixed three defects the qualification found: a report could vanish when its key was held past the auto-repeat delay, the UDG characters showed power-on garbage, and float code lost about 1% of the frame interrupts (`frames()` ran slow).
 
 Phase 8 (language and library completion, `docs/milestones/M8.md`): **Floating point is in Release 1:** `float` and `double` (one type, the Sinclair 5-byte format: about 9.6 digits, up to 1.7E38), floating constants, conversions, arithmetic and comparisons, float arguments and results, constant folding, and `printf`'s `%f` / `%.Nf`. It runs on the float core, the V2 calculator re-engineered into a smaller engine that replaces it. Phase 8 also completed the initialisers of `spec.md` §4.7, tested the library's remaining edge cases, reports a missing `;` at the line that lacks it, and made the documentation's examples tests.
 
-Phases 1-7 are also complete: the compiler, the runtime and library, the memory layout and banking, the editor with C punctuation and keyword highlighting, the compile/run workflow (`RUN` with its reports, `FREE`), and the cassette (`SAVE`, `LOAD`, `VERIFY`, `tape_save`, `tape_load`, `tools/c2tape.py`). The next phase is Phase 10 (documentation and release qualification).
+Phases 1-7 are also complete: the compiler, the runtime and library, the memory layout and banking, the editor with C punctuation and keyword highlighting, the compile/run workflow (`RUN` with its reports, `FREE`), and the cassette (`SAVE`, `LOAD`, `VERIFY`, `tape_save`, `tape_load`, `tools/c2tape.py`).
 
-Typing a program: letters as usual (CAPS SHIFT for capitals), SYMBOL SHIFT for punctuation, with SYMBOL SHIFT + Y `[`, U `]`, F `{`, G `}`, S `|`, A `~`, H `^`, D `\`. CAPS SHIFT + 5/6/7/8 move the cursor, + 0 deletes, + 1 deletes the line, + ENTER inserts a line; `RUN`, `LIST`, `FREE`, `NEW`, `SAVE "name"`, `LOAD "name"` (or `LOAD ""`) and `VERIFY "name"` are typed on the empty line after the last; a key ends a report (one pressed after the command's own key is released). SPACE (or BREAK) stops a tape transfer. A frame (`frames()`, `pause`, `beep`) is 1/60 s on a TS2068.
+Typing a program: letters as usual (CAPS SHIFT for capitals), SYMBOL SHIFT for punctuation, with SYMBOL SHIFT + Y `[`, U `]`, F `{`, G `}`, S `|`, A `~`, H `^`, D `\`. CAPS SHIFT + 5/6/7/8 move the cursor, + 0 deletes, + 1 deletes the line, + ENTER inserts a line; `RUN`, `LIST`, `FREE`, `NEW`, `SAVE "name"`, `LOAD "name"` (or `LOAD ""`), `VERIFY "name"` and `LIB "name"` (or `LIB` alone) are typed on the empty line after the last; a key ends a report (one pressed after the command's own key is released). SPACE (or BREAK) stops a tape transfer. A frame (`frames()`, `pause`, `beep`) is 1/60 s on a TS2068.
 
 ## Build and test
 
 Needs sjasmplus 1.23, Python 3.11 or later, and, for `make test`, ZEsarUX 13.0 in `~/Applications/ZEsarUX-13.0`, `~/ts2068-debug`, and the frozen Leap V2 repository `~/2068-Leap` (read only: `tools/v2ref.sh` builds the V2 reference ROM from its tag for the cross-version tape tests).
 
 ```sh
-make            # build/leapc_home.bin, leapc_exrom.bin, leapc_zesarux.bin, leapc_exrom.dck (+ build/test/)
+make            # build/leapc_home.bin, leapc_exrom.bin, leapc_zesarux.bin, leapc_exrom.dck (+ build/test/,
+                # and the libraries in build/libs/)
+make libs       # Phase 10: the libraries (libs/shapes.asm, tests/libs/*.asm) as .bin, .sym, .tap, .tzx, .wav
 make check      # strict assembly, ROM budgets (budget.toml), vendored-platform delta check, RAM layout guard,
                 # documentation examples in step with tests/doc/
 make budget     # per-component budget table and ROM map
@@ -40,6 +44,7 @@ make poweron    # Phase 9: the boot from power-on RAM patterns (also in make tes
 make kit        # Phase 9: the hardware kit in build/kit (python3 tools/hwkit.py --verify checks it on both)
 make repro      # two clean builds must give identical hashes
 python3 tools/c2tape.py prog.c prog.tap   # a program tape for LOAD (.tap or .tzx)
+python3 tools/lib2tape.py mylib.asm mylib.tap mylib.wav   # a library's tapes for LIB (include/leapc_lib.inc)
 ```
 
 Run in ZEsarUX: `zesarux --machine TS2068 --romfile build/leapc_zesarux.bin` (ZEsarUX emulates the TS2068 at 50 Hz). Run in Fuse: `fuse --machine ts2068 --rom-ts2068-0 build/leapc_home.bin --rom-ts2068-1 build/leapc_exrom.bin` (60 Hz, as a TS2068).

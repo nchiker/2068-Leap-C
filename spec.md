@@ -1,6 +1,6 @@
 # 2068-Leap-C — Specification
 
-**Version 0.11, 2026-10-21** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6-v0.9, 2026-10-20; v0.10, 2026-10-21). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
+**Version 0.12, 2026-10-22** (v0.1, 2026-10-12: initial; v0.2-v0.5, 2026-10-13; v0.6-v0.9, 2026-10-20; v0.10-v0.11, 2026-10-21). This specification is derived from `docs/C_FEASIBILITY_STUDY.md` (revision 3), whose architecture decisions are approved.
 
 **Changes in v0.2:** the frame's reference point (§5.2) and the `ENTER`/`LEAVE` contracts (§2.3, §5.3), by owner decision during M1.3 (`docs/milestones/M1.3.md`).
 
@@ -21,6 +21,8 @@
 **Changes in v0.10 (Phase 8, as built; `docs/milestones/M8.md`):** floating point in Release 1: `float` and `double` as one 5-byte type, floating constants, conversions, expressions, arguments and results, `printf`'s `%f` (§4.1-§4.4, §4.6, §4.9, §5.1-§5.3, §5.8, §5.9, §7). The V2 FP calculator is re-engineered into the float core, which replaces it (§2.1 platform delta D10, §2.2). Cold compiler parts move to the EXROM and two groups of editor-only platform routines with them (deltas D11, D12; §2.1, §2.2). Initialisers: braces around an automatic scalar's (§4.7). Diagnostics: a missing token is reported at the line it belongs to (§6.3). The documentation's examples are tests (§11, `docs/EXAMPLES.md`).
 
 **Changes in v0.11 (Phase 9, as built; `docs/milestones/M9.md`):** emulator qualification on ZEsarUX and Fuse, and the hardware kit. The font tells the digit `1` from the letter `l` (§2.1 platform delta D13). An undeclared identifier's report names it (§6.3). A report or message waits for a key pressed after any held key's release (§6.1, §6.3). The cold start clears the UDG table, so codes 144-164 show as spaces from any power-on RAM (§3.1, §7). The bank switch keeps interrupts on, so float code no longer loses frame interrupts (§2.1 platform delta D14, §7). A frame is 1/60 s on a TS2068; ZEsarUX 13.0 emulates 50 Hz (§7, §10). The validation adds power-on RAM patterns, Fuse, a timing comparison, ROM coverage and the hardware kit (§10, §11). Budgets (§2.2: ledger L56-L60).
+
+**Changes in v0.12 (Phase 10, as built; `docs/milestones/M10.md`):** the five recommended fixes and library loading, owner-approved. `?:` with a float and an integer operand converts the integer (C89 6.3.15; the deviation is gone, §4.4). Errors 21, 22, 52, 70 and 76 name the identifier, as 23 does, and the cursor lands on the error's column (§6.3). Unsigned division is 112 T faster (§5.3). Unreachable vendored EXROM code is removed (§2.1 platform deltas D15-D19). Libraries: an assembly image loaded from tape into image region 3 by `LIB "name"`, its functions bound like the built-in library's, reaching the ROM through a fixed jump table of 16 slots at the end of HOME (§2.4, §3, §5.8, §5.9, §6.1, §7.2, §8.4, §9, §10). A LOAD stopped by BREAK while its program arrived into the source left the partly overwritten source; it now empties it (§6.1). Budgets and the floors (§2.2: ledger L61-L75).
 
 **What is fixed and what is tuned:**
 
@@ -94,11 +96,11 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 | Bank switching (`BANK_PAGE_EXROM_IN/OUT`, depth-counted)                             | 44       | HOME  | kept. **Delta D14 (v0.11):** no `di` (each `ei` stays). With interrupts off for about 120 T, longer than the TS2068's 32 T INT, float code (a page-in and page-out per operation) lost about 1% of the frame interrupts (`FRAMES`); found on Fuse                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | AY beep (HOME part)                                                                  | 58       | HOME  | kept                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `FOLD_UPPER` (was in the BASIC compiler)                                             | 9 → 0    | HOME  | not built: C is case-sensitive and nothing calls it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Editor engine                                                                        | 737      | EXROM | kept unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Tape: `STORAGE_*`                                                                    | 793      | EXROM | kept. **Delta D9 (v0.9, Phase 7):** block send/receive (331 B, byte for byte) assembled in HOME, the header logic (`STORAGE_SAVE`, `STORAGE_LOAD`, version word, progress) in the EXROM: conditional assembly only (§8.3)                                                                                                                                                                                                                                                                                                                                                                     |
+| Editor engine                                                                        | 737      | EXROM | kept. **Deltas D15-D17 (v0.12):** the fallbacks for unset hooks (the shell sets both before every session) and the second dispatch block (D15), the NEXT ERROR, PREV ERROR, HOME and END keys, which no Leap-C key gives (D16), `EDITOR_BLOCK_DELETE`, which had no caller (D17): deletions only |
+| Tape: `STORAGE_*`                                                                    | 793      | EXROM | kept. **Delta D9 (v0.9, Phase 7):** block send/receive (331 B, byte for byte) assembled in HOME, the header logic (`STORAGE_SAVE`, `STORAGE_LOAD`, version word, progress) in the EXROM: conditional assembly only (§8.3). **Delta D18 (v0.12):** `STORAGE_SAVE`'s name clamp and padding (the shell passes 10 padded characters). `STORAGE_VERSION_WORD`'s package branch is V2's and serves Leap-C's library tapes (§8.4) |
 | Shell: editor/screen glue, command loop, tape commands, messages, chime, entry slots | 2,754    | EXROM | adapted into the Leap-C shell; BASIC-only parts removed (v0.7, Phase 5: §6.1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Integer formatting                                                                   | 79       | EXROM | kept                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Sound, AY beep (EXROM part)                                                          | 59       | EXROM | kept                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Sound, AY beep (EXROM part)                                                          | 59       | EXROM | kept. **Delta D19 (v0.12):** `SOUND_EXROM`'s range check (its only caller, the chime, writes registers 0-10); **D17:** `AY_BEEP`'s own entry, which had no caller (`beep()` calls `AY_BEEP_PERIOD` in HOME, then `AY_BEEP_PLAY`). `beep()` and `sound()` are unchanged |
 | FP calculator + float formatting                                                     | 2,165    | EXROM | **v0.10: re-engineered into the float core** (`src/runtime/fpcore.asm`, 1,464 B, §4.9), which replaces it: the calculator is no longer assembled, and V2's float formatting is left out by **delta D10** (conditional assembly; the integer formatting stays)                                                                                                                                                                                                                                                                                                                                 |
 
 **Removed:**
@@ -114,7 +116,7 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 
 - `make budget` reports the assembled size of each component from the listings.
 - `make check` fails when a component exceeds its budget, unless the budget ledger records a reallocation with its justification.
-- The **reserve floor** (HOME 512 B, EXROM 256 B at release) can be drawn below only with owner approval.
+- The **reserve floor** (HOME 512 B, EXROM 256 B at release; v0.12, owner decision: HOME 384 B, EXROM 128 B, ledger L73-L74) can be drawn below only with owner approval.
 
 **HOME (16,384 B):**
 
@@ -155,6 +157,8 @@ Sources are vendored into `platform/` from the V2 reference tag. `platform/UPSTR
 3. The compiler core runs in **HOME with chunk 6 paged out**, because it writes the program image there. EXROM-resident compiler parts (diagnostics) run only through a trampoline and never touch chunk 6.
 4. The editor and shell run in **EXROM**. While they run, chunk 6 RAM is invisible.
 
+**As built (v0.12): budgets.** After Phase 10 (ledger L61-L75): HOME 15,929 B allocated, **reserve 455 B** (floor 384 B): `?:` with mixed operands +55 B (expressions), the names of errors 70 and 76 +17 B (statements), the unsigned division −5 B (helpers), the library jump table +48 B (a pinned component at `$3FD0-$3FFF`, §2.4), region 3 closed while a library is loaded +11 B (declarations), BREAK in a library's code +7 B (runtime exit). EXROM 8,006 B allocated, **reserve 186 B** (floor 128 B): the shell +243 B (the five names' list +18 B, the error's column +41 B, the LOAD defect +4 B, `LIB` +180 B), the binding's search of a loaded library and the four new parameter lists +17 B and a `#define`'s `ALREADY DEFINED` without a name +6 B (compiler parts), the unreachable vendored code −141 B (D15-D19; the report's 154 B less `STORAGE_VERSION_WORD`, which library tapes need). **The floors (owner decision, Phase 10 approval):** the ROM is feature-complete, so the reserve only has to cover defects found in release qualification and on real hardware; the floors may go as low as the phase needs, not below 128 B: HOME 512 → 384 B, EXROM 256 → 128 B.
+
 **As built (v0.11): budgets.** After Phase 9 (ledger L56-L60): HOME 15,796 B allocated, **reserve 588 B** (floor 512 B): page zero +12 B (`COLD_CLEAR`, §3.1), the float runtime −9 B (`F_POP`, which had no caller, found by the ROM coverage), the bank switch −2 B (delta D14, §2.1); EXROM 7,881 B allocated, **reserve 311 B** (floor 256 B): the shell +44 B (the undeclared identifier's name, §6.3; the key wait after a report, §6.1), the constant folding −22 B (`XC_FOLD`'s `&&` and `||`, which could not run, found by the ROM coverage).
 
 **As built (v0.10): budgets.** `budget.toml` holds every component's budget, with the ledger of measured changes (L1-L55). After Phase 8: HOME 15,795 B allocated (the float runtime 145 B, the compiler 10,155 B, the platform 3,124 B), **reserve 589 B** (floor 512 B); EXROM 7,859 B allocated (the float core 1,464 B, the EXROM-resident compiler parts 1,481 B), **reserve 333 B** (floor 256 B). Bank rule 3's EXROM-resident compiler parts now include the keyword lookup and its table, `TY_EQUAL`, the library's binding, the directive processor (`#define`, `#undef`, `#include`, `#pragma`) and the float core's compile-time work (floating constants, constant float expressions): HOME reaches them through `CX_XCALL` and `CX_FOLD`, which page the EXROM in through the depth count; none touches chunk 6.
@@ -182,6 +186,36 @@ Measured costs:
 - The RST map is confirmed against operation frequencies measured on the Phase 2 test corpus.
 - **v0.7 (Phase 5, owner decision):** RST `$30` serves the compiler instead of generated code. `LEX_NEXT` is the compiler's most frequent call (60 call sites); `rst $30` replaces each 3-byte `call`, saving 120 B of HOME (127 B with the jumps it brought into relative range), for 4 T per token. Generated code never uses it. The optional size template set (§5.6), if Phase 8 builds it, reaches `LDL`/`STL` by `call`.
 
+### 2.4 The library jump table (v0.12, Phase 10)
+
+A loaded library (§7.2) reaches the ROM's services only through a fixed jump table: **16 slots of `jp` (3 B each, 48 B) at `$3FD0-$3FFF`, the last bytes of HOME**, a pinned budget component above the code (`tools/budget.py`). The table never moves, and an `ASSERT` holds every slot at its address, so a library built against it runs on every ROM that keeps it (owner decision: V2-style slots, not only an identity word). **Rules** (V2's package ABI rules, `include/v2_package_abi.inc` at the V2 reference tag):
+
+- a slot is never reordered, removed or repurposed; the unused slots are reserved (a call of one is runtime error 4);
+- a new service takes the next reserved slot and raises the ABI version by one; a library declares the ABI it needs, and `LIB` refuses it on a ROM with a lower one (§8.4);
+- anything else is a new magic, which every older library tape fails.
+
+The single source of truth is `include/leapc_lib.inc`: HOME assembles each slot's `jp` from it and asserts the pins; a library's source gets each slot's address and each pin's value from it. **No slot serves the editor engine** (its fallbacks for unset hooks are gone, D15). **ABI 1:**
+
+| Slot | Address | Name | Service | In | Out | Destroys |
+| ---: | ------- | ---- | ------- | -- | --- | -------- |
+| 0 | `$3FD0` | `LX_ARGS` | the arguments of the exported function that calls it first thing; records the program's call (`LIB_CALLER`) for runtime errors and BREAK | the function's return address and arguments on the stack | HL, DE, BC = the first three arguments | AF |
+| 1 | `$3FD3` | `LX_PUTC` | a character at the print position (print attribute, inverse, over; `'\n'` a new line; wraps and scrolls) | A | | AF, BC, DE, HL |
+| 2 | `$3FD6` | `LX_PUTS` | a string, the same | HL = the NUL-terminated text | | AF, BC, DE, HL |
+| 3 | `$3FD9` | `LX_MALLOC` | a heap block (as `malloc`) | HL = the size | HL = the block, or 0 | AF, BC, DE |
+| 4 | `$3FDC` | `LX_FREE` | a heap block freed (as `free`) | HL = the block (0: nothing) | | AF, HL |
+| 5 | `$3FDF` | `LX_MUL` | 16-bit multiply | DE, HL | HL = DE × HL (DE kept) | AF, BC |
+| 6 | `$3FE2` | `LX_DIVS` | signed divide (toward zero; 0 for a divisor of 0) | DE, HL | HL = DE / HL | AF, BC, DE |
+| 7 | `$3FE5` | `LX_DIVU` | unsigned divide | DE, HL | HL = DE / HL, DE = DE % HL | AF, BC |
+| 8 | `$3FE8` | `LX_FOP` | an operation of the float core on `F_ACC` (a BREAK-deferring section; overflow: runtime error 6 at the program's call) | A = `FOP_*`; HL = an integer (`FRI`, `FRU`) or the address of the left operand's 5 bytes (a binary operation) | `F_ACC`; HL (`TOI`, `FTOA`); flags (`CMP`) | AF, BC, DE, HL |
+| 9 | `$3FEB` | `LX_ERROR` | end the program with a runtime error, reported at the program's call | A = the error (`RTE_*`) | does not return | |
+| 10 | `$3FEE` | `LX_KEY` | wait for a key (BREAK ends the program) | | A = its code | AF |
+| 11 | `$3FF1` | `LX_INKEY` | the key latched since the last read | | A = its code, or 0 | AF |
+| 12 | `$3FF4` | `LX_FRAMES` | the frame counter | | HL = `FRAMES` | |
+| 13 | `$3FF7` | `LX_PLOT` | a pixel in the print attribute and over mode, off the screen nothing (as `plot`) | HL = x, DE = y | | AF, BC, DE, HL |
+| 14, 15 | `$3FFA`, `$3FFD` | reserved | runtime error 4 at the program's call | | | |
+
+**Pinned names** (asserted by HOME, defined for libraries): `F_ACC` (`$5ED6`, the float accumulator, 5 bytes), `LIB_COL`/`LIB_ROW` (`$5EC2`/`$5EC3`, the print position), `LIB_ATTR` (`$5EC8`, the print attribute), the runtime errors `RTE_HEAP` 2, `RTE_ARG` 4, `RTE_FLOAT` 6, and the float operations `FOP_FRI` 0, `FRU` 1, `TOI` 2, `NEG` 3, `FTOA` 8, `ADD` `$80`, `SUB` `$82`, `SUBR` `$83`, `MUL` `$84`, `DIV` `$86`, `DIVR` `$87`, `CMP` `$88` (§4.9; a binary operation computes `(HL) op F_ACC`, the reversed ones `F_ACC op (HL)`).
+
 ---
 
 ## 3. Memory map (final, Phase 4)
@@ -205,7 +239,7 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 | `$C000-$DFFF` | 8,192  | **program image region 1** (chunk 6: code ↑ from `$C000`, static data ↓ from `$DFFF`)            | EXROM paged out |
 | `$E000-$F17F` | 4,480  | program image region 2                                                                           | always          |
 | `$F180-$F3FF` | 640    | UDGs, edit buffer, misc. platform cells (V2 addresses)                                           | always          |
-| `$F400-$F7FF` | 1,024  | program image region 3 (no V2 packages)                                                          | always          |
+| `$F400-$F7FF` | 1,024  | program image region 3 (no V2 packages); (v0.12) or a loaded library (§7.2)                       | always          |
 | `$F800-$FEFF` | 1,792  | machine stack (top `$FF00`); C locals live here                                                  | always          |
 | `$FF00-$FFFF` | 256    | unused by the ROM (test harness return slot)                                                     | always          |
 
@@ -218,7 +252,7 @@ The baseline moves the system variables to `$5B00` (assembly-time relocation; th
 | Range         | Holds (measured, `docs/milestones/M4.md`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `$5B00-$5D59` | the platform system variables (602 B)                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `$5D5A-$5FFF` | the Leap-C cells: 504 B used (`LEAPC_CELLS_END` `$5F52`; v0.7: the shell's 63 B; v0.8: the report's 35 B; v0.9: the tape's 14 B: `TAPE_NAME`, `TAPE_ABORT`, `TAPE_DEST`; v0.10: the float accumulator `F_ACC` 6 B and the previous token's line `TOK_PLINE` 2 B), 174 B free. The float core works in the platform's calculator variables (`CALC_STACK`, 40 B), which nothing else uses since the calculator is gone                                                                                     |
+| `$5D5A-$5FFF` | the Leap-C cells: 507 B used (`LEAPC_CELLS_END` `$5F55`; v0.7: the shell's 63 B; v0.8: the report's 35 B; v0.9: the tape's 14 B: `TAPE_NAME`, `TAPE_ABORT`, `TAPE_DEST`; v0.10: the float accumulator `F_ACC` 6 B and the previous token's line `TOK_PLINE` 2 B; v0.12: a compile error's column `SH_ERR_COL` 2 B and `LIB_LOADED` 1 B, §7.2), 171 B free. The float core works in the platform's calculator variables (`CALC_STACK`, 40 B), which nothing else uses since the calculator is gone. (v0.12) `F_ACC`, `LIB_COL`, `LIB_ROW` and `LIB_ATTR` are pinned by the library ABI (§2.4): they never move |
 | `$F180-$F3FF` | the V2 platform cells Leap-C keeps at their V2 addresses: `UDG_TABLE` (`$F180`, 168 B), `EDIT_LINE_BUF` (`$F228`, 128 B), `GFX_LINE_X0..Y1` (`$F3C4`, 4 B). The other 340 B are V2 cells nothing in Leap-C uses. (v0.11) The cold start clears `UDG_TABLE` as well as `$5B00-$BFFF` (`COLD_CLEAR`), so every byte the ROM reads after a boot is defined whatever the RAM held at power-on: from eight power-on patterns the idle prompt's RAM is the zeroed-RAM boot's, to the byte (`tools/poweron.py`) |
 | `$F800-$FEFF` | the stack; `ENTER`'s floor `$F900` (§5.3)                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
@@ -249,6 +283,8 @@ As built (v0.6):
 - **Code.** Each instruction unit (at most 8 bytes) is placed only when 12 bytes are free below the region's data (`CG_GUARD`: the unit, a held operand's push and a linking `jp`). Otherwise the code continues in the next region in the order with 12 bytes free, linked by `jp`. A function, a loop or a `switch` can span regions; jumps and calls are absolute.
 - **Data.** Each object (global, `static` local, string literal, `switch` table, function → line record) goes to the first region in the order with room for all of it, from the top down. An object never spans regions: the largest is 8,192 bytes (region 1). Data can go back to room left in an earlier region.
 - Both meet without overlap: code never passes the data's low end, and data never comes below the code's reserved end.
+
+**A loaded library (v0.12).** While a library is loaded (`LIB_LOADED`, §7.2), image region 3 is the library's: the compiler makes it full from the start of every compile (its limits `[end][end]`), as `#pragma hires` makes region 4, so neither code nor data is placed there and what region 3 would have held goes on to region 4. `IMAGE` (§6.3) leaves the region out. The library's own data in the region is not reset between runs.
 
 **Hi-res protection.**
 
@@ -352,7 +388,7 @@ All C89 operators except those on unsupported types:
 - multiplicative, additive, shifts, relational, equality, bitwise, logical (short-circuit);
 - conditional `?:`, simple and compound assignment, and comma.
 
-**Floating operands (v0.10):** `+ - * /` and their compound assignments, the comparisons, `! && || ?:`, unary `+ -`, `++ --`, casts, `sizeof`. `% << >> & | ^ ~` on a floating operand, a floating `switch` value, `case` label or array size are `BAD OPERAND TYPE` / `CONSTANT REQUIRED`. **Deviation:** `?:` with one floating and one integer operand is `TYPE MISMATCH` (cast one; C89 converts it). Floating constant expressions are folded at compile time by the same float core as at run time, so a folded result equals the run-time one; they may initialise static objects and, through a cast to an integer type, size arrays and label `case`s.
+**Floating operands (v0.10):** `+ - * /` and their compound assignments, the comparisons, `! && || ?:`, unary `+ -`, `++ --`, casts, `sizeof`. `% << >> & | ^ ~` on a floating operand, a floating `switch` value, `case` label or array size are `BAD OPERAND TYPE` / `CONSTANT REQUIRED`. (v0.12) `?:` with one floating and one integer operand converts the integer operand to floating, as C89 6.3.15 requires (until v0.11 a documented deviation: `TYPE MISMATCH`): at run time on that operand's own path, after a constant condition the chosen operand; a pointer or `void` operand with a floating one is `TYPE MISMATCH`. Floating constant expressions are folded at compile time by the same float core as at run time, so a folded result equals the run-time one; they may initialise static objects and, through a cast to an integer type, size arrays and label `case`s.
 
 **Constant expressions** are evaluated at compile time where C requires them: array sizes, `case` labels, `enum` values, static initialisers, and `sizeof`. The compiler also folds constant operands of `+ - * & | ^ << >>` where the template set allows.
 
@@ -530,7 +566,7 @@ Measured in the code-shape spike unless marked:
 | `CMPLT`                                                              | RST `$28`                                                     | signed compare: carry ⇔ DE < HL                                                                                                                                                                                                                                                                       |
 | `CMPULT`                                                             | inline                                                        | unsigned `or a; sbc hl,de` (3 B)                                                                                                                                                                                                                                                                      |
 | Shifts by a variable count (`SHL`, `SHR`, `SAR`)                     | CALL                                                          |                                                                                                                                                                                                                                                                                                       |
-| `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU`                                | CALL                                                          | the helper core's register-only shift-and-add multiply and restoring divide (v0.3; they replace the V2 math). The compiler's constant arithmetic uses the same routines                                                                                                                               |
+| `MUL`, `DIVS`, `DIVU`, `MODS`, `MODU`                                | CALL                                                          | the helper core's register-only shift-and-add multiply and restoring divide (v0.3; they replace the V2 math). The compiler's constant arithmetic uses the same routines. (v0.12) The divide's 16 steps lost a branch that could never run (before step i the remainder is below 2^(i−1)): 112 T less a division, 60000 / 7 in 1,479 T |
 | `SWITCH`                                                             | CALL + inline table address                                   | `call RT_SWITCH / dw table`. The table is static data, made after the switch's body. Sparse: `[n][default]` then `[value][address]` pairs. Dense, when smaller (highest − lowest ≤ 2n − 3): `[range \| $8000][default][lowest]` then one address per value                                            |
 | `CALLHL`                                                             | CALL                                                          | indirect function call                                                                                                                                                                                                                                                                                |
 | `F_OP` (v0.10)                                                       | CALL + op byte                                                | an operation of the float core (§4.9) on `F_ACC`; a binary one pops its left operand's slot. Through `F_X`, a `NOBRK` section with the EXROM paged in                                                                                                                                                 |
@@ -608,6 +644,7 @@ All-compact templates (local access through RST `LDL`/`STL`) were measured at 49
 - The ISR (platform delta D4) calls `RT_BREAKREQ` when it accepts the BREAK key, after latching it as usual. With no program running it is an ordinary key. Otherwise `RT_BREAKREQ` sets `BRK_HALT` (`BRKPEND`; the platform's `VM_HALTED`) and, if `NOBRK` is 0, ends the program at once with runtime error 5: the ISR's frame is dropped with the program's stack.
 - `NOBRK` sections: the EXROM trampolines of `beep()`, (v0.9) `tape_save()` / `tape_load()` and (v0.10) the float core (`F_X`: every float operation and `printf`'s `%f`), the EXROM services programs use in Release 1. The beep's wait ends early on `BRK_HALT`, the trampoline pages the EXROM out and silences the AY, and its end (`RT_NOBRK_END`) then stops the program. **Heap updates are not deferred** (deviation): the heap belongs to one run and is set up again at the next start, so an interrupted `malloc` leaves nothing that must be consistent. AY register writes are single `OUT` pairs that the exit's silencing re-selects.
 - `pause()` and every other wait end on BREAK through the immediate unwind.
+- **A loaded library (v0.12, §7.2).** While a library is loaded, image region 3 holds no program code, so BREAK there is BREAK in the library: it ends the program at the library's last call from the program (`LIB_CALLER`, recorded by the library's `LX_ARGS`), as BREAK in the ROM's library does. In a ROM service the library called, the same. The library's float operations (`LX_FOP`) are `NOBRK` sections, as the program's are.
 - **Tape (v0.9).** While a tape block moves, interrupts are off (the ROM's tape routines), so the ISR cannot see BREAK; the routines themselves test SPACE (the stock ROM's rule: BREAK is CAPS SHIFT + SPACE) at every edge and after every byte sent, and abort. `tape_save()` / `tape_load()` then end the program with BREAK (runtime error 5, at the line of the function that called them); a BREAK the ISR accepted between two blocks waits for the section's end, as for `beep()`.
 - Cost (measured): the ISR delta is 8 B (V2's BREAK latch, 14 B, removed); the runtime's request and BREAK exit 32 B, the section end 12 B. The ISR's per-frame cost is unchanged: the delta runs only on the frame that accepts a key.
 
@@ -631,6 +668,8 @@ The shell shows `RUNTIME ERROR n` with the source line of the failing function's
 - stack overflow: the code of the function being entered;
 - a library error (codes 3, 4) and (v0.10) a float error (code 6): the program's address of the library call or of the `F_OP` call (`LIB_CALLER`, recorded by every library function that takes arguments, and by `getkey()`), so the line is that of the function that called the library;
 - BREAK: the interrupted address if it is in the program's image; in the ROM (a library or platform routine, a helper), the last library call.
+
+**A loaded library (v0.12, §7.2).** A runtime error the library raises (`LX_ERROR`), or one in a ROM service it calls (a float overflow in `LX_FOP`, a reserved slot), is reported at the line of the program's function that called the library (`LIB_CALLER`, which `LX_ARGS` records and the services never change), as for the ROM's library. A library function must call `LX_ARGS` first for this.
 
 No library function raises error 2 in Release 1: `malloc` returns NULL. Error 4 is raised by `beep()` (semitone), `sound()` (register), `mode()` (mode), `itoa()` (base) and `sprite_get()`/`sprite_put()` (rectangle).
 
@@ -659,6 +698,8 @@ These come from V2's full-screen editor and shell glue, adapted:
 | `LOAD "name"` / `LOAD ""` | load source from tape                          |
 | `VERIFY "name"`           | verify a saved tape                            |
 | `FREE`                    | show free source space and the last image size |
+| `LIB "name"` / `LIB ""` (v0.12) | load a library from tape (§7.2, §8.4)    |
+| `LIB` (v0.12)             | unload the library                             |
 
 - No immediate-statement mode in Release 1 (C has no statements outside functions).
 
@@ -681,7 +722,19 @@ These come from V2's full-screen editor and shell glue, adapted:
 | `LOAD`   | `LOADED name` (the tape's name): the source is replaced, the cursor on the append line after its last line; `LOAD FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME` |
 | `VERIFY` | `VERIFIED name`: the tape holds exactly the source, and ends where it does; `VERIFY FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME`. Nothing is written           |
 
-  A failed `LOAD` leaves the source and the editor as they were (§8.1: the program arrives above the source and replaces it only when it is whole and sound), except when the tape's program does not fit above the source and part of it was received: then the source is empty, as after `NEW` (V2's rule: it cannot be trusted).
+  A failed `LOAD` leaves the source and the editor as they were (§8.1: the program arrives above the source and replaces it only when it is whole and sound), except when the tape's program does not fit above the source and part of it was received: then the source is empty, as after `NEW` (V2's rule: it cannot be trusted). (v0.12) That includes BREAK once part of such a program had arrived: until v0.11 it was reported as BREAK and kept the partly overwritten source.
+
+**As built (v0.12): `LIB`.** `LIB "name"` (1-10 characters) or `LIB ""` (the next library tape, any name), in any case, then spaces and a quote, as the tape commands (§7.2, §8.4). The status row shows `LOADING` and `LOADING name` as for `LOAD`; the report on rows 22-23 until a key:
+
+| Row 22 | When |
+| ------ | ---- |
+| `LIBRARY name: n FUNCTIONS` | the library arrived whole: its name (the tape's), and its export count |
+| `BAD TAPE VERSION` | another magic, or an ABI above this ROM's: refused at the header, nothing written |
+| `LOAD FAILED` | no such tape before the search gives up (about 2 minutes), a length above 1,024 B (refused at the header), a bad block |
+| `BREAK` | SPACE stopped it |
+| `BAD NAME` | more than 10 characters, no closing quote, more after it |
+
+  Row 23 is `SOURCE s B  FREE f B`, as for the tape commands. As `LOAD`'s program, the library arrives above the source when there is room and moves into image region 3 only once it is whole; otherwise it goes straight into the region. A failure that wrote into the region (straight in, and a bad block or BREAK during its data) leaves no library loaded; any other failure keeps the library loaded before it. `LIB` alone (any case, spaces after it) unloads the library: the status row shows `NO LIBRARY` until a key. **`NEW` and `LOAD` keep the library** (decided in Phase 10: it belongs to the machine's session, not to the program; a program LOADed from tape can then use it at once, and `LIB` alone unloads it; V2's `NEW` unloaded its package). **A reset clears it** (the cold start clears `LIB_LOADED`; the region keeps its bytes). A second `LIB` replaces the first library.
 
 **As built (v0.11): the key after a report.** A report or a status-row message (and `LIST`'s pages) waits for a key pressed after every key held before it is released: a key still down from the command (the ENTER of `RUN`, BREAK) is let go first, and a key latched before or meanwhile, its auto-repeat included, is dropped (`SH_WAIT_KEY`). Until Phase 9 a key held past the keyboard's repeat delay (35 frames, about 0.6 s on a TS2068) ended the report itself, before it could be read: Fuse's 60 Hz keyboard showed it (`docs/milestones/M9.md`). The editing keys on the keyboard matrix (CAPS SHIFT + 5 6 7 8 0, + 1 delete line, + ENTER insert line) are tested against their codes; two letters pressed together type nothing.
 
@@ -715,7 +768,7 @@ Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 
 
 | Outcome          | Row 22                                                             | Row 23                                                                                            | Cursor                                                                                |
 | ---------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| compile error    | `ERROR n: MESSAGE`                                                 | `LINE m`; (v0.11) for error 23, `LINE m  'name'`: the undeclared identifier's first 15 characters | on line m, its text in the edit buffer (the append line when m is past the last line) |
+| compile error    | `ERROR n: MESSAGE`                                                 | `LINE m`; (v0.11) for error 23, `LINE m  'name'`: the undeclared identifier's first 15 characters; (v0.12) the same for errors 21, 22, 52, 70 and 76 | on line m, its text in the edit buffer (the append line when m is past the last line); (v0.12) at the error's column |
 | runtime error    | `RUNTIME ERROR n: MESSAGE`                                         | `LINE m`, or nothing when unknown (§5.9)                                                          | on line m, where the definition of the function that failed starts                    |
 | BREAK            | `BREAK`                                                            | `LINE m`                                                                                          | as for a runtime error                                                                |
 | the program ends | `EXIT n` (main's value or `exit()`'s, signed; 0 for a void `main`) | `IMAGE i B  HEAP h B`                                                                             | as before `RUN`                                                                       |
@@ -734,6 +787,11 @@ Cost: 8 glyphs × 8 B + 16 B of glyph table + in-place key-table entries ≈ 80 
 | statement     | `70: UNDEFINED FUNCTION`; `71: NO MAIN FUNCTION`; `72: MISPLACED BREAK`; `73: MISPLACED CONTINUE`; `74: MISPLACED CASE`; `75: DUPLICATE CASE`; `76: UNDEFINED LABEL`                                                                 |
 | limit         | `90: NESTING TOO DEEP`; `91: FRAME TOO LARGE`; `92: TOO MANY PARAMETERS`                                                                                                                                                             |
 | memory        | `100: OUT OF MEMORY`; `101: PROGRAM TOO BIG`                                                                                                                                                                                         |
+
+**As built (v0.12): the name and the column.**
+
+- **The name** (Fix 2). Errors 21 `REDECLARED`, 22 `ALREADY DEFINED`, 23 `UNDECLARED IDENTIFIER`, 52 `NO SUCH MEMBER`, 70 `UNDEFINED FUNCTION` and 76 `UNDEFINED LABEL` show the identifier on row 23: `LINE 5  'prnt'`, at most 15 characters, from the compiler's `NM`. For 70 and 76, which are found at the end of the compile, the compiler points `NM` at the undefined symbol's own stored name (until v0.11 `NM` held whatever name came last). An empty name shows no name: a `#define`'s `ALREADY DEFINED` (`LINE 2`).
+- **The column** (Fix 5). After a compile error the cursor lands on the column of the token where the compile stopped (`TOK_PTR` less the line's text), or at the line's end when that token is past it (a missing `;`, which belongs there) or before it (a token from a macro's body on its `#define` line). The column applies once, when the editor resumes; moving off the line and back puts the cursor at its start, as for any line. A runtime error and BREAK keep column 0. Examples: `    int x = 1` without its `;` (column 13), `    int a = 3 @ 4;` (14, the `@`), `    totl = 5;` (9, just after the name).
 
 **As built (v0.10): the line of a missing token.** When the parser expects a token (`;`, `)`, `]`, `}`, `:`, ...) and finds another, the error's line is that of the **previous** token, after which the missing one belongs: a statement or declaration without its `;` is reported at its own line, not at the next line's first token (`tests/stmterr/missing_*.c`). A line that only continues a macro's expansion or follows a directive line may still be reported at the directive's line.
 
@@ -759,7 +817,7 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 | Program            | `exit(n)`                                                                                                                                                                                                                                                        |
 | Tape (Phase 7)     | `tape_save(name, addr, len)`, `tape_load(name, addr, max)` (data blocks; §7.1, §8.3)                                                                                                                                                                             |
 
-**Not built in:** circle and flood fill (V2 has them only as BASIC packages; implementable in C), ULAplus palette, printer. These are candidates for a later library-loading mechanism (§9).
+**Not built in:** circle and flood fill (V2 has them only as BASIC packages; implementable in C), ULAplus palette, printer. These are candidates for a later library-loading mechanism (§9). (v0.12) Libraries loaded from tape add functions like these (§7.2); the example library `shapes` has `circle()`, `box()` and `isqrt()`.
 
 ---
 
@@ -804,6 +862,43 @@ All functions are HOME-ROM runtime routines with C prototypes known to the compi
 | `tape_load(name, addr, max)` (v0.9)           | the next data tape named `name` (`""`: any) into `addr`, at most `max` bytes. Returns its length; -1 when nothing was loaded (no such tape before the search gives up, about 2 minutes of silence; a tape longer than `max`; a bad block before the data), `addr` untouched; -2 when the data block failed after part of it was written; -3 for a tape whose version word is not Leap-C's (nothing written). Program tapes are skipped. A name longer than 10 characters: error 4. Any address, chunk 6 included |
 | `tape_save`, `tape_load`: BREAK               | BREAK (or SPACE) during the transfer stops it and ends the program with runtime error 5 (§5.8). While a block moves, interrupts are off: `frames()` does not count                                                                                                                                                                                                                                                                                                                                               |
 
+### 7.2 Loaded libraries (v0.12, Phase 10)
+
+**C extends through functions, so a library needs no new syntax:** a library is a table of functions the compiler finds by the same binding as the built-in library's (§7.1), and a call of one is a `call` to a fixed address with the C calling convention (§5.2), exactly as for `printf`. This is Stage 1 of the improvements report's plan: libraries written in assembly and built on a host. (Stage 2, libraries written in C on the machine: `#pragma library`, `SAVE "name" LIB`, is not built.)
+
+**The image.** A library is an image for image region 3 (`$F400-$F7FF`, at most 1,024 B), built by `tools/lib2tape.py` from an sjasmplus source that includes `include/leapc_lib.inc`:
+
+| Offset | Bytes | Contents |
+| -----: | ----: | -------- |
+| 0 | 1 | the magic `$8D` (`LX_MAGIC`: bit 7 Leap-tagged, `$0D` a Leap-C library; program and data tapes are `$8C`) |
+| 1 | 1 | the ABI version it needs (`LX_ABI`, 1 in this ROM) |
+| 2 | 1 | the export count, 1-99 |
+| 3 | | the export table: per function its name (1-31 characters of a C identifier, the last with bit 7 set), its address (2 B, in the image) and its signature byte; then a 0 (`LIB_NAMES`'s records, §7.1) |
+| | | the code and data |
+
+**The signature byte** is `[return type:4][parameter list:4]`. The return type is `[pointer:1][base:3]` with the bases of `include/leapc_decl.inc`: `void` 0, `char` 1, `int` 3, `unsigned` 4, `float` 5 (the result in `F_ACC`), and `void *` 8, `char *` 9. The parameter list is an index into the ROM's 16 lists (`LIB_PARAMS`, never reordered: `include/leapc_lib.inc` `LXP_*`): 0 no prototype (any arguments, the default promotions; a float is a 3-word slot), 1 `()`, 2 `(int)`, 3 `(void *)`, 4 `(int, int)`, 5 `(void *, int)`, 6 `(void *, void *)`, 7 `(void *, void *, int)`, 8 `(void *, int, int)`, 9 `(int, void *, int)`, 10 four ints, 11 `(int, int, int, int, void *)`, and (v0.12, for libraries) 12 `(int, int, int)`, 13 `(int, void *)`, 14 `(int, int, void *)`, 15 five ints. Integer parameters are `int`; pointer parameters `void *`, to which any object pointer converts. A call is type-checked against this prototype: the argument count (`WRONG ARGUMENT COUNT`), the conversions (`TYPE MISMATCH` for a pointer to an `int`).
+
+**Loading.** `LIB "name"` (§6.1) reads a library tape (§8.4) through the existing tape path into the region and sets `LIB_LOADED` (`$F4`). The magic and the ABI are the tape header's version word, so a wrong magic or a later ABI is refused before a byte is stored. While a library is loaded the compiler closes region 3 to the program (§3.2).
+
+**Binding.** An identifier that no declaration in scope names is looked up in the ROM's library table, then in the loaded library's export table, with the same search and the same binding (`LIB_FIND`, `XL_BIND`): it becomes a defined file-scope function at the library's address, with the signature's prototype. **A name both have binds the ROM's function**: the library's export of it is never bound (`tools/lib2tape.py` reports such a name; the test library exports `abs`, and `abs()` is the ROM's). A program's own declaration hides either, as before. Without the library, a call of one of its functions is C89's implicit declaration of an undefined function: `UNDEFINED FUNCTION` with its name.
+
+**Writing a library function** (the ABI's rules, `include/leapc_lib.inc`):
+
+- it is called with the C calling convention: the arguments on the stack, the first lowest, removed by the caller; the result in HL (`F_ACC` for a float); it keeps IX and IY; it may destroy AF, BC, DE, HL;
+- it calls `LX_ARGS` first (HL, DE, BC = the first three arguments; a fourth and later ones are at SP+8, +10, ...), so that a runtime error or BREAK in it, or in a service it calls, is reported at the program's call (§5.8, §5.9);
+- it reaches the ROM only through the slots (§2.4) and the pinned names; its own cells are in its image, and keep their values between calls and between runs (the region is not reset);
+- it uses no more stack below its arguments, the services it calls included, than the ROM's library does (`include/leapc_layout.inc`: ENTER's margin allows 40 B). Measured below the call's first argument, an interrupt included: the test library's print with a scroll (`LX_PUTS`) 40 B, its float division (`LX_FOP`) 30 B, `shapes`' `circle()` and `box()` 30 B; the ROM's own `puts()` with a scroll 42 B.
+
+**The example library** `libs/shapes.asm` (`make libs`: `build/libs/shapes.tap`, `.tzx`, `.wav`; 438 B):
+
+| Function | As built |
+| -------- | -------- |
+| `void circle(int x, int y, int r)` | the circle of radius r about (x, y), the midpoint algorithm, in the print attribute and over mode; each point once, so `over(1)` draws it and draws it again to nothing; points off the screen left out; r < 0: runtime error 4 |
+| `void box(int x0, int y0, int x1, int y1)` | the rectangle's four edges, each point once; coordinates off the screen move to its edge, as `draw()`'s do |
+| `unsigned isqrt(unsigned n)` | the largest r with r × r ≤ n (0-255) |
+
+The test libraries `tests/libs/testlib.asm` (one function per slot, the four new parameter lists, `abs`, a loop for BREAK, its own data) and `tests/libs/tiny.asm` (a second library) are built with it.
+
 ## 8. Storage
 
 ### 8.1 Program tapes
@@ -845,6 +940,21 @@ The data tape type uses header type 3 with version word `$8C00`.
 
 **As built (v0.9, Phase 7): the resolution, not the fallback.** HOME absorbed the block I/O: 331 B, the vendored routines byte for byte (platform delta D9), within the 340 B budget; the EXROM lost exactly those 331 B. The header logic stays in the EXROM and reaches the blocks through `TAPE_BLOCK` (§2.2), so `tape_save` and `tape_load` move data from and to any address, chunk 6 included (tested: image region 1, `$E000`, the heap, the screen). The library's HOME part copies the name's first 11 bytes out of the program's memory with chunk 6 = RAM before the EXROM is paged in. The data tape is the program tape's format with type 3 and the bytes given; `tape_load` takes the first data tape of that name (any, for `""`), skipping program tapes.
 
+### 8.4 Library tapes (v0.12, Phase 10)
+
+A library tape (`tools/lib2tape.py`; `LIB "name"` reads it, §6.1, §7.2) is a program tape's two blocks with:
+
+| Field | Value |
+| ----- | ----- |
+| header type | 4 (`LX_TYPE`: V2's package tapes) |
+| name | 1-10 characters, padded with spaces |
+| length | the image's, 1,024 B at most |
+| version word (autostart field) | the image's magic and ABI: `$8D01` (`LX_WORD`) |
+| second parameter | the length |
+| data block | the image, verbatim |
+
+**Acceptance** is the platform's version rule (`STORAGE_LOAD` with `STORAGE_VERSION_WORD`'s package branch, which gives the library word for type 4): the magic (the tag bit and the major) must be Leap-C's library magic and the tape's ABI at most the ROM's; anything else is `BAD TAPE VERSION` at the header, before a byte is written. A length above 1,024 B is refused at the header too (`LOAD FAILED`). Other header types are skipped, so `LOAD`, `VERIFY` and `tape_load()` skip library tapes and `LIB` skips program and data tapes. V2's package tapes (type 4, `$8200`) and Leap-C's library tapes refuse each other (tested with V2's own `SHAPES` package, built from its tag, and V2's `LOAD "name" EXT`).
+
 ---
 
 ## 9. Extensibility (later)
@@ -852,6 +962,7 @@ The data tape type uses header type 3 with version word `$8C00`.
 - V2 packages are not supported.
 - A C-oriented library-loading mechanism (precompiled C or assembly libraries in RAM, registered with the compiler's symbol table) is a candidate for a later release.
 - Image region 3 (`$F400-$F7FF`) keeps that option open.
+- **(v0.12) Stage 1 is built** (§2.4, §7.2, §8.4): assembly libraries built on a host and loaded by `LIB`. V2's packages and Leap-C's libraries share the tape header type and refuse each other by the version word. **Stage 2** (libraries written in C on the machine: `#pragma library` would compile a source into region 3 only and export its non-`static` functions; `SAVE "name" LIB` would write region 3 and the table) is not built.
 
 ---
 
@@ -872,6 +983,10 @@ The data tape type uses header type 3 with version word `$8C00`.
   - `tools/timingcmp.py` (`make timing`): the same programs timed on both emulators (compile and run, in T-states and frames);
   - ROM coverage: `run_tests.py --coverage` collects ZEsarUX's code coverage over every suite and `tools/romcov.py` reports it per routine (`make test` does both);
   - the hardware kit: `tools/hwkit.py` (`make kit`): the EPROM images with checksums, the check programs (`docs/hardware/`) and the examples as `.tap`, `.tzx` and `.wav`, verified on both emulators; `tools/tapes.py` writes and reads WAV;
+- **Phase 10 (v0.12):**
+  - `include/leapc_lib.inc`: the library ABI (the header, the slots, the pins, the parameter lists), the single source of truth for HOME and for libraries (§2.4, §7.2);
+  - `tools/lib2tape.py SRC.asm OUT...`: a library's image (`.bin`, its labels `.sym`) and tapes (`.tap`, `.tzx`, `.wav`) from its sjasmplus source, the image checked (the header, the export table, the sizes); `make libs` builds `libs/shapes.asm` and the test libraries into `build/libs/`;
+  - the harness loads a library for a corpus case (`// library: NAME`: `Machine.lib_load`); the cassette suite and Fuse load them from tape (`LIB`); `tools/v2ref.sh` also builds V2's package tapes.
 - **Documentation examples (v0.10):** `tools/docexamples.py` copies every example with expectations from `README.md`, `spec.md` and `docs/EXAMPLES.md` into `tests/doc/`; `make check` fails when they differ.
 
 ---
@@ -896,3 +1011,5 @@ Release qualification covers:
 - `make test` also boots from eight power-on RAM patterns and runs the corpus from them, and reports the ROM's coverage (`build/romcov.md`).
 - The emulator qualification adds Fuse (`make fuse`: the typed programs, BREAK, SAVE and a WAV on Fuse's tape deck, and the corpus LOADed from tape by the ROM's own loader and RUN), the timing comparison (`make timing`) and the hardware kit's verification (`tools/hwkit.py --verify`).
 - **The physical hardware checklist** (`docs/HARDWARE_CHECKLIST.md`) is **not run: an owner-accepted qualification deviation** (2026-10-21; no TS2068 was available). Its items are recorded as not tested, with what both emulators show.
+
+**As built (v0.12, Phase 10; `docs/milestones/M10.md`):** every fix and feature has tests that fail without it. Libraries are tested at every level: the corpus's `tests/lib/loaded/` (a case names its library, which the harness puts in the region as `LIB` leaves it; run directly, through `RUN`, under the canary and from the power-on patterns), `LIB` on real tape signals in ZEsarUX's cassette suite (V2's own package tape among them), on Fuse's tape deck (the case `lib`, and every library case of the corpus loaded by `LIB`), and the kit's library tape with check program H11 from their WAVs on both. The final images pass the whole Phase 9 qualification (`make qualify`, then `make repro`).

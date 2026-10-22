@@ -22,7 +22,45 @@
      IFDEF STORAGE_VERSIONED
  ; ============================================================================
  ; STORAGE_VERSION_WORD (R10.9)
-@@ -1066,3 +1073,4 @@
+@@ -610,18 +617,14 @@
+ ; ============================================================================
+ ; STORAGE_SAVE
+ ; In:  HL = filename pointer, B = filename length, IX = data pointer,
+-;      DE = data length
++;      DE = data length (Leap-C, delta D18: B = STORAGE_HEADER_FILENAME_LEN,
++;      the name already padded with spaces; the clamp and the padding are gone)
+ ; Out: carry always clear (this project's own caller ignores it anyway
+ ;      — see rom/exrom_storage.asm's own header)
+ ; Destroys: AF, BC, DE, HL, IX
+ ; ============================================================================
+ STORAGE_SAVE:
+     di
+-    ld   a, b
+-    cp   STORAGE_HEADER_FILENAME_LEN + 1
+-    jr   c, .name_len_ok
+-    ld   b, STORAGE_HEADER_FILENAME_LEN   ; transport field is fixed-width
+-.name_len_ok:
+     push ix
+     push de
+     ld   (STORAGE_SEND_LEN), de           ; stash the caller's own data
+@@ -653,16 +656,6 @@
+     djnz .name_copy
+     pop  bc
+ .name_done:
+-    ld   a, STORAGE_HEADER_FILENAME_LEN
+-    sub  b
+-    jr   z, .len_set
+-    ld   b, a
+-    ld   a, ' '
+-.pad:
+-    ld   (de), a
+-    inc  de
+-    djnz .pad
+-.len_set:
+     ld   hl, (STORAGE_SEND_LEN)
+     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF), hl
+     IFDEF STORAGE_VERSIONED
+@@ -1066,3 +1059,4 @@
      ret
  .call_hl:
      jp   (hl)

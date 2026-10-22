@@ -178,6 +178,10 @@ SH_ERR_LINE:    DEFS 2              ; SH_RUN: the source line of the error being
 SH_HEIGHTS:     DEFS SH_VIEW_MAX    ; SH_VIEW: the screen rows of each line above the cursor line
 SH_STATUS_BUF:  DEFS 33             ; the status row's text (32 characters and the NUL)
 SH_REPORT_BUF:  DEFS 33             ; Phase 6: a report's first row (row 22: SH_REPORT)
+SH_ERR_COL:     DEFS 2              ; Phase 10: a compile error's column, applied once by SH_LOAD_EDIT (0 between
+                                    ; a report and the editor's resumption; LIB's report of a forged tape with 100
+                                    ; or more functions may write its NUL over the low byte, keeping it 0)
+    ASSERT SH_ERR_COL == SH_REPORT_BUF + 33
 SH_IMAGE_SIZE:  DEFS 2              ; Phase 6: the size of the last image compiled (SH_IMAGE; FREE)
 
 ; ---- tape (Phase 7: the shell's SAVE, LOAD, VERIFY and the library's tape_save, tape_load; spec.md 8). The
@@ -189,6 +193,12 @@ TAPE_ABORT:     DEFS 1              ; nonzero: a block was aborted (SPACE) durin
                                     ; not sent (SH_TAPE_SEND)
 TAPE_DEST:      DEFS 2              ; nonzero: the shell's staged LOAD receives the data block here instead of
                                     ; at the start of the line store (SH_TAPE_RECV, SH_TAPE_HOOK)
+
+; ---- the loaded library (Phase 10: LIB "name", src/shell/tape.asm; include/leapc_lib.inc; spec.md 7.2) ----
+LIB_LOADED:     DEFS 1              ; LX_BASE >> 8 ($F4) while a library is loaded in image region 3, else 0:
+                                    ; the compiler closes the region (CC_COMPILE) and binds its exports
+                                    ; (LIB_FIND); BREAK in its code is reported at the program's call
+                                    ; (RT_BREAKREQ). The cold start clears it; NEW and LOAD keep it
 
 LEAPC_CELLS_END:
     ASSERT LEAPC_CELLS_END <= LEAPC_CELLS_LIMIT

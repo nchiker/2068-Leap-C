@@ -97,6 +97,13 @@ title = "Runtime: start, exit, BREAK, runtime errors"
 budget = 200
 ranges = [["COMP_RTEXIT_BEGIN", "COMP_RTEXIT_END"]]
 
+[[home.component]]
+id = "slots"
+title = "The loaded library's jump table: 16 slots of `jp` at $3FD0, the end of the ROM (Phase 10; include/leapc_lib.inc)"
+budget = 0
+pinned = true
+ranges = [["COMP_SLOTS_BEGIN", "COMP_SLOTS_END"]]
+
 [exrom]
 size = 8192
 base = 0xC000
@@ -899,3 +906,183 @@ counted 5,966 of 6,024 frames in a float loop on Fuse 1.9.1. The ISR touches non
 PORT_FF_SHADOW, the ports, chunk 6) and a BREAK cannot unwind inside them (every runtime page-in is under NOBRK), so
 the two DIs go; the EIs stay (interrupts are on at the return, as before). tools/fusetest.py frames: every frame
 counted. 3,122 B; 2 B return to the HOME reserve (586 -> 588 B, floor 512 B)."""
+
+[[ledger]]
+id = "L61"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "home"
+component = "expr"
+delta = 55
+reason = """Fix 1 (owner-approved, improvements report): ?: with one float and one integer operand converts the integer to
+float (C89 6.3.15); it was TYPE MISMATCH (a documented deviation, spec.md 4.4). One pass: the integer operand is
+converted on its own path by the existing CX_TOFLT (4 B of code per converted arm), the second's path redirected
+over the third's conversion when the second is the integer (a 3-byte jp); a constant condition converts the chosen
+operand. The patched jp the operator already used is now a shared routine (.jpover). A pointer or void with a float
+stays TYPE MISMATCH. 3,171 B; from the HOME reserve (588 -> 533 B)."""
+
+[[ledger]]
+id = "L62"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "home"
+component = "stmt"
+delta = 17
+reason = """Fix 2: UNDEFINED FUNCTION and UNDEFINED LABEL name the identifier. UNDEF_CHECK, on its error path, points NM
+at the undefined symbol's own stored name (S_NAME, S_LEN in the compile workspace); NM held whatever name came last
+(main for g). 1,398 B; from the HOME reserve (533 -> 516 B)."""
+
+[[ledger]]
+id = "L63"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "xshell"
+delta = 18
+reason = """Fix 2: errors 21 (REDECLARED), 22 (ALREADY DEFINED), 52 (NO SUCH MEMBER), 70 and 76 name the identifier
+on the status row as error 23 does: the shell's single `cp E_UNDECL` becomes a 6-byte list searched with cpir, and
+an empty NM (a #define's ALREADY DEFINED) shows no name. From the EXROM reserve."""
+
+[[ledger]]
+id = "L64"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "home"
+component = "helpers"
+delta = -5
+reason = """Fix 3: RT_UDIV's 17-bit-remainder branch is removed: before step i of the 16 the remainder is below 2^(i-1),
+so doubling it never carries (ROM coverage, Phase 9). 5 B and 112 T a division (7 T on each of the 16 steps);
+tests/expr/misc/udiv_identity.c checks 3,000 pairs. 228 B; 5 B return to the HOME reserve."""
+
+[[ledger]]
+id = "L65"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "xplatform"
+delta = -141
+reason = """Fix 4: unreachable vendored EXROM code removed (platform deltas D15-D19; the ROM coverage of Phase 9 showed it
+never ran, reading its callers shows it cannot): the editor engine's fallbacks for unset hooks (the shell always sets
+both) and its second dispatch block (D15), the NEXT ERROR, PREV ERROR, HOME and END keys no Leap-C key gives (D16),
+EDITOR_BLOCK_DELETE and AY_BEEP's own entry, which have no caller (D17), STORAGE_SAVE's name clamp and padding (the
+shell passes 10 padded characters, D18) and SOUND_EXROM's range check (its only caller, the chime, writes registers
+0-10, D19). The report measured 154 B; STORAGE_VERSION_WORD (13 B) stays, because library tapes need it (Phase 10:
+V2's package type with its own version word). beep() and sound() are unchanged (LIB_SOUND, SOUND_EXROM,
+AY_BEEP_PERIOD, AY_BEEP_PLAY stay). 1,372 B; 141 B return to the EXROM reserve."""
+
+[[ledger]]
+id = "L66"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "xshell"
+delta = 41
+reason = """Fix 5: after a compile error the cursor lands at the error's column: the report computes it from TOK_PTR
+(the token where the compiler stopped) less the line's text, clamped to the line's end (a missing `;` belongs
+there); a 2-byte cell (SH_ERR_COL, RAM) carries it to the next SH_LOAD_EDIT, which applies it once. Runtime errors and
+BREAK keep column 0. From the EXROM reserve."""
+
+[[ledger]]
+id = "L67"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "xshell"
+delta = 4
+reason = """A defect found while adding LIB (Phase 7's LOAD): a LOAD whose program did not fit above the source received
+it into the source; BREAK (SPACE) during that data block was reported as BREAK and the partly overwritten source was
+kept, because SH_LOAD_IO turned "written to" into a plain BREAK. SH_LOAD_IO now returns TR_BREAKT when part of the
+data block was written (an `add` in place of an `ld`: 0 B), and LOAD treats it as written (+4 B): the source is then
+empty, as after any failure into it (V2's rule). tape_load() reports either BREAK as runtime error 5, as before.
+tools/tapetest.py load-break-direct fails without it. From the EXROM reserve."""
+
+[[ledger]]
+id = "L68"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "home"
+component = "slots"
+delta = 48
+reason = """Library loading (owner decision: V2-style jump-table slots): 16 slots of `jp` at $3FD0, the last 48 bytes of
+HOME, a pinned component above the code (tools/budget.py). A loaded library reaches the ROM's services only through
+them (include/leapc_lib.inc: 14 services, 2 reserved), so a library built against the slots runs on every ROM that
+keeps them; an ASSERT per slot holds each at its address. From the HOME reserve."""
+
+[[ledger]]
+id = "L69"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "home"
+component = "decl"
+delta = 11
+reason = """Library loading: while a library is loaded (LIB_LOADED), CC_COMPILE closes image region 3 to the program,
+[end][end], as #pragma hires closes region 4 (one byte of its [low] written). 2,899 B; from the HOME reserve."""
+
+[[ledger]]
+id = "L70"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "home"
+component = "rtexit"
+delta = 7
+reason = """Library loading: BREAK while a loaded library's code runs (image region 3, which then holds no program code)
+ends the program at its last library call (LIB_CALLER, which the library's LX_ARGS records), as BREAK in the ROM's
+library does; RT_BREAKREQ took any address at or above $6000 as the program's. 224 B; from the HOME reserve."""
+
+[[ledger]]
+id = "L71"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "xcomp"
+delta = 17
+reason = """Library loading: the binding searches the loaded library's export table after the ROM's (LIB_FIND, the same
+loop and records: +13 B), and LIB_PARAMS gains four parameter lists for libraries ((int, int, int), (int, void *),
+(int, int, void *), five ints: +4 B), so its 16 entries are all valid. 1,476 B; from the EXROM reserve."""
+
+[[ledger]]
+id = "L72"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "xshell"
+delta = 180
+reason = """Library loading: the shell's LIB "name" (SH_LIB: a library tape, type 4, into image region 3 through the
+tape path, staged above the source when there is room, the report LIBRARY name: n FUNCTIONS) and LIB alone (SH_UNLIB,
+NO LIBRARY); the dispatch (+18 B); SH_IMAGE leaves a loaded library out of IMAGE (+9 B); the texts (30 B); the
+staged receive shared with LOAD (SH_LOAD_AT) and the tape report's tail shared (SH_TAPE_NAMED). After a shrink pass
+(-26 B). 2,902 B; from the EXROM reserve (192 B left)."""
+
+[[ledger]]
+id = "L73"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "home"
+component = "reserve_floor"
+delta = -128
+reason = """Owner decision (Phase 10 approval): the reserve floors may be lowered as far as the phase needs, not below
+128 B; with the ROM feature-complete the reserve only has to cover defects found in release qualification and on
+real hardware. HOME's floor 512 -> 384 B: the reserve after Phase 10 is 455 B, 71 B above it."""
+
+[[ledger]]
+id = "L74"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "reserve_floor"
+delta = -128
+reason = """Owner decision (Phase 10 approval), as L73: the EXROM's floor 256 -> 128 B, the lowest allowed: the reserve
+after Phase 10 is 186 B, 58 B above it (with L75)."""
+
+[[ledger]]
+id = "L75"
+date = "2026-10-22"
+milestone = "Phase 10"
+bank = "exrom"
+component = "xcomp"
+delta = 6
+reason = """Fix 2, completed (a defect of the prototype found in review): a macro defined twice reported ALREADY DEFINED
+with the name the compiler had last looked up (`int total;` then `#define N` twice: LINE 4 'total'), because the
+directive never sets NM. PP_DEFINE clears NM_LEN on that error, so a #define's ALREADY DEFINED shows no name, as
+approved (tests/pperr/redefine_after_code.c; the harness now requires a reported name to be a word of the error's
+line or of a #define). 1,482 B; from the EXROM reserve (192 -> 186 B)."""

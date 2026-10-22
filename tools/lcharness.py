@@ -38,6 +38,8 @@ TAPE_SLOTS = (14, 15, 16, 17, 18)  # breakpoint slots of the SAVE capture (set_b
 AUTOLOAD_PC = 0x11F8       # ZEsarUX's TS2068 autoload trigger (storage/tape.c gestionar_autoload_spectrum)
 STOP_ADDR = 0xFF02         # `jr $` written here; routine calls return to it
 GLYPH_PROG = 0xF400        # glyph rendering program (image region 3, free at the idle prompt)
+LIBS = os.path.join(ROOT, "build", "libs")      # Phase 10: the libraries' images (make libs: tools/lib2tape.py)
+LX_BASE = 0xF400           # a loaded library's image (image region 3; include/leapc_lib.inc)
 UNKNOWN = "\u2591"         # screen_rows: a cell that is no glyph
 BOLD_MARK = "\u2022"       # screen_rows(marks=True): the next character is bold
 
@@ -421,6 +423,17 @@ class Machine:
         return rows
 
     # ------------------------------------------------------------- Leap-C level
+    def lib_load(self, name):
+        """Phase 10: the library `name` (build/libs/NAME.bin) in image region 3 and LIB_LOADED set, as LIB "name"
+        leaves them (the cassette suite and Fuse load libraries from tape). Its labels become symbols "lib:LABEL"
+        (build/libs/NAME.sym). Returns the image."""
+        img = open(os.path.join(LIBS, name + ".bin"), "rb").read()
+        self.write(LX_BASE, img)
+        self.write(self.sym("LIB_LOADED"), LX_BASE >> 8)
+        for k, v in load_syms(os.path.join(LIBS, name + ".sym")).items():
+            self.S["lib:" + k] = v
+        return img
+
     def put_store(self, records):
         """Write line-store records (tools/c2src.py) at PROG_AREA_START and set PROG_END."""
         start = self.sym("PROG_AREA_START")

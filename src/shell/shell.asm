@@ -74,8 +74,8 @@ SH_REENTER:
     jr   SH_REENTER                    ; the typed line stays in the buffer (V2 D9b)
 
 ; ============================================================================
-; SH_DISPATCH -- run the command on the append line: RUN, LIST, FREE or NEW, in any case, alone on
-; the line apart from spaces (V2_DISPATCH); SAVE, LOAD or VERIFY, in any case, then spaces and a quote
+; SH_DISPATCH -- run the command on the append line: RUN, LIST, FREE, LIB or NEW, in any case, alone on
+; the line apart from spaces (V2_DISPATCH); SAVE, LOAD, VERIFY or LIB, in any case, then spaces and a quote
 ; (no C line starts so): its name and any errors in it are the command's (src/shell/tape.asm)
 ; Out: NC: a command ran (the line is not stored). C: not a command
 ; Destroys: AF, BC, DE, HL, IX
@@ -83,7 +83,7 @@ SH_REENTER:
 SH_DISPATCH:
     ld   de, SH_KW_RUN
     call SH_MATCH
-    jr   nc, SH_RUN
+    jp   nc, SH_RUN
     ld   de, SH_KW_LIST
     call SH_MATCH
     jp   nc, SH_LIST
@@ -99,6 +99,12 @@ SH_DISPATCH:
     ld   de, SH_KW_VERIFY
     call SH_QWORD
     jp   nc, SH_VERIFY
+    ld   de, SH_KW_LIB                 ; Phase 10: LIB "name" loads a library, LIB alone unloads it
+    call SH_QWORD
+    jp   nc, SH_LIB
+    ld   de, SH_KW_LIB
+    call SH_MATCH
+    jp   nc, SH_UNLIB
     ld   de, SH_KW_NEW
     call SH_MATCH
     ret  c
@@ -210,7 +216,7 @@ SH_RUN:
     pop  hl
     call SH_APPEND_NUM
     call SH_MEMORY                     ; "IMAGE i B  HEAP h B"
-    jr   SH_REPORT
+    jp   SH_REPORT
 .failed:                               ; A = the runtime error
     ld   b, a
     ld   hl, SH_MSG_BREAK
@@ -237,13 +243,41 @@ SH_RUN:
     or   l
     jr   z, SH_REPORT
     call SH_JUMP_TO_LINE               ; the cursor on the line, its text in the edit buffer
+    ld   a, (CC_ERRNUM)                ; a compile error: the cursor on the token it stopped at (TOK_PTR),
+    or   a                             ; or at the line's end when that token is past it (a missing `;`)
+    jr   z, .nocol
+    call SH_POS_IS_APPEND
+    jr   z, .nocol
+    ld   c, (hl)
+    inc  hl
+    ld   b, (hl)
+    inc  hl                            ; HL = the line's text, BC = its length and the CR
+    dec  bc
+    ex   de, hl
+    ld   hl, (TOK_PTR)
+    or   a
+    sbc  hl, de                        ; the token's column (before the line: a large number)
+    push hl
+    sbc  hl, bc
+    pop  hl
+    jr   c, .col
+    ld   h, b                          ; (past the line's end: at its end)
+    ld   l, c
+.col:
+    ld   (SH_ERR_COL), hl              ; (SH_LOAD_EDIT puts the cursor there when the editor resumes)
+.nocol:
     ld   de, SH_STATUS_BUF
     ld   hl, SH_TXT_LINE               ; "LINE "
     call SH_APPEND
     ld   hl, (SH_ERR_LINE)
     call SH_APPEND_NUM
-    ld   a, (CC_ERRNUM)                ; (0 after a runtime error or BREAK: the compile succeeded)
-    cp   E_UNDECL
+    ld   a, (NM_LEN)                   ; a name, and an error about it (CC_ERRNUM 0 after a runtime error
+    or   a                             ; or BREAK: the compile succeeded)
+    jr   z, SH_REPORT
+    ld   a, (CC_ERRNUM)
+    ld   hl, SH_NAMED
+    ld   bc, SH_NAMED_N
+    cpir
     jr   nz, SH_REPORT
     ld   hl, SH_TXT_NAME               ; Phase 9: "LINE m  'name'", the undeclared identifier's
     call SH_APPEND                     ; first SH_NAME_MAX characters (left of the swatch). NM is
@@ -495,14 +529,20 @@ SH_APPEND_BYTES:
 ; SH_IMAGE -- SH_IMAGE_SIZE = the size of the image just compiled: the code and static data in the
 ; four image regions, from the compiler's limits (IMG_LIM: per region [low][high]; the code lies
 ; below low, the data from high up, so the region's free bytes are high - low). Region 4 reserved
-; by #pragma hires is [high][high] (spec.md 3.2): only its data counts. (Any other region with
-; high = low is full; region 4 full of code is E_TOOBIG.)
+; by #pragma hires is [high][high] (spec.md 3.2): only its data counts; region 3 closed by a loaded
+; library (Phase 10) counts nothing. (Any other region with high = low is full; region 4 full of code is
+; E_TOOBIG.)
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 SH_IMG_BYTES    EQU (LEAPC_IMG1_END - LEAPC_IMG1_BASE) + (LEAPC_IMG2_END - LEAPC_IMG2_BASE) + (LEAPC_IMG3_END - LEAPC_IMG3_BASE) + (LEAPC_IMG4_END - LEAPC_IMG4_BASE)
 SH_IMAGE:
     ld   ix, IMG_LIM
     ld   hl, SH_IMG_BYTES
+    ld   a, (LIB_LOADED)               ; Phase 10: region 3 holds a loaded library ([end][end]): not the image's
+    or   a
+    jr   z, .all
+    ld   hl, SH_IMG_BYTES - (LEAPC_IMG3_END - LEAPC_IMG3_BASE)
+.all:
     ld   b, IMG_REGIONS
 .region:
     push hl
@@ -645,8 +685,10 @@ SH_LOAD_EDIT:
     ld   (de), a
     call SH_POS_IS_APPEND
     call nz, SH_COPY_TEXT
-    ld   hl, 0
+    ld   hl, (SH_ERR_COL)              ; the cursor at 0, or once at a compile error's column
     ld   (EDIT_BUF_OFFSET), hl
+    ld   hl, 0
+    ld   (SH_ERR_COL), hl
     ret
 
 ; ============================================================================
@@ -1312,6 +1354,7 @@ SH_KW_NEW:      DB "NEW", 0
 SH_KW_SAVE:     DB "SAVE", 0
 SH_KW_LOAD:     DB "LOAD", 0
 SH_KW_VERIFY:   DB "VERIFY", 0
+SH_KW_LIB:      DB "LIB", 0
 SH_MSG_FULL:    DB "PROGRAM FULL", 0
 SH_MSG_COMPILING: DB "COMPILING", 0
 SH_MSG_RUNTIME: DB "RUNTIME "
@@ -1319,6 +1362,8 @@ SH_MSG_ERROR:   DB "ERROR ", 0
 SH_MSG_BREAK:   DB "BREAK", 0
 SH_TXT_LINE:    DB "LINE ", 0
 SH_TXT_NAME:    DB "  '", 0
+SH_NAMED:       DB E_REDECL, E_REDEF, E_UNDECL, E_MEMBER, E_UNDEFFN, E_UNDEFLABEL   ; errors that name NM
+SH_NAMED_N      EQU $ - SH_NAMED
 SH_NAME_MAX     EQU 15              ; "LINE 9999  '" and 15 characters and "'": 29 columns
 SH_TXT_EXIT:    DB "EXIT ", 0
 SH_TXT_IMAGE:   DB "IMAGE ", 0
@@ -1337,3 +1382,7 @@ SH_MSG_VFAIL:   DB "VERIFY FAILED", 0
 SH_MSG_VERSION: DB "BAD TAPE VERSION", 0
 SH_MSG_BADNAME: DB "BAD NAME", 0
 SH_MSG_NOPROG:  DB "NO PROGRAM", 0
+SH_MSG_NOLIB:   DB "NO "                ; (Phase 10: LIB)
+SH_TXT_LIBRARY: DB "LIBRARY ", 0
+SH_TXT_COLON:   DB ": ", 0
+SH_TXT_FUNCTIONS: DB " FUNCTIONS", 0

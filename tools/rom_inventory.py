@@ -4,7 +4,8 @@
 Read-only: it reads build/*.lst, build/*.sym, build/*.bin and budget.toml and writes only its report
 (and the --json file when asked). `make inventory` runs it on the production HOME image.
 
-For each byte of the bank up to its code end the listing says what produced it: an instruction
+For each byte of the bank up to its code end, and (Phase 10) of its pinned components above it (HOME's
+library slots at $3FD0, budget.toml `pinned`: roots of their own), the listing says what produced it: an instruction
 (code), DB/DW/DM data (data), DS fill (fill), or nothing (an ORG gap). Bytes are grouped by
 top-level label (a routine or a table) and the routines by budget.toml component. A cross
 reference over the operands of every assembled line (and, for HOME, the EXROM's references to the
@@ -154,7 +155,9 @@ class Bank:
         for addr, lab in labels:
             if "." not in lab:
                 self.alias.setdefault(addr, []).append(lab)
-        self.starts = sorted(a for a in tops if a < self.end)
+        self.pinned = [(self.syms[a], self.syms[b]) for c in cfg["component"] if c.get("pinned")
+                       for a, b in c.get("ranges", [])]
+        self.starts = sorted(a for a in tops if a < self.end or self.in_pinned(a))
         self.top = {a: tops[a] for a in self.starts}
         self.name_addr = {}
         for addr, lab in labels:
@@ -174,6 +177,13 @@ class Bank:
         for c in cfg["component"]:
             ranges = [(self.syms[a], self.syms[b]) for a, b in c.get("ranges", [])]
             self.comps.append((c["id"], c["title"], ranges))
+
+    def in_pinned(self, addr):
+        return any(lo <= addr < hi for lo, hi in self.pinned)
+
+    def code(self, addr):
+        """Is addr in the image's code: below its end, or in a pinned component?"""
+        return self.base <= addr < self.end or self.in_pinned(addr)
 
     def owner(self, addr):
         lo, hi = 0, len(self.starts) - 1
@@ -197,6 +207,9 @@ class Bank:
         out = []
         for i, a in enumerate(self.starts):
             b = self.starts[i + 1] if i + 1 < len(self.starts) else self.end
+            if a < self.end < b or b <= a:              # (the code's last routine ends at its end; a pinned
+                b = next((hi for lo, hi in self.pinned if lo <= a < hi), self.end) if b <= a or a >= self.end \
+                    else self.end                       # component ends where its range does)
             # a component boundary inside the span ends the routine there
             for _, _, ranges in self.comps:
                 for ra, rb in ranges:
@@ -217,7 +230,7 @@ def xref(bank):
     """Edges caller-routine -> callee-routine from operands (code and data), plus fall-through."""
     names = {}
     for lab, addr in bank.name_addr.items():
-        if bank.base <= addr < bank.end:
+        if bank.code(addr):
             names[lab] = bank.owner(addr)
     # EQU aliases of labels (NAME EQU LABEL) count as the label
     for alias, target in bank.equ_alias.items():
@@ -243,7 +256,7 @@ def xref(bank):
     # fall-through: a routine whose last code row is not an unconditional transfer runs into the next
     last = {}
     for addr, size, kind, stmt in rows:
-        if addr < bank.end:
+        if bank.code(addr):
             last[bank.owner(addr)] = (kind, stmt)
     for i, a in enumerate(bank.starts[:-1]):
         k = last.get(a)
@@ -319,8 +332,9 @@ def main():
     for r in routines:
         for k in total:
             total[k] += r[k]
-    used = bank.end - bank.base
-    tail = bank.image[used:]
+    used = bank.end - bank.base + sum(hi - lo for lo, hi in bank.pinned)
+    top = min([lo for lo, _ in bank.pinned] + [bank.base + bank.size])
+    tail = bank.image[bank.end - bank.base:top - bank.base]
     tail_ff = all(x == 0xFF for x in tail)
     gaps = []
     a = bank.base
@@ -351,7 +365,8 @@ def main():
         ext_by.setdefault(dst, set()).add(src)
     page0 = [r["start"] for r in routines if r["comp"] == "page0"]
     entries = [bank.name_addr[n] for n in ENTRIES[bank.name] if n in bank.name_addr]
-    roots_now = set(page0) | set(ext_by) | set(entries)
+    pinned = [r["start"] for r in routines if bank.in_pinned(r["start"])]   # (the library slots: a library's entries)
+    roots_now = set(page0) | set(ext_by) | set(entries) | set(pinned)
     live = reach(edges, roots_now, bank.starts)
     for r in routines:
         refs = sorted(by_start[s]["name"] for s in edges.get(r["start"], ()) if s in by_start)

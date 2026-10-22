@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Reproducible build check: two builds from a clean tree must give identical image hashes.
+# Reproducible build check: two builds from a clean tree must give identical image hashes (Phase 10: and identical
+# library images and tapes, build/libs).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 make clean >/dev/null && make build >/dev/null
 cp build/SHA256SUMS /tmp/leapc_repro_1.$$
 ( cd build/test && sha256sum leapc_home.bin leapc_exrom.bin ) >> /tmp/leapc_repro_1.$$
+sed 's|  |  libs/|' build/libs/SHA256SUMS >> /tmp/leapc_repro_1.$$
 make clean >/dev/null && make build >/dev/null
 cp build/SHA256SUMS /tmp/leapc_repro_2.$$
 ( cd build/test && sha256sum leapc_home.bin leapc_exrom.bin ) >> /tmp/leapc_repro_2.$$
+sed 's|  |  libs/|' build/libs/SHA256SUMS >> /tmp/leapc_repro_2.$$
 if cmp -s /tmp/leapc_repro_1.$$ /tmp/leapc_repro_2.$$; then
     echo "reproducible: OK"; cat /tmp/leapc_repro_1.$$
     rm -f /tmp/leapc_repro_[12].$$

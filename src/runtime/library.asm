@@ -731,6 +731,7 @@ LIB_GETS:
 ; takes the attribute); off the screen: nothing
 LIB_PLOT:
     call LIB_ARGS
+LIB_PLOT_HL:                           ; (a loaded library's LX_PLOT: HL = x, DE = y; Destroys: AF, BC, DE, HL)
     push de
     push hl
     call LIB_OVATTR                    ; A = the attribute, B = over
@@ -955,6 +956,7 @@ LIB_RAND:
 ; ============================================================================
 LIB_MALLOC:
     call LIB_ARGS                      ; HL = n
+LIB_MALLOC_HL:                         ; (a loaded library's LX_MALLOC: HL = n; Out: HL; Destroys: AF, BC, DE)
     ld   bc, 3
     add  hl, bc
     jr   c, .none                      ; (n > $FFFC)
@@ -1032,6 +1034,7 @@ LIB_MALLOC:
 ; void free(void *p) -- p's block (from malloc) is free again; NULL: nothing
 LIB_FREE:
     call LIB_ARGS
+LIB_FREE_HL:                           ; (a loaded library's LX_FREE: HL = p; Destroys: AF, HL)
     ld   a, h
     or   l
     ret  z

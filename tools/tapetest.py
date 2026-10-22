@@ -42,7 +42,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PILOT = tapes.DATA_PILOT        # pilot pulses of the synthesised tapes (2 s: the receiver waits 1 s, then counts 256 cycles)
 ROOM = 0xC000 - 0x7800          # the line store's room: LOAD's most
 CASES = []
-LONG = ("load-not-found", "roundtrip-large", "cross-version", "roundtrip", "load-fail-direct", "lib-load-results")  # (run first)
+LONG = ("load-not-found", "roundtrip-large", "cross-version", "roundtrip", "load-fail-direct", "lib-load-results",
+        "lib-cross-version", "lib-keep-unload", "lib-direct", "lib-fail-keeps", "lib-refused")  # (run first)
 
 PROG = ["int main(void)", "{", '    puts("TAPE");', "    return 7;", "}"]
 SRC_A = ["int f(int x)", "{", "    return x * 3;", "}", "int main(void)", "{", "    return f(4);", "}"]
@@ -377,6 +378,28 @@ def load_fail_direct(sh):
     if msg != ("LOAD FAILED", source_row([])) or st["store"] != [] or st["index"] != 0 or sh.rows()[23] != "LINE 1/0":
         bad.append("direct fail %r %r" % (msg, st))
     return expect(not bad, "; ".join(bad))
+
+
+@case("load-break-direct", "(Phase 10) BREAK during the data block of a LOAD that goes straight into the line store: "
+                           "BREAK, and the source, partly overwritten, is empty (it kept the overwritten source)")
+def load_break_direct(sh):
+    m, S = sh.m, sh.S
+    big = ["// %s" % ("x" * 120)] * 140             # 17,220 B in the line store
+    newp = ["// %d %s" % (i, "y" * 100) for i in range(14)] + SRC_B   # ~1.6 KB: does not fit above it
+    play(sh, ptape("b", newp))
+    sh.load(big, len(big))
+    command_to(sh, 'LOAD "b"', [S("TAPE_BLOCK")], n=2)
+    dest = m.w16(S("TAPE_DEST"))
+    got = in_data(sh, 0x7800, 20)
+    hold_break(m, True)
+    try:
+        msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
+    finally:
+        hold_break(m, False)
+    st = state(sh)
+    ok = got and dest == 0 and msg == ("BREAK", source_row([])) and st["store"] == [] and st["index"] == 0 \
+        and sh.rows()[23] == "LINE 1/0"
+    return expect(ok, "reached %s dest %04X: %r %r" % (got, dest, msg, st))
 
 
 @case("load-refused", "tapes LOAD refuses at the header, writing nothing: version words $8101 (V2), $8000 (stock, no "
@@ -776,6 +799,291 @@ def lib_stack(sh):
     sh.extra = dict(stack_bytes=depth)
     return expect(pc == lcharness.STOP_ADDR and m.regs()["HL"] == 40 and depth <= 40 + 18,
                   "pc %04X hl %d depth %d" % (pc, m.regs()["HL"], depth))
+
+
+# ===================================================================== the loaded library (Phase 10)
+LX_TYPE = 4                                         # include/leapc_lib.inc: V2's package tapes
+LIB_PROG = ["int main(void)", "{", "    return t_args(1, 2, 3);", "}"]
+
+
+def lib_image(name):
+    return open(os.path.join(lcharness.LIBS, name + ".bin"), "rb").read()
+
+
+def ltape(name, lib=None, version=None, pilot=PILOT, **kw):
+    """The library tape of build/libs/LIB.bin named `name`, as tools/lib2tape.py makes it (its version word the
+    image's magic and ABI unless given), with short pilots and any fault of ptape()."""
+    img = lib_image(lib or name)
+    return ptape(name, data=img, htype=LX_TYPE, version=(img[0] << 8 | img[1]) if version is None else version,
+                 pilot=pilot, **kw)
+
+
+def lib_state(sh):
+    m, S = sh.m, sh.S
+    return dict(loaded=m.read(S("LIB_LOADED"), 1)[0], region3=m.read(0xF400, 0x400))
+
+
+def lib_report(name, n, lines):
+    return ("LIBRARY %s: %d FUNCTIONS" % (name, n), source_row(lines))
+
+
+def type_lines(sh, lines):
+    """NEW, then `lines` typed (the library stays loaded: a restore would unload it)."""
+    sh.type("NEW")
+    for l in lines:
+        sh.type(l)
+
+
+@case("lib-load", "LIB \"testlib\" from tools/lib2tape.py's own .tap blocks played as the tape signal: the library "
+                  "arrives above the source (staged), then moves into image region 3, byte for byte; LIBRARY testlib: 24 "
+                  "FUNCTIONS; the source and the editor as before; then NEW, a program typed and RUN binds its function")
+def lib_load(sh):
+    m, S = sh.m, sh.S
+    t = tapes.Tape()
+    for b in tapes.read_tap(open(os.path.join(lcharness.LIBS, "testlib.tap"), "rb").read()):
+        t.block(b, pilot=PILOT)
+    play(sh, t)
+    sh.load(SRC_A, len(SRC_A))
+    st0 = state(sh)
+    command_to(sh, 'LIB "testlib"', [S("TAPE_BLOCK")], n=2)
+    dest = m.w16(S("TAPE_DEST"))
+    msg, rows = finish(sh)
+    img = lib_image("testlib")
+    ls = lib_state(sh)
+    bad = []
+    if msg != lib_report("testlib", 24, SRC_A) or state(sh) != st0:
+        bad.append("LIB %r %r" % (msg, state(sh)))
+    if ls["loaded"] != 0xF4 or ls["region3"][:len(img)] != img or dest != 0x7800 + len(rec(SRC_A)):
+        bad.append("loaded %02X, image %s, staged at %04X" % (ls["loaded"], ls["region3"][:len(img)] == img, dest))
+    type_lines(sh, LIB_PROG)
+    msg2, rows2 = command(sh, "run")
+    if msg2[0] != "EXIT 123":
+        bad.append("run %r" % (msg2,))
+    return expect(not bad, "; ".join(bad))
+
+
+@case("lib-direct", "LIB with no room above the source: the library goes straight into image region 3 and loads whole; "
+                    "with a bad checksum or BREAK in its data block, LOAD FAILED or BREAK and no library is loaded (the "
+                    "region was written)")
+def lib_direct(sh):
+    m, S = sh.m, sh.S
+    big = ["// %s" % ("x" * 120)] * 143             # 18,018 B in the line store: 414 B above it
+    bad = []
+    img = lib_image("testlib")
+    play(sh, ltape("testlib"))
+    sh.load(big, len(big))
+    msg, rows = command(sh, 'LIB "testlib"')
+    ls = lib_state(sh)
+    if msg != lib_report("testlib", 24, big) or ls["loaded"] != 0xF4 or ls["region3"][:len(img)] != img:
+        bad.append("direct %r loaded %02X" % (msg, ls["loaded"]))
+    play(sh, ltape("testlib", bad_checksum=True))
+    sh.load(big, len(big))
+    m.lib_load("tiny")
+    msg, rows = command(sh, 'LIB "testlib"')
+    if msg != ("LOAD FAILED", source_row(big)) or lib_state(sh)["loaded"] != 0:
+        bad.append("checksum %r loaded %02X" % (msg, lib_state(sh)["loaded"]))
+    play(sh, ltape("testlib"))
+    sh.load(big, len(big))
+    m.lib_load("tiny")
+    command_to(sh, 'LIB "testlib"', [S("TAPE_BLOCK")], n=2)
+    got = in_data(sh, 0xF400, 20)
+    hold_break(m, True)
+    try:
+        msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
+    finally:
+        hold_break(m, False)
+    if not got or msg != ("BREAK", source_row(big)) or lib_state(sh)["loaded"] != 0:
+        bad.append("break (reached %s) %r loaded %02X" % (got, msg, lib_state(sh)["loaded"]))
+    return expect(not bad, "; ".join(bad))
+
+
+@case("lib-fail-keeps", "LIB failures that write nothing into image region 3 keep the library loaded before them: a "
+                        "staged data block with a bad checksum, BREAK in a staged data block, BREAK while it searches")
+def lib_fail_keeps(sh):
+    m, S = sh.m, sh.S
+    bad = []
+    for what, tape in (("checksum", ltape("testlib", bad_checksum=True)), ("dropout", ltape("testlib", dropout=(30, 4)))):
+        play(sh, tape)
+        sh.load(SRC_A, len(SRC_A))
+        tiny = m.lib_load("tiny")
+        st0 = state(sh)
+        msg, rows = command(sh, 'LIB "testlib"')
+        ls = lib_state(sh)
+        if msg != ("LOAD FAILED", source_row(SRC_A)) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny \
+                or state(sh) != st0:
+            bad.append("%s %r loaded %02X" % (what, msg, ls["loaded"]))
+    play(sh, ltape("testlib"))
+    sh.load(SRC_A, len(SRC_A))
+    tiny = m.lib_load("tiny")
+    command_to(sh, 'LIB "testlib"', [S("TAPE_BLOCK")], n=2)
+    dest = m.w16(S("TAPE_DEST"))
+    got = in_data(sh, dest, 20)
+    hold_break(m, True)
+    try:
+        msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
+    finally:
+        hold_break(m, False)
+    ls = lib_state(sh)
+    if not got or msg != ("BREAK", source_row(SRC_A)) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny:
+        bad.append("break in data (reached %s) %r loaded %02X" % (got, msg, ls["loaded"]))
+    sh.load(SRC_A, len(SRC_A))                      # no tape: BREAK while it searches
+    m.lib_load("tiny")
+    command_to(sh, 'LIB ""', [S("TAPE_BLOCK")])
+    m.run(200_000)
+    hold_break(m, True)
+    try:
+        msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
+    finally:
+        hold_break(m, False)
+    ls = lib_state(sh)
+    if msg != ("BREAK", source_row(SRC_A)) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny:
+        bad.append("break in search %r loaded %02X" % (msg, ls["loaded"]))
+    return expect(not bad, "; ".join(bad))
+
+
+@case("lib-refused", "library tapes LIB refuses at the header, writing nothing and keeping the library before them: "
+                     "version words $8D02 (a later ABI), $8E01 (another magic), $8C00 (Leap-C's program word), $8200 "
+                     "(V2's packages): BAD TAPE VERSION; a length beyond image region 3 (1,025 B): LOAD FAILED")
+def lib_refused(sh):
+    m = sh.m
+    bad = []
+    cases = [(v, ltape("testlib", version=v), "BAD TAPE VERSION") for v in (0x8D02, 0x8E01, 0x8C00, 0x8200)]
+    cases.append(("too long", ltape("testlib", length=0x401), "LOAD FAILED"))
+    for what, tape, want in cases:
+        play(sh, tape)
+        sh.load(SRC_A, len(SRC_A))
+        tiny = m.lib_load("tiny")
+        st0 = state(sh)
+        msg, rows = command(sh, 'LIB "testlib"')
+        ls = lib_state(sh)
+        if msg != (want, source_row(SRC_A)) or state(sh) != st0 or ls["loaded"] != 0xF4 or \
+                ls["region3"][:len(tiny)] != tiny or ls["region3"][len(tiny):len(tiny) + 8] != bytes(8):
+            bad.append("%s: %r %r loaded %02X" % (what if isinstance(what, str) else "$%04X" % what, msg, state(sh),
+                                                 ls["loaded"]))
+    return expect(not bad, "; ".join(bad))
+
+
+@case("lib-keep-unload", "the loaded library stays through NEW and LOAD (a program tape after it, which uses it, RUNs); "
+                         "LIB alone unloads it (NO LIBRARY; the program's call is then UNDEFINED FUNCTION 't_args'); "
+                         "a reset (the cold start) clears it")
+def lib_keep_unload(sh):
+    m, S = sh.m, sh.S
+    bad = []
+    tape = join(ltape("testlib"), ptape("b", LIB_PROG))
+    play(sh, tape)
+    sh.load(SRC_A, len(SRC_A))
+    msg, rows = command(sh, 'LIB "testlib"')
+    if msg != lib_report("testlib", 24, SRC_A):
+        bad.append("LIB %r" % (msg,))
+    sh.type("NEW")
+    if lib_state(sh)["loaded"] != 0xF4 or sh.store() != []:
+        bad.append("after NEW: loaded %02X store %r" % (lib_state(sh)["loaded"], sh.store()))
+    msg, rows = command(sh, 'LOAD "b"')
+    if msg != ("LOADED b", source_row(LIB_PROG)) or lib_state(sh)["loaded"] != 0xF4:
+        bad.append("LOAD %r loaded %02X" % (msg, lib_state(sh)["loaded"]))
+    msg, rows = command(sh, "run")
+    if msg[0] != "EXIT 123":
+        bad.append("run %r" % (msg,))
+    shown = sh.type("lib")
+    sh.key(ord(" "))
+    if shown != "NO LIBRARY " or lib_state(sh)["loaded"] != 0 or sh.store() != LIB_PROG:
+        bad.append("LIB alone %r loaded %02X" % (shown, lib_state(sh)["loaded"]))
+    msg, rows = command(sh, "run")
+    if msg != ("ERROR 70: UNDEFINED FUNCTION", "LINE 3  't_args'"):
+        bad.append("run unloaded %r" % (msg,))
+    m.lib_load("testlib")                            # a reset: the cold start clears it, the region keeps its bytes
+    m.setreg("PC", 0)
+    if m.run_to([S("IO_READ_KEY")], 30_000_000) != S("IO_READ_KEY"):
+        bad.append("no reset")
+    elif lib_state(sh)["loaded"] != 0 or lib_state(sh)["region3"][:16] != lib_image("testlib")[:16]:
+        bad.append("after a reset: loaded %02X" % lib_state(sh)["loaded"])
+    return expect(not bad, "; ".join(bad))
+
+
+@case("lib-any-replace", "LIB \"\" skips a program tape and loads the next library (tiny); LIB \"testlib\" then replaces "
+                         "it: testlib's functions bind, tiny's is gone (UNDEFINED FUNCTION 'tiny')")
+def lib_any_replace(sh):
+    m = sh.m
+    bad = []
+    t = join(ptape("b", SRC_B), ltape("tiny"))
+    t.silence(4.0)
+    play(sh, join(t, ltape("testlib")))
+    sh.load(SRC_A, len(SRC_A))
+    st0 = state(sh)
+    msg, rows = command(sh, 'LIB ""')
+    if msg != lib_report("tiny", 1, SRC_A) or state(sh) != st0:
+        bad.append("LIB \"\" %r" % (msg,))
+    msg, rows = command(sh, 'LIB "testlib"')
+    if msg != lib_report("testlib", 24, SRC_A):
+        bad.append("LIB testlib %r" % (msg,))
+    type_lines(sh, ["int main(void)", "{", "    return t_args(0, 4, 2) + tiny();", "}"])
+    msg, rows = command(sh, "run")
+    if msg != ("ERROR 70: UNDEFINED FUNCTION", "LINE 3  'tiny'"):
+        bad.append("run %r" % (msg,))
+    return expect(not bad, "; ".join(bad))
+
+
+@case("lib-commands", "LIB's words: BAD NAME (11 characters, more after the quote, no closing quote), nothing loaded or "
+                      "unloaded; LIB alone in any case and with spaces unloads (NO LIBRARY); `libx = 1;` is a source line")
+def lib_commands(sh):
+    m = sh.m
+    bad = []
+    for text in ('LIB "abcdefghijk"', 'LIB "x" y', 'lib "x'):
+        sh.load(SRC_A, len(SRC_A))
+        tiny = m.lib_load("tiny")
+        st0 = state(sh)
+        msg, rows = command(sh, text)
+        if msg != ("BAD NAME", source_row(SRC_A)) or state(sh) != st0 or lib_state(sh)["loaded"] != 0xF4:
+            bad.append("%s: %r" % (text, msg))
+    for text in ("Lib", "LIB   "):
+        sh.load(SRC_A, len(SRC_A))
+        m.lib_load("tiny")
+        shown = sh.type(text)
+        sh.key(ord(" "))
+        if shown != "NO LIBRARY " or lib_state(sh)["loaded"] != 0 or sh.store() != SRC_A:
+            bad.append("%r: %r loaded %02X" % (text, shown, lib_state(sh)["loaded"]))
+    sh.load(SRC_A, len(SRC_A))
+    m.lib_load("tiny")
+    sh.type("libx = 1;")
+    if sh.store() != SRC_A + ["libx = 1;"] or lib_state(sh)["loaded"] != 0xF4:
+        bad.append("libx: %r" % sh.store()[-2:])
+    return expect(not bad, "; ".join(bad))
+
+
+@case("lib-cross-version", "V2's own package tape (SHAPES, built from its tag: tools/v2ref.sh) and Leap-C's library tape "
+                           "share the header type (4) and refuse each other by the version word: LIB \"SHAPES\" is BAD TAPE "
+                           "VERSION, nothing written; V2's LOAD \"testlib\" EXT refuses testlib's tape, its program kept")
+def lib_cross_version(sh):
+    m = sh.m
+    bad = []
+    v2 = V2Machine(m.port + 40)
+    pkg = os.path.join(ROOT, "build", "v2ref", "v2_shapes.tzx")
+    try:
+        v2.start()
+        v2.put_store(c2src.records(["PRINT 42"]))
+        before = v2.store()
+        path = os.path.join(v2.snapdir, "testlib.rwa")
+        ltape("testlib").write_rwa(path, lead=1.5)
+        v2.cmd("snapshot-save " + os.path.join(v2.snapdir, "prog.zsf"))
+        v2.tape_insert(path)
+        v2.cmd("snapshot-load " + os.path.join(v2.snapdir, "prog.zsf"))
+        v2._enable_bp()
+        vmsg = v2.type('LOAD "testlib" EXT')
+        if vmsg != "BAD TAPE VERSION" or v2.store() != before:
+            bad.append("V2 LOAD EXT of a Leap-C library: %r, program %s" % (vmsg, "kept" if v2.store() == before
+                                                                          else "changed"))
+    finally:
+        v2.stop()
+    play(sh, tapes.Tape.from_tzx_direct(open(pkg, "rb").read()))   # (a direct recording, which ZEsarUX's
+    sh.load(SRC_A, len(SRC_A))                                     # real-tape input does not play)
+    tiny = m.lib_load("tiny")
+    st0 = state(sh)
+    msg, rows = command(sh, 'LIB "SHAPES"')
+    ls = lib_state(sh)
+    if msg != ("BAD TAPE VERSION", source_row(SRC_A)) or state(sh) != st0 or ls["loaded"] != 0xF4 or \
+            ls["region3"][:len(tiny)] != tiny:
+        bad.append("Leap-C LIB of V2's SHAPES: %r loaded %02X" % (msg, ls["loaded"]))
+    return expect(not bad, "; ".join(bad))
 
 
 # ===================================================================== running

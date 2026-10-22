@@ -63,8 +63,12 @@ PP_DEFINE:                             ; #define NAME replacement
     cp   '('
     jr   z, PP_E_NOTSUP                ; a function-like macro
     call PP_FIND
+    jr   nz, .new
+    xor  a                             ; (Phase 10: a macro's ALREADY DEFINED names nothing; NM held the last
+    ld   (NM_LEN), a                   ; identifier looked up, which the report would show)
     ld   a, E_REDEF
-    jp   z, CC_ERROR
+    jp   CC_ERROR
+.new:
     ld   bc, PM_SIZE
     call WS_GALLOC                     ; HL = the record
     ld   de, (PP_MACROS)

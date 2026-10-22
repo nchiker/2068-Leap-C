@@ -1,5 +1,7 @@
-# 2068-Leap-C build (project_plan.md section 3 onwards: Phase 1 M1.1-M1.3, Phases 2-9).
-#   make / make build   production images in build/, test images (-DLEAPC_TEST) in build/test/
+# 2068-Leap-C build (project_plan.md section 3 onwards: Phase 1 M1.1-M1.3, Phases 2-10).
+#   make / make build   production images in build/, test images (-DLEAPC_TEST) in build/test/, the libraries
+#   make libs           Phase 10: the loaded libraries (the example libs/shapes.asm, the test libraries
+#                       tests/libs/*.asm) as image, labels, .tap, .tzx and .wav in build/libs/ (tools/lib2tape.py)
 #   make check          strict assembly (build), budgets, platform delta check, test-image check,
 #                       RAM layout guard (static census of the RAM the ROMs reference, with negative
 #                       controls), documentation examples in step with tests/doc/ (tools/docexamples.py)
@@ -32,7 +34,7 @@
 #   make v2ref          the V2 reference ROM (tag v2.0.1-emu.1) in build/v2ref/, built from the frozen
 #                       repository through `git archive` (the cross-version tape tests)
 # Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
-.PHONY: all build prod testimg check budget inventory test test-fast canary capacity repro audit v2ref clean \
+.PHONY: all build prod testimg libs check budget inventory test test-fast canary capacity repro audit v2ref clean \
 	fuse timing poweron kit qualify
 
 ASM := tools/sjasm_strict.sh
@@ -40,7 +42,7 @@ SKILLS ?= $(HOME)/z80-skills/skills
 
 all: build
 
-build: prod testimg
+build: prod testimg libs
 
 prod:
 	mkdir -p build
@@ -59,6 +61,15 @@ testimg:
 	python3 tools/gen_exports.py build/test/leapc_home.sym src/rom/home_exports.txt build/test/home_exports.inc
 	$(ASM) -DLEAPC_TEST --sym=build/test/leapc_exrom.sym --lst=build/test/leapc_exrom.lst src/rom/exrom.asm
 	cat build/test/leapc_home.bin build/test/leapc_exrom.bin > build/test/leapc_zesarux.bin
+
+LIBS := libs/shapes tests/libs/testlib tests/libs/tiny
+
+libs:
+	mkdir -p build/libs
+	for l in $(LIBS); do n=$$(basename $$l); \
+		python3 tools/lib2tape.py $$l.asm build/libs/$$n.bin build/libs/$$n.sym build/libs/$$n.tap \
+			build/libs/$$n.tzx build/libs/$$n.wav || exit 1; done
+	cd build/libs && sha256sum *.bin *.tap *.tzx *.wav > SHA256SUMS
 
 check: build
 	python3 tools/budget.py --check --json build/budget.json

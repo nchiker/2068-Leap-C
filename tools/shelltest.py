@@ -805,7 +805,8 @@ def run_typed(sh):
                   "out=%r wait=%s state=%r" % (out[:2] + out[22:], wait, st))
 
 
-@case("D4-typed-run-path", "a compile error: the cursor on the failing line with its text loaded, ERROR n LINE m")
+@case("D4-typed-run-path", "a compile error: the cursor on the failing line with its text loaded, ERROR n LINE m; "
+                          "(Phase 10, Fix 5) at the error's column, on the token the compile stopped at")
 def run_compile_error(sh):
     sh.boot()
     for t in ("int main(void)", "{", "    int x = 2 3;", "    return x;", "}"):
@@ -813,17 +814,54 @@ def run_compile_error(sh):
     msg = sh.type("run")
     sh.key(ord(" "))
     return expect(msg == ("ERROR 20: SYNTAX ERROR", "LINE 3") and sh.index() == 2 and sh.edit_line() == "    int x = 2 3;"
-                  and sh.in_editor() and sh.cursor_cell() == (2, 0), "msg=%r index=%d edit=%r cursor=%r" % (
+                  and sh.in_editor() and sh.cursor_cell() == (2, 14), "msg=%r index=%d edit=%r cursor=%r" % (
                       msg, sh.index(), sh.edit_line(), sh.cursor_cell()))
 
 
-@case("run-error-at-end", "a compile error at the end of the source (a missing `}`) puts the cursor on the last line")
+@case("run-error-at-end", "a compile error at the end of the source (a missing `}`) puts the cursor on the last line, "
+                          "(Phase 10) at its end: the token the compile stopped at (the end) is past the line")
 def run_error_at_end(sh):
     sh.load(["int main(void)", "{", "    return 1;"], 3)
     msg = sh.type("run")
     sh.key(ord(" "))
-    return expect(msg == ("ERROR 20: SYNTAX ERROR", "LINE 3") and sh.index() == 2 and sh.edit_line() == "    return 1;",
-                  "msg=%r index=%d edit=%r" % (msg, sh.index(), sh.edit_line()))
+    return expect(msg == ("ERROR 20: SYNTAX ERROR", "LINE 3") and sh.index() == 2 and sh.edit_line() == "    return 1;"
+                  and sh.cursor_cell() == (2, 13),
+                  "msg=%r index=%d edit=%r cursor=%r" % (msg, sh.index(), sh.edit_line(), sh.cursor_cell()))
+
+
+@case("error-column-once", "(Phase 10, Fix 5) a compile error's column applies once: the cursor on it after the "
+                           "report; on the line again after DOWN and UP, at column 0; a macro's error (its token on "
+                           "the #define line, before the line) at the line's end; a runtime error at column 0")
+def error_column_once(sh):
+    m, S = sh.m, sh.S
+    bad = []
+    src = ["int main(void)", "{", "    int k = 1 @ 2;", "    return k;", "}"]
+    sh.load(src, len(src))
+    msg = sh.type("run")
+    sh.key(ord(" "))
+    first = (sh.index(), m.w16(S("EDIT_BUF_OFFSET")), sh.cursor_cell())
+    if msg != ("ERROR 10: BAD CHARACTER", "LINE 3") or first != (2, 14, (2, 14)):
+        bad.append("first %r %r" % (msg, first))
+    sh.key(2)                                   # DOWN, UP: back on the line, at its start
+    sh.key(3)
+    again = (sh.index(), m.w16(S("EDIT_BUF_OFFSET")), sh.cursor_cell())
+    if again != (2, 0, (2, 0)):
+        bad.append("again %r" % (again,))
+    src = ["#define BAD 1 2", "int main(void)", "{", "    return BAD;", "}"]
+    sh.load(src, len(src))
+    msg = sh.type("run")
+    sh.key(ord(" "))
+    mac = (sh.index(), m.w16(S("EDIT_BUF_OFFSET")))
+    if msg != ("ERROR 20: SYNTAX ERROR", "LINE 4") or mac != (3, len(src[3])):
+        bad.append("macro %r %r" % (msg, mac))
+    src = ["int f(int n)", "{", "    beep(1, n);", "    return 0;", "}", "int main(void)", "{", "    return f(99);", "}"]
+    sh.load(src, len(src))
+    msg = sh.type("run")
+    sh.key(ord(" "))
+    rt = (sh.index(), m.w16(S("EDIT_BUF_OFFSET")), m.w16(S("SH_ERR_COL")))
+    if msg != ("RUNTIME ERROR 4: BAD ARGUMENT", "LINE 1") or rt != (0, 0, 0):
+        bad.append("runtime %r %r" % (msg, rt))
+    return expect(not bad, "; ".join(bad))
 
 
 @case("run-no-main", "RUN without main: ERROR 71: NO MAIN FUNCTION")

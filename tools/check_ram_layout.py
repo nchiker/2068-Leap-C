@@ -12,6 +12,8 @@ in the definition of such a name (EQU closure). Every referenced name whose valu
   - one of the V2 platform cells Leap-C keeps at its V2 address in $F180-$F3FF (PLATFORM_CELLS);
   - a layout boundary (BOUNDARIES: the region symbols of leapc_layout.inc and the platform names
     defined from them), or a value that is not an address (VALUES);
+  - (Phase 10) a field of a loaded library's image in image region 3 that the ROM reads (LIBRARY_FIELDS: its
+    header's export count, its export table; include/leapc_lib.inc);
   - a label of the EXROM image (EXROM code and tables, chunk 6 while paged in), or an EXROM EQU naming one.
 Anything else -- a cell in the source region, an image region, the stack, $FF00-$FFFF, a V2 cell
 Leap-C has no use for -- is an error. The tool also checks the map itself (the regions tile RAM,
@@ -41,9 +43,11 @@ PLATFORM_CELLS = {"UDG_TABLE": 168, "EDIT_LINE_BUF": 128, "GFX_LINE_X0": 1, "GFX
 # layout boundaries: addresses that delimit regions, never cells
 BOUNDARIES = {"PROG_AREA_START", "PROG_AREA_MAX", "LIB_HEAP_END", "SECOND_DISPLAY_ADDR", "CC_STACK_FLOOR",
               "LEAPC_EXROM_SHELL", "LEAPC_EXROM_FOLD", "LEAPC_EXROM_LIBFIND", "LEAPC_EXROM_BEEP",
-              "LEAPC_EXROM_BASE", "LEAPC_EXROM_END"}
+              "LEAPC_EXROM_BASE", "LEAPC_EXROM_END", "LX_BASE", "LX_END"}
 # values that are not addresses
-VALUES = {"V2_FORMAT_WORD", "PKG_ABI_WORD", "LEAPC_TAPE_VERSION"}
+VALUES = {"V2_FORMAT_WORD", "PKG_ABI_WORD", "LEAPC_TAPE_VERSION", "LX_WORD"}
+# Phase 10: the fields of a loaded library's image the ROM reads, in image region 3 (include/leapc_lib.inc)
+LIBRARY_FIELDS = {"LX_HDR_COUNT", "LX_TABLE"}
 LITERAL_VALUES = {0x8000, 0xFFFF}          # the heap's in-use bit (RT_RUN), all-ones sentinels
 
 
@@ -158,6 +162,8 @@ def check(build, quiet=False):
                 kind = "cell"
             elif any(S[c] <= v < S[c] + k for c, k in PLATFORM_CELLS.items()):
                 kind = "platform cell"                   # (or a V2 alias of one: EXTENSION_ARG0 = GFX_LINE_X0)
+            elif n in LIBRARY_FIELDS and g("LEAPC_IMG3_BASE") <= v < g("LEAPC_IMG3_END"):
+                kind = "loaded library field"
             else:
                 where = next((tn for tn, a, b in tiles if a <= v < b), "?")
                 errors.append("%s code at $%04X references %s = $%04X in the %s" % (name, at, n, v, where))

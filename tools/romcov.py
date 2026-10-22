@@ -25,7 +25,9 @@ ROOT = os.path.dirname(HERE)
 BUILD = os.path.join(ROOT, "build")
 Z80 = set("""ld push pop ex exx ldi ldir ldd lddr cpi cpir cpd cpdr add adc sub sbc and or xor cp inc dec daa
 cpl neg ccf scf nop halt di ei im rlca rla rrca rra rlc rl rrc rr sla sra sll sl1 srl rld rrd bit set res jp jr
-djnz call ret reti retn rst in ini inir ind indr out outi otir outd otdr""".split())   # (data and macros are not)
+djnz call ret reti retn rst in ini inir ind indr out outi otir outd otdr""".split())   # (data is not; Phase 10: a macro's
+                                                                                  # expanded instructions are, e.g. the
+                                                                                  # library slots, the AY beep's bodies)
 LINE = re.compile(r"^\s*(\d+)\+*\s+([0-9A-F]{4})\s+((?:[0-9A-F]{2} ?)+)\s{2,}(.*)$")
 BANKS = (("HOME", "leapc_home", 0x0000, 0x4000), ("EXROM", "leapc_exrom", 0xC000, 0xE000))
 
@@ -47,6 +49,8 @@ def instructions(lst, lo, hi):
         addr = int(m.group(2), 16)
         nbytes = len(m.group(3).split())
         code = m.group(4).split(";")[0].strip()
+        if code.startswith(">"):                    # (a line of a macro's expansion)
+            code = code.lstrip(">").strip()
         if not code or not lo <= addr < hi:
             continue
         code = re.sub(r"^[A-Za-z_.][A-Za-z0-9_.]*:\s*", "", code)     # a label on the same line

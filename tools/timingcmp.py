@@ -119,7 +119,7 @@ def main():
     progs = [(os.path.relpath(p, ROOT), c2src.lines_of(open(p).read())) for p in fixtures()]
     docs = [(os.path.relpath(p, ROOT), c2src.lines_of(open(p).read()))
             for p in sorted(glob.glob(os.path.join(ROOT, "tests", "doc", "*.c")))
-            if not re.search(r"//\s*(keys|break):", open(p).read())]          # (no key during the run)
+            if not re.search(r"//\s*(keys|break|library):", open(p).read())]   # (no key during the run, no library)
     results = {}
     m = Machine(BUILD, a.port)
     try:

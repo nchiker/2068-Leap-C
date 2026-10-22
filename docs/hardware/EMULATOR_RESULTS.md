@@ -1,6 +1,6 @@
 # Leap-C hardware kit: the check programs on the emulators (Phase 9, tools/hwkit.py --verify)
 
-Images: HOME e8da395af463cd312d3c5ff415177b95c69e15c77a13c5ae114a978934d5d259, EXROM cef49d740b037f97174b98c63e4f9503a97c09c2466641697a36e6e78e633d8c.
+Images: HOME ba8e0ab6bf277c03f969f8ac9e829a0c32665efe6bed1a12613555196e10a04a, EXROM 9bd71cefbd78fd80d449609c94d349a2671625f3b3642fd0380b6c8dbfbca47a.
 
 Each program's WAV (tapes/) loaded through the emulator's tape signal input and run. A TS2068 should show Fuse's figures (60 Hz); ZEsarUX 13.0 emulates the TS2068 with a 50 Hz frame. The soak ran 30 emulated minutes on each (ZEsarUX: at 50 Hz, so its frame count is lower).
 
@@ -76,9 +76,9 @@ Each program's WAV (tapes/) loaded through the emulator's tape signal input and 
 ## H8 `brk.c` (break)
 
 - **ZEsarUX 13.0:** LOAD ('LOADED brk', 'SOURCE 218 B  FREE 18214 B'), source identical; report ['BREAK', 'LINE 2']
-  - `1946`
+  - `2012`
 - **Fuse 1.9.1:** LOAD ['LOADED brk', 'SOURCE 218 B  FREE 18214 B'], source identical; report ['BREAK', 'LINE 2']
-  - `757`
+  - `778`
 
 ## H9 `tapedata.c` (tape)
 
@@ -92,14 +92,63 @@ Each program's WAV (tapes/) loaded through the emulator's tape signal input and 
 ## H10 `soak.c` (soak)
 
 - **ZEsarUX 13.0:** LOAD ('LOADED soak', 'SOURCE 1295 B  FREE 17137 B'), source identical; report ['EXIT 0', 'IMAGE 710 B  HEAP 17132 B']
-  - `LEAP-C SOAK 15693`
-  - `26898 FRAMES`
-  - `15694 ROUNDS, SOAK PASS 0`
+  - `LEAP-C SOAK 15767`
+  - `27012 FRAMES`
+  - `15768 ROUNDS, SOAK PASS 0`
 - **Fuse 1.9.1:** LOAD ['LOADED soak', 'SOURCE 1295 B  FREE 17137 B'], source identical; report ['EXIT 0', 'IMAGE 710 B  HEAP 17132 B']
-  - `LEAP-C SOAK 15246`
-  - `42469 FRAMES`
-  - `15247 ROUNDS, SOAK PASS 0`
+  - `LEAP-C SOAK 15302`
+  - `42479 FRAMES`
+  - `15303 ROUNDS, SOAK PASS 0`
+
+## H11 `lib.c` (lib)
+
+- **ZEsarUX 13.0:** LIB ['LIBRARY shapes: 3 FUNCTIONS', 'SOURCE 0 B  FREE 18432 B']; LOAD ('LOADED libcheck', 'SOURCE 631 B  FREE 17801 B'), source identical; report ['EXIT 100', 'IMAGE 165 B  HEAP 17796 B']
+  - `SHAPES 1 12 255`
+  - ` ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░`
+  - ` ░                            ░`
+  - ` ░          ░░░░░░░░          ░`
+  - ` ░        ░░░      ░░░        ░`
+  - ` ░       ░░          ░░       ░`
+  - ` ░      ░░            ░░      ░`
+  - ` ░      ░    ░░░░░░    ░      ░`
+  - ` ░     ░░   ░░     ░   ░░     ░`
+  - ` ░     ░   ░░       ░   ░     ░`
+  - ` ░     ░   ░   ░░   ░   ░     ░`
+  - ` ░     ░   ░  ░░░░  ░░  ░     ░`
+  - ` ░     ░   ░  ░░░░  ░░  ░     ░`
+  - ` ░     ░   ░   ░░   ░   ░     ░`
+  - ` ░     ░   ░        ░   ░     ░`
+  - ` ░     ░░   ░      ░░  ░░     ░`
+  - ` ░      ░    ░░░░░░░   ░      ░`
+  - ` ░      ░░     ░░     ░░      ░`
+  - ` ░       ░░          ░░       ░`
+  - ` ░        ░░░      ░░░        ░`
+  - ` ░          ░░░░░░░░          ░`
+  - ` ░                            ░`
+- **Fuse 1.9.1:** LIB ['LIBRARY shapes: 3 FUNCTIONS', 'SOURCE 1295 B  FREE 17137 B']; LOAD ['LOADED libcheck', 'SOURCE 631 B  FREE 17801 B'], source identical; report ['EXIT 100', 'IMAGE 165 B  HEAP 17796 B']
+  - `SHAPES 1 12 255`
+  - ` ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░`
+  - ` ░                            ░`
+  - ` ░          ░░░░░░░░          ░`
+  - ` ░        ░░░      ░░░        ░`
+  - ` ░       ░░          ░░       ░`
+  - ` ░      ░░            ░░      ░`
+  - ` ░      ░    ░░░░░░    ░      ░`
+  - ` ░     ░░   ░░     ░   ░░     ░`
+  - ` ░     ░   ░░       ░   ░     ░`
+  - ` ░     ░   ░   ░░   ░   ░     ░`
+  - ` ░     ░   ░  ░░░░  ░░  ░     ░`
+  - ` ░     ░   ░  ░░░░  ░░  ░     ░`
+  - ` ░     ░   ░   ░░   ░   ░     ░`
+  - ` ░     ░   ░        ░   ░     ░`
+  - ` ░     ░░   ░      ░░  ░░     ░`
+  - ` ░      ░    ░░░░░░░   ░      ░`
+  - ` ░      ░░     ░░     ░░      ░`
+  - ` ░       ░░          ░░       ░`
+  - ` ░        ░░░      ░░░        ░`
+  - ` ░          ░░░░░░░░          ░`
+  - ` ░                            ░`
 
 ## Independent decode
 
-fuse-utils' audio2tape decoded 36 of 36 kit WAVs to exactly their tapes' blocks.
+fuse-utils' audio2tape decoded 39 of 39 kit WAVs to exactly their tapes' blocks.

@@ -195,6 +195,11 @@ LIB_CASES = [
 ]
 CASES += LIB_CASES
 
+# Phase 10 (Fix 3): the divisions' exact T-states. RT_UDIV's 17-bit-remainder branch, which could never run, is
+# gone: its untaken `jr c` cost 7 T on each of the 16 steps, 112 T a division (60000 / 7: 1,591 T in Phase 2)
+TSTATES = {"RT_DIVU 60000 / 7": 1479, "RT_MODU 60000 % 7": 1510, "RT_DIVS -1000 / 7": 1790, "RT_MODS -1000 % 7": 1777,
+           "RT_DIVU 65535 / 1": 1367, "RT_DIVU 65535 / 40000 (17-bit remainder steps)": 1577}
+
 
 def site_bytes(site):
     n = 0
@@ -261,6 +266,8 @@ def measure(m):
         if "F" not in regs and "AF" in regs:
             regs["F"] = regs["AF"] & 0xFF
         ok = bool(check(regs, lambda a, n: m.read(a, n)))
-        out.append(dict(name=name, ok=ok, tstates=t, site_bytes=site_bytes(site),
-                        detail="" if ok else repr({k: "%04X" % v for k, v in regs.items()})))
+        detail = "" if ok else repr({k: "%04X" % v for k, v in regs.items()})
+        if ok and name in TSTATES and t != TSTATES[name]:
+            ok, detail = False, "%d T, expected %d" % (t, TSTATES[name])
+        out.append(dict(name=name, ok=ok, tstates=t, site_bytes=site_bytes(site), detail=detail))
     return out

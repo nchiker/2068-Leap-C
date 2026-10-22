@@ -1,0 +1,16 @@
+--- a/rom/v2_ay_beep.asm
++++ b/rom/v2_ay_beep.asm
+@@ -194,11 +194,8 @@
+ ; ------------------------------------------------------------------ EXROM pieces
+ ; AY_BEEP -- the slot target: HL = semitones, DE = frames.
+     IFDEF V2_MAINT_AYB_PERIOD_HOME
+-AY_BEEP:
+-    call AY_BEEP_PERIOD
+-        IFDEF V2_MAINT_AYB_PLAY_HOME
+-    jp   AY_BEEP_PLAY
+-        ENDIF
++    ; (Leap-C, delta D17: no AY_BEEP entry here; it had no caller. beep()
++    ; calls AY_BEEP_PERIOD in HOME, then AY_BEEP_PLAY)
+     ELSE
+     AY_BEEP_PERIOD_TABLE
+ AY_BEEP:

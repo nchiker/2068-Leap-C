@@ -12,6 +12,8 @@
     INCLUDE "include/keys.inc"
     INCLUDE "include/leapc_tokens.inc"
     INCLUDE "include/leapc_errors.inc"
+    INCLUDE "include/leapc_lib.inc"     ; (the constants: LIB, the binding of a loaded library's exports)
+    ASSERT LX_TYPE == STORAGE_EXTENSION_TYPE && LX_BASE == LEAPC_IMG3_BASE && LX_END == LEAPC_IMG3_END
     IFDEF LEAPC_TEST
     INCLUDE "build/test/home_exports.inc"
     ELSE
@@ -22,10 +24,7 @@
 KTAB_MEM_FILL_ZERO          EQU MEM_FILL_ZERO
 KTAB_MEM_SHIFT_UP           EQU MEM_SHIFT_UP
 KTAB_MEM_SHIFT_DOWN         EQU MEM_SHIFT_DOWN
-KTAB_MEM_LINE_DELETE_RANGE  EQU MEM_LINE_DELETE_RANGE
 KTAB_IO_READ_KEY            EQU IO_READ_KEY
-KTAB_GFX_CLS                EQU GFX_CLS
-KTAB_GFX_PRINT_STRING       EQU GFX_PRINT_STRING
 KTAB_GFX_INVERT_ATTR        EQU GFX_INVERT_ATTR
 KTAB_GFX_SET_BORDER         EQU GFX_SET_BORDER
 ; The calculator leaves through `jp KTAB_CALC_EXIT_TRAMPOLINE` with its return address pushed; V2's

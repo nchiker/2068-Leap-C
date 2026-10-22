@@ -14,6 +14,8 @@
     INCLUDE "include/leapc_tokens.inc"
     INCLUDE "include/leapc_errors.inc"
     INCLUDE "include/leapc_decl.inc"
+    DEFINE LEAPC_LIB_HOME               ; include/leapc_lib.inc: the slots' `jp`s, the pins asserted
+    INCLUDE "include/leapc_lib.inc"
     DEFINE V2_KTAB_HOME                 ; rom/v2_ay_beep.asm: assemble the HOME pieces
     DEVICE NOSLOT64K
 
@@ -293,8 +295,17 @@ COMP_TEST_END:
     IFDEF LEAPC_NEGCTL                  ; the layout guard's negative controls (nothing is saved)
     INCLUDE "src/test/layout_negctl.asm"
     ENDIF
-    ASSERT $ <= LEAPC_HOME_END
-    DS   LEAPC_HOME_END - $, $FF
+    ASSERT $ <= LX_SLOTS, "the code (and the test hooks) must end below the library slots"
+    DS   LX_SLOTS - $, $FF
+
+; ---------------------------------------------------------------- the loaded library's jump table (Phase 10)
+; 16 slots of `jp` at a fixed address, the end of the ROM (include/leapc_lib.inc; spec.md 7.2): a library
+; reaches the ROM's services only through them, so it runs on every ROM that keeps them
+COMP_SLOTS_BEGIN:
+    LX_SLOT_LIST
+COMP_SLOTS_END:
+    ASSERT $ == LEAPC_HOME_END
+    LX_PIN_LIST
     IFDEF LEAPC_TEST
     SAVEBIN "build/test/leapc_home.bin", $0000, LEAPC_HOME_END
     ELSE

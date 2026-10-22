@@ -12,6 +12,7 @@ The `//` lines at the top of an example are its checked results; the rest of the
 | `// screen: R TEXT` | text row R (0-23) reads TEXT |
 | `// attr: R C V`, `// pixel: X Y V`, `// ay: REG=V` | a cell's attribute, a pixel (from the top left), an AY register |
 | `// keys: ...` | the keys typed while the program reads the keyboard |
+| `// library: NAME` | (Phase 10) the library NAME is loaded first, as `LIB "NAME"` loads it (`spec.md` §7.2) |
 
 Programs start with `cls()` when they print, because the screen holds whatever was there before.
 
@@ -530,5 +531,25 @@ int down(int n)
 int main(void)
 {
     return down(0);
+}
+```
+
+## 20. A library from tape
+
+(Phase 10.) A library adds functions from tape. `LIB "shapes"` loads the example library (`libs/shapes.asm`; its tapes are built by `make libs` and are in the hardware kit) and reports `LIBRARY shapes: 3 FUNCTIONS`. Its functions are then called like the built-in ones, with no declaration: `circle(x, y, r)`, `box(x0, y0, x1, y1)` and `isqrt(n)`. `LIB` alone unloads it; `NEW` and `LOAD` keep it.
+
+```c
+// library: shapes
+// expect: exit 12
+// screen: 0 ROOTS 3 10 255
+// pixel: 128 76 1
+// pixel: 108 96 1
+int main(void)
+{
+    cls();
+    printf("ROOTS %u %u %u", isqrt(9), isqrt(120), isqrt(65535u));
+    circle(128, 96, 20);
+    box(98, 66, 158, 126);
+    return isqrt(150);
 }
 ```

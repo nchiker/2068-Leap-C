@@ -27,7 +27,8 @@ Each item gives what the emulators show. A difference on the hardware is a findi
 |---|---|
 | `eprom/leapc_home_27128.bin` (`.hex`) | the HOME ROM, 16,384 B, for a 27128 (or 27C128): the 16K system ROM, `$0000-$3FFF` |
 | `eprom/leapc_exrom_2764.bin` (`.hex`) | the EXROM, 8,192 B, for a 2764 (or 27C64): the 8K extension ROM, paged into chunk 6 (`$C000-$DFFF`) |
-| `tapes/hN_*.tap`, `.tzx`, `.wav` | the hardware check programs H1-H10 (`docs/hardware/*.c`) |
+| `tapes/hN_*.tap`, `.tzx`, `.wav` | the hardware check programs H1-H11 (`docs/hardware/*.c`) |
+| `tapes/l1_shapes.tap`, `.tzx`, `.wav` | (Phase 10) the example library, for `LIB "shapes"` (H11 needs it); its source is `libs/shapes.asm` |
 | `tapes/exNN.tap`, `.tzx`, `.wav` | the examples of `docs/EXAMPLES.md` (also in `tests/doc/`) |
 | `CHECKSUMS.txt` | every file: size, SHA-256, CRC-32 and the byte sum (32 and 16 bits; programmers show one of these) |
 | `EMULATOR_RESULTS.md` | each check program's screen on ZEsarUX and Fuse |
@@ -108,8 +109,11 @@ Emulator evidence (`tools/timingcmp.py`, `build/timing.md`): code in region 4 ru
 | 7.3 | H9 (`tapedata`): record, ENTER, rewind, play, ENTER | `LOADED 2000 BYTES, 0 WRONG`, `TAPE PASS` | NOT TESTED (owner-accepted deviation) |
 | 7.4 | `LOAD ""` of a Leap V2 or stock TS2068 BASIC tape | `BAD TAPE VERSION`, the program as it was | NOT TESTED (owner-accepted deviation) |
 | 7.5 | Stop the tape in the middle of a LOAD | `LOAD FAILED` after the search gives up (about 2 minutes), or BREAK at once; no crash | NOT TESTED (owner-accepted deviation) |
+| 7.6 | (Phase 10) `LIB "shapes"` with the kit's `l1_shapes` WAV playing | `LIBRARY shapes: 3 FUNCTIONS` | NOT TESTED (owner-accepted deviation) |
+| 7.7 | Then `LOAD ""` of H11 (`libcheck`) and `RUN` | a box with three circles in it; row 0 `SHAPES 1 12 255`; `EXIT 100` | NOT TESTED (owner-accepted deviation) |
+| 7.8 | `LIB` alone, then `RUN` H11 again | `NO LIBRARY` on the status row; then `ERROR 70: UNDEFINED FUNCTION`, naming one of the library's functions | NOT TESTED (owner-accepted deviation) |
 
-Emulator evidence: the cassette suite (21 cases, real tape signals in ZEsarUX); on Fuse a SAVE recorded by its tape deck loads back; H9 runs on Fuse with `tape_save` recorded and `tape_load` played back; 745 corpus programs LOADed from tape on Fuse by the ROM's own loader.
+Emulator evidence (Phase 10's final images): the cassette suite (30 cases, real tape signals in ZEsarUX, `LIB` among them); on Fuse a SAVE recorded by its tape deck loads back; H9 runs on Fuse with `tape_save` recorded and `tape_load` played back; 774 corpus programs LOADed from tape on Fuse by the ROM's own loader, the library cases after `LIB` from their tapes. 7.6-7.8: `LIB "shapes"` from the kit's WAV gives `LIBRARY shapes: 3 FUNCTIONS` on both emulators, and H11 then shows `SHAPES 1 12 255` and `EXIT 100` on both; V2's own package tape is refused by `LIB` (`BAD TAPE VERSION`).
 
 ## 8. Soak
 
@@ -118,7 +122,7 @@ Emulator evidence: the cassette suite (21 cases, real tape signals in ZEsarUX); 
 | 8.1 | H10 (`soak`), `RUN`, leave it at least an hour, then press a key | `n ROUNDS, SOAK PASS 0`; record n and the frames shown | NOT TESTED (owner-accepted deviation) |
 | 8.2 | Leave the editor idle for an hour, then type | responsive, the source intact | NOT TESTED (owner-accepted deviation) |
 
-Emulator evidence: H10 for 30 emulated minutes on each emulator: both pass with no failed check. ZEsarUX ran 15,694 rounds in 92,434 frames (30.8 minutes at its 50 Hz); Fuse ran 15,247 rounds in 108,005 frames (30.0 minutes at 60 Hz). The program prints the frame count modulo 65,536: 26,898 and 42,469.
+Emulator evidence (Phase 10's final images): H10 for 30 emulated minutes on each emulator: both pass with no failed check. ZEsarUX ran 15,768 rounds in 92,548 frames (30.8 minutes at its 50 Hz); Fuse ran 15,303 rounds in 108,015 frames (30.0 minutes at 60 Hz). The program prints the frame count modulo 65,536: 27,012 and 42,479.
 
 ## 9. What to watch for on the hardware
 

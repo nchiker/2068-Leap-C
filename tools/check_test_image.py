@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The test build (-DLEAPC_TEST) only appends test hooks: its HOME image must equal the production
-HOME image up to LEAPC_HOME_CODE_END, and its EXROM must equal the production EXROM."""
+HOME image up to LEAPC_HOME_CODE_END and from the library slots (Phase 10: COMP_SLOTS_BEGIN, the jump table at
+the end of the ROM, include/leapc_lib.inc), and its EXROM must equal the production EXROM."""
 import os
 import re
 import sys
@@ -27,9 +28,12 @@ def main():
     te = open(os.path.join(B, "test", "leapc_exrom.bin"), "rb").read()
     if ph[:end] != th[:end]:
         sys.exit("check_test_image: HOME production bytes differ in the test build")
+    slots = sym(os.path.join(B, "leapc_home.sym"), "COMP_SLOTS_BEGIN")
+    if sym(os.path.join(B, "test", "leapc_home.sym"), "COMP_SLOTS_BEGIN") != slots or ph[slots:] != th[slots:]:
+        sys.exit("check_test_image: the library slots differ in the test build")
     if pe != te:
         sys.exit("check_test_image: EXROM differs in the test build")
-    print("test image check: OK (HOME $0000-$%04X and EXROM identical to production)" % (end - 1))
+    print("test image check: OK (HOME $0000-$%04X and $%04X-$3FFF and EXROM identical to production)" % (end - 1, slots))
 
 
 if __name__ == "__main__":

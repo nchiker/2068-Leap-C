@@ -22,8 +22,11 @@ STORAGE_DATA_TYPE   EQU 3               ; tape_save's header type (spec.md 8.3: 
 TR_FAILED           EQU 1               ; SH_LOAD_IO's failures: nothing was written ...
 TR_TOUCHED          EQU 2               ; ... part of the destination was written ...
 TR_VERSION          EQU 3               ; ... the header's version word is not Leap-C's (nothing written) ...
-TR_BREAK            EQU 4               ; ... SPACE (BREAK) aborted it
+TR_BREAK            EQU 4               ; ... SPACE (BREAK) aborted it before any byte was written ...
+TR_BREAKT           EQU 5               ; ... or after (Phase 10: a LOAD into the source, or a LIB into the region, is
+                                        ; then not trusted; SH_TAPE_DONE reports both as BREAK)
     ASSERT TR_TOUCHED == ((1 - STORAGE_LOAD_DATA_TOUCHED) & $FF) && TR_VERSION == ((1 - STORAGE_LOAD_BAD_VERSION) & $FF)
+    ASSERT TR_BREAKT == TR_TOUCHED + TR_BREAK - TR_FAILED
 
 ; ============================================================================
 ; SH_SAVE -- SAVE "name": the source to tape (spec.md 8.1). The report: SAVED name, or BREAK (SPACE stopped
@@ -57,22 +60,12 @@ SH_LOAD_V:                             ; A = STORAGE_VERIFY_MODE
     ex   de, hl                        ; DE = the most: the line store's room (spec.md 8.1: never chunk 6)
     push hl
     pop  ix
-    call SH_HOOK_ON                    ; (SH_TAPE_HOOK may stage the data block: TAPE_DEST)
-    call SH_LOAD_IO                    ; A = 0: DE = the tape's length
-    ld   hl, (TAPE_DEST)
-    ld   bc, 0
-    ld   (TAPE_DEST), bc
-    ld   c, a
-    ld   a, (STORAGE_VERIFY_MODE)
+    call SH_HOOK_ON
+    call SH_LOAD_AT                    ; C = 0: DE = the tape's length; HL = where the data block went:
+    ld   a, (STORAGE_VERIFY_MODE)      ; above the source (staged), or PROG_AREA_START
     or   a
     jr   nz, .verify
-    ld   a, h                          ; HL = where the data block went: TAPE_DEST, or PROG_AREA_START
-    or   l
-    jr   nz, .staged
-    ld   hl, PROG_AREA_START
-.staged:
-    ld   a, c
-    or   a
+    or   c
     jr   nz, .failed
     push hl
     push de
@@ -94,7 +87,10 @@ SH_LOAD_V:                             ; A = STORAGE_VERIFY_MODE
 .failed:                               ; A = TR_*, HL = the data block's destination
     ld   c, a
     cp   TR_TOUCHED
-    jr   nz, .keep
+    jr   z, .touched
+    cp   TR_BREAKT                     ; (Phase 10: BREAK once part of the data block had arrived kept the
+    jr   nz, .keep                     ; source, partly overwritten when it arrived in place)
+.touched:
     ld   de, PROG_AREA_START
     or   a
     sbc  hl, de
@@ -129,18 +125,16 @@ SH_LOAD_V:                             ; A = STORAGE_VERIFY_MODE
 ;      TR_FAILED and TR_TOUCHED)
 ; SH_TAPE_REPORT -- the report HL / SOURCE s B  FREE f B
 ; Out: carry clear. Destroys: AF, BC, DE, HL
+; SH_TAPE_NAMED -- the progress hook off; SH_REPORT_BUF = the text at HL and the tape's name. Out: DE -> the NUL
+; SH_TAPE_OFF -- the progress hook off, interrupts on (the tape routines disable them). Destroys: DE
 ; ============================================================================
 SH_TAPE_DONE:
-    ld   de, 0
-    ld   (STORAGE_PROGRESS_HOOK), de
-    ei                                 ; (the tape routines disable interrupts)
-    ld   de, SH_REPORT_BUF
     or   a
     jr   nz, .failed
-    call SH_APPEND
-    call SH_HEADER_NAME
+    call SH_TAPE_NAMED
     jr   SH_TAPE_SOURCE
 .failed:
+    call SH_TAPE_OFF
     cp   TR_VERSION
     jr   c, SH_TAPE_REPORT
     ld   hl, SH_MSG_VERSION
@@ -156,6 +150,27 @@ SH_TAPE_SOURCE:
 SH_BAD_NAME:
     ld   hl, SH_MSG_BADNAME
     jr   SH_TAPE_REPORT
+SH_TAPE_OFF:
+    ld   de, 0
+    ld   (STORAGE_PROGRESS_HOOK), de
+    ei
+    ret
+SH_TAPE_NAMED:
+    call SH_TAPE_OFF
+    ld   de, SH_REPORT_BUF
+    call SH_APPEND
+    ; falls into SH_HEADER_NAME
+; ============================================================================
+; SH_HEADER_NAME -- append the name in the tape header (STORAGE_HEADER_BUF: the one saved or found) at DE
+; Out: DE -> the NUL after it. Destroys: AF, BC, HL
+; ============================================================================
+SH_HEADER_NAME:
+    ld   hl, STORAGE_HEADER_BUF + STORAGE_HEADER_NAME_OFF
+    ld   bc, TAPE_NAME_LEN
+    ldir
+    xor  a
+    ld   (de), a
+    ret
 
 SH_SAVE:
     call SH_CMD_NAME
@@ -177,16 +192,70 @@ SH_SAVE:
     ld   hl, SH_MSG_SAVED
     jr   SH_TAPE_DONE
 ; ============================================================================
-; SH_HEADER_NAME -- append the name in the tape header (STORAGE_HEADER_BUF: the one saved or found) at DE
-; Out: DE -> the NUL after it. Destroys: AF, BC, HL
+; SH_LIB -- LIB "name" / LIB "": the next library tape of that name (any) into image region 3 (Phase 10;
+; spec.md 7.2, 8.4): header type LX_TYPE, at most 1 KB. Its version word is the library's magic and ABI: the
+; platform's STORAGE_LOAD refuses another magic, or an ABI above this ROM's (STORAGE_VERSION_WORD: the package
+; word, LX_WORD), at the header, before any byte is written (BAD TAPE VERSION). As LOAD's, the data block arrives
+; above the source when there is room (SH_TAPE_HOOK: TAPE_DEST) and moves into the region only once it is whole,
+; else straight into the region. The report: LIBRARY name: n FUNCTIONS (the image header's export count), or
+; LOAD FAILED, BAD TAPE VERSION, BREAK, BAD NAME; then SOURCE s B  FREE f B. A failure once part
+; of the data block was written into the region leaves no library loaded; any other keeps the one before
+; In:  HL -> the edit buffer after the command's opening quote (SH_QWORD)
+; Out: carry clear (a command ran). Destroys: AF, BC, DE, HL, IX
+; SH_UNLIB -- LIB alone: no library loaded (the status row: NO LIBRARY)
 ; ============================================================================
-SH_HEADER_NAME:
-    ld   hl, STORAGE_HEADER_BUF + STORAGE_HEADER_NAME_OFF
-    ld   bc, TAPE_NAME_LEN
-    ldir
+SH_LIB:
+    call SH_CMD_NAME                   ; B = the name's length (0: any)
+    jp   c, SH_BAD_NAME
+    call SH_HOOK_ON
+    ld   a, LX_TYPE
+    ld   (STORAGE_REQUEST_TYPE), a
+    ld   ix, LX_BASE
+    ld   de, LX_END - LX_BASE
+    call SH_LOAD_AT                    ; A = 0: DE = the image's length; HL = where the data block went
+    jr   nz, .failed
+    ld   b, d
+    ld   c, e
+    ld   de, LX_BASE
+    ldir                               ; (staged: into the region; else onto itself)
+    ld   a, LX_BASE >> 8
+    ld   (LIB_LOADED), a
+    ld   hl, SH_TXT_LIBRARY            ; "LIBRARY name: n FUNCTIONS"
+    call SH_TAPE_NAMED
+.trim:                                 ; (the header's name is padded with spaces)
+    dec  de
+    ld   a, (de)
+    cp   ' '
+    jr   z, .trim
+    inc  de
+    ld   hl, SH_TXT_COLON
+    call SH_APPEND
+    ld   hl, (LX_HDR_COUNT)
+    ld   h, 0
+    call SH_APPEND_NUM                 ; (at most 99 functions fit the row: tools/lib2tape.py)
+    ld   hl, SH_TXT_FUNCTIONS
+    call SH_APPEND
+    jp   SH_TAPE_SOURCE
+.failed:                               ; A = C = TR_*, HL = where the data block went
+    ld   de, LX_BASE
+    sbc  hl, de                        ; (carry clear)
+    jr   nz, .keep                     ; staged above the source: the region is as it was
+    cp   TR_TOUCHED
+    jr   z, .unload
+    cp   TR_BREAKT
+    jr   nz, .keep
+.unload:                               ; part of the data block in the region: no library
     xor  a
-    ld   (de), a
-    ret
+    ld   (LIB_LOADED), a
+.keep:
+    ld   a, c
+    ld   hl, SH_MSG_LFAIL
+    jp   SH_TAPE_DONE
+SH_UNLIB:
+    xor  a
+    ld   (LIB_LOADED), a
+    ld   hl, SH_MSG_NOLIB
+    jp   SH_SHOW_MESSAGE
 
 ; ============================================================================
 ; SH_CMD_NAME -- the quoted name of a tape command into TAPE_NAME (SH_NAME); only spaces may follow it
@@ -352,7 +421,12 @@ SH_TAPE_HOOK:
 ; Out: A = 0, or TR_BREAK (SPACE stopped it). Destroys: AF, BC, DE, HL, IX
 ; SH_LOAD_IO -- STORAGE_LOAD (or verify, STORAGE_VERIFY_MODE): the next tape of type STORAGE_REQUEST_TYPE named
 ; TAPE_NAME (B = 0: any name) into IX, at most DE bytes
-; Out: A = 0: DE = its length; else TR_FAILED, TR_TOUCHED, TR_VERSION, TR_BREAK. Destroys: AF, BC, DE, HL, IX
+; Out: A = 0: DE = its length; else TR_FAILED, TR_TOUCHED, TR_VERSION, TR_BREAK, TR_BREAKT. Destroys: AF, BC, DE,
+;      HL, IX
+; SH_LOAD_AT -- SH_LOAD_IO into IX, which SH_TAPE_HOOK may stage above the source for a LOAD or LIB (TAPE_DEST,
+; then cleared)
+; Out: HL = where the data block went (the IX given, or the staged place), C = A = SH_LOAD_IO's result (Z: 0),
+;      DE = the length. Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 SH_SAVE_IO:
     xor  a
@@ -365,6 +439,22 @@ SH_SAVE_IO:
     ret  z
     ld   a, TR_BREAK
     ret
+SH_LOAD_AT:
+    push ix
+    call SH_LOAD_IO
+    ld   c, a
+    ld   hl, (TAPE_DEST)
+    ld   a, h
+    or   l
+    jr   z, .at                        ; (received at IX)
+    ex   (sp), hl                      ; staged: there instead
+    ld   hl, 0
+    ld   (TAPE_DEST), hl
+.at:
+    pop  hl
+    ld   a, c
+    or   a
+    ret
 SH_LOAD_IO:
     ld   hl, TAPE_NAME
     call STORAGE_LOAD                  ; NC: A = 0. C: A = 0 / STORAGE_LOAD_DATA_TOUCHED / STORAGE_LOAD_BAD_VERSION,
@@ -376,7 +466,7 @@ SH_LOAD_IO:
     inc  b
     dec  b
     ret  z
-    ld   a, TR_BREAK
+    add  a, TR_BREAK - TR_FAILED       ; SPACE: TR_BREAK, or TR_BREAKT once part of the data block was written
     ret
 
 ; ============================================================================
@@ -456,7 +546,7 @@ SH_LIBTAPE:
     or   a
     ret  z
     cp   TR_BREAK
-    jr   z, .brk
+    jr   nc, .brk                      ; (TR_BREAK, TR_BREAKT)
     neg
     ld   l, a
     ld   h, $FF                        ; HL = -TR_*

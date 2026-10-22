@@ -147,8 +147,14 @@ UNDEF_CHECK:
     call CHAIN_END
     ld   a, h
     or   l
+    jr   z, .next
+    ld   a, (ix + S_LEN)               ; the report names it (NM: the entry's own name)
+    ld   (NM_LEN), a
+    ld   de, S_NAME
+    add  ix, de
+    ld   (NM_PTR), ix
     ld   a, b
-    jp   nz, CC_ERROR_AT
+    jp   CC_ERROR_AT
 .next:
     ld   l, (ix + S_LINK)
     ld   h, (ix + S_LINK + 1)

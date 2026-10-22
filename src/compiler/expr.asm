@@ -267,17 +267,20 @@ CX_COND:
     push hl
     call .second
     call CG_LOAD
-    ld   a, $C3
-    ld   hl, 0
-    call CG_JP                         ; over the third operand
-    ex   (sp), hl
-    call CG_HERE                       ; the third operand
+    call .jpover                       ; over the third operand, which starts here
     call CX_PUSHX
     ld   a, TK_COLON
     call CC_EXPECT
     call .third
     call CG_LOAD
-    call CX_POPY
+    call CX_POPY                       ; Y = the second operand, X = the third
+    call .ytof                         ; a float and an integer arm: the integer converted on its own
+    jr   nz, .end                      ; path (C89 6.3.15). Z: X a float, Y not:
+    call .jpover                       ; the third's path jumps over the second's conversion, here
+    call CX_SWAP                       ; (a pointer Y: E_TYPE below)
+    call .xtof
+    call CX_SWAP
+.end:
     pop  hl
     call CG_HERE
     jr   .types
@@ -299,6 +302,7 @@ CX_COND:
     or   a
     call nz, CX_SWAP                   ; X = the second operand
     call CG_VAL                        ; (retyped below: a deferred object is loaded first)
+    call .ytof                         ; (the other operand a float: the chosen one too)
 .types:                                ; both integers: the usual conversions; an integer (a null
     ld   hl, (Y_TYPE)                  ; pointer constant) with a pointer: the pointer's type; two
     call TY_CLASS                      ; floats: float; a float and another type: E_TYPE (deviation)
@@ -324,10 +328,34 @@ CX_COND:
 .set:
     ld   (X_TYPE), hl
     ret
-.flt:
-    cp   d
-    ret  z
+.flt:                                  ; X a float: Y a float or an integer, not void or a pointer
+    ld   a, d
+    dec  a
+    cp   TC_FLOAT
+    ret  c
     jp   CC_E_TYPE
+.ytof:                                 ; Y a float: X, an integer, converted. Out: Z if X is a float
+    ld   hl, (Y_TYPE)                  ; and Y is not
+    call TY_CLASS
+    cp   TC_FLOAT
+    jp   nz, CX_XFLT
+    call .xtof
+    or   $FF
+    ret
+.jpover:                               ; a `jp` patched later (its operand on the stack, under the return
+    ld   a, $C3                        ; address); the one stacked before it patched to here
+    ld   hl, 0
+    call CG_JP
+    pop  de
+    ex   (sp), hl
+    push de
+    jp   CG_HERE
+.xtof:                                 ; X, an integer, to float (a float, a pointer or void: unchanged)
+    call CX_XFLT
+    dec  a
+    cp   TC_UINT
+    ret  nc
+    jp   CX_TOFLT
 .second:
     call CX_EXPR
     jr   .value

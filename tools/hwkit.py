@@ -5,6 +5,8 @@ build/kit/
   eprom/leapc_home_27128.bin  .hex     HOME (16,384 B) for a 27128 (Intel HEX for programmers that want it)
   eprom/leapc_exrom_2764.bin  .hex     EXROM (8,192 B) for a 2764
   tapes/hN_name.tap .tzx .wav          the hardware check programs (docs/hardware/*.c)
+  tapes/l1_shapes.tap .tzx .wav        (Phase 10) the example library (build/libs/: tools/lib2tape.py), for LIB "shapes"
+  libs/shapes.asm                      its source
   tapes/exNN.tap .tzx .wav             the documentation's examples (tests/doc/, docs/EXAMPLES.md)
   CHECKSUMS.txt                        every file: size, SHA-256, CRC-32, the byte sum (32 and 16 bits)
   HARDWARE_CHECKLIST.md                the checklist
@@ -16,8 +18,9 @@ The WAVs are the tapes as audio for a cassette recorder or a phone/PC line out i
 8-bit mono PCM at 44.1 kHz, the stock ROM's pulses at the TS2068's 3.528 MHz (tools/tapes.py Tape.to_wav,
 the pulses Leap-C's own SAVE sends). --verify loads every check program's WAV in both emulators through
 their tape signal inputs (ZEsarUX's real-tape input, Fuse's tape deck), compares the source, runs it
-(typing keys, pressing BREAK or recording and playing the data tape where the program asks), and decodes
-every WAV with fuse-utils' audio2tape (an independent decoder) when it is installed.
+(typing keys, pressing BREAK or recording and playing the data tape where the program asks; H11: LIB "shapes"
+from the library's WAV first), and decodes every WAV with fuse-utils' audio2tape (an independent decoder) when
+it is installed.
 
 Usage: hwkit.py [--verify] [--soak-minutes N]
 """
@@ -45,7 +48,10 @@ HW = os.path.join(ROOT, "docs", "hardware")
 PROGRAMS = [("hello.c", "hello", "H1", "run"), ("keys.c", "keys", "H2", "keys"), ("hz60.c", "hz60", "H3", "run"),
             ("cont1.c", "cont1", "H4", "run"), ("cont4.c", "cont4", "H5", "run"), ("float.c", "float", "H6", "run"),
             ("sound.c", "sound", "H7", "run"), ("brk.c", "brk", "H8", "break"), ("tapedata.c", "tapedata", "H9", "tape"),
-            ("soak.c", "soak", "H10", "soak")]
+            ("soak.c", "soak", "H10", "soak"), ("lib.c", "libcheck", "H11", "lib")]
+# (library, kit id): LIB "name" reads them (Phase 10); H11 needs L1
+LIBRARIES = [("shapes", "L1", os.path.join("libs", "shapes.asm"))]
+LIBS = os.path.join(BUILD, "libs")
 KEYS_TYPED = "aZ5{|}~[]\\^"
 
 
@@ -105,6 +111,13 @@ def build_kit():
         n = p.split("_")[-1].split(".")[0]
         stem = "ex%s" % n
         tape_files(open(os.path.join(ROOT, "tests", "doc", p)).read(), "example" + n, stem)
+        tapes_made.append(stem)
+    os.makedirs(os.path.join(KIT, "libs"))
+    for name, lid, src in LIBRARIES:              # (make libs built them: tools/lib2tape.py)
+        stem = "%s_%s" % (lid.lower(), name)
+        for ext in (".tap", ".tzx", ".wav"):
+            shutil.copy(os.path.join(LIBS, name + ext), os.path.join(KIT, "tapes", stem + ext))
+        shutil.copy(os.path.join(ROOT, src), os.path.join(KIT, "libs"))
         tapes_made.append(stem)
     shutil.copy(os.path.join(ROOT, "docs", "HARDWARE_CHECKLIST.md"), KIT)
     write_checksums()
@@ -169,18 +182,26 @@ def zesarux_verify(soak_frames):
             stem = "%s_%s" % (cid.lower(), name)
             lines = c2src.lines_of(open(os.path.join(HW, f)).read())
             rate, samples = tapes.read_wav(open(os.path.join(KIT, "tapes", stem + ".wav"), "rb").read())
+            if how == "lib":                    # the library's WAV, 3 s of silence, the program's: one insert (an
+                lrate, lsamples = tapes.read_wav(open(os.path.join(KIT, "tapes", "l1_shapes.wav"), "rb").read())
+                assert lrate == rate            # insert resets the machine, and so the library)
+                samples = lsamples + bytes([0x80]) * (3 * rate) + samples
             rwa = os.path.join(m.snapdir, "kit.rwa")
             open(rwa, "wb").write(tapes.rwa_from_wav(rate, samples))
             m.tape_insert(rwa)
             sh.boot()
+            r = {}
+            if how == "lib":
+                lmsg, _ = tapetest.command(sh, 'LIB "shapes"', invariants=False)
+                r["lib"] = list(lmsg)
             msg, _ = tapetest.command(sh, 'LOAD ""', invariants=False)
-            r = dict(load=msg, source=sh.store() == lines)
+            r.update(load=msg, source=sh.store() == lines)
             if how == "tape":
                 r["run"] = "not run here (the cassette suite runs tape_save / tape_load; Fuse runs this one)"
             else:
                 for ch in "run":
                     sh.key(ord(ch))
-                if how == "run":
+                if how in ("run", "lib"):
                     rep = sh.key(ENTER, maxi=2_000_000_000)
                 elif how == "keys":
                     sh.key(ENTER)
@@ -222,16 +243,25 @@ def fuse_verify(soak_frames):
         for fn, name, cid, how in PROGRAMS:
             stem = "%s_%s" % (cid.lower(), name)
             lines = c2src.lines_of(open(os.path.join(HW, fn)).read())
+            r = {}
+            if how == "lib":                    # LIB "shapes" from the library's WAV first
+                ltzx = os.path.join(wdir, "l1_shapes.tzx")
+                open(ltzx, "wb").write(tapes.tzx_from_wav(*tapes.read_wav(open(os.path.join(KIT, "tapes", "l1_shapes.wav"),
+                                                                                "rb").read())))
+                assert f.cmd("tape_open %s" % ltzx) == "0"
+                f.command('lib "shapes"')
+                r["lib"] = f.rows()[22:24]
+                f.key(" ")
             tzx = os.path.join(wdir, stem + ".tzx")
             open(tzx, "wb").write(tapes.tzx_from_wav(*tapes.read_wav(open(os.path.join(KIT, "tapes", stem + ".wav"),
                                                                             "rb").read())))
             assert f.cmd("tape_open %s" % tzx) == "0"
             f.command('load ""')
-            r = dict(load=f.rows()[22:24])
+            r["load"] = f.rows()[22:24]
             f.key(" ")
             r["source"] = f.store() == lines
             f.to_append_line()
-            if how == "run":
+            if how in ("run", "lib"):
                 f.type("run", timeout=900)
             elif how == "keys":
                 f.type("run")
@@ -277,8 +307,9 @@ def results_md(z, u, decoded, soak_minutes):
         out += ["## %s `%s` (%s)" % (cid, fn, how), ""]
         for emu, res in (("ZEsarUX 13.0", z), ("Fuse 1.9.1", u)):
             r = res.get(cid, {})
-            out.append("- **%s:** LOAD %r, source %s; report %r" % (emu, r.get("load"), "identical" if r.get("source")
-                                                                  else "DIFFERENT", r.get("report", r.get("run"))))
+            out.append("- **%s:** %sLOAD %r, source %s; report %r" % (
+                emu, "LIB %r; " % (r["lib"],) if "lib" in r else "", r.get("load"),
+                "identical" if r.get("source") else "DIFFERENT", r.get("report", r.get("run"))))
             for line in r.get("screen", []):
                 out.append("  - `%s`" % line)
         out.append("")
@@ -312,6 +343,9 @@ def main():
     json.dump(dict(zesarux=z, fuse=u, decoded=decoded), open(os.path.join(BUILD, "kit_results.json"), "w"), indent=1)
     write_checksums()
     bad = [cid for cid in z if not z[cid].get("source")] + [cid for cid in u if not u[cid].get("source")]
+    want_lib = ["LIBRARY shapes: 3 FUNCTIONS"]          # (H11: the library from its WAV on both emulators)
+    bad += ["%s LIB %r" % (cid, res[cid]["lib"]) for res in (z, u) for cid in res
+            if "lib" in res[cid] and list(res[cid]["lib"])[:1] != want_lib]
     bad += [s for s, ok in (decoded or {}).items() if not ok]
     for cid in sorted(set(z) | set(u)):
         print("hwkit: %s ZEsarUX %r | Fuse %r" % (cid, z.get(cid, {}).get("report", z.get(cid, {}).get("run")),

@@ -23,15 +23,22 @@
 ; LIB_PARAMS: one byte per parameter list, the last parameter in bit 0: a bit is set if that
 ;   parameter is a pointer (void *: any object pointer converts to it), clear for an int; a 1 above
 ;   the first parameter ends the list. 0: printf, whose arguments are variadic (no prototype: no
-;   checks, the default promotions)
+;   checks, the default promotions). Phase 10: 16 lists, the loaded libraries' too (their export tables
+;   index them: include/leapc_lib.inc LXP_*, never reordered)
+;
+; Phase 10: a loaded library's export table (LX_TABLE, image region 3; LIB "name") has the same records. It
+; is searched after LIB_NAMES while LIB_LOADED is set: the ROM's name comes first when both have it
 ; ============================================================================
 
 LIB_PARAMS:                            ; (here, mid-page: LIB_FIND indexes it within one page)
     DB   0, %1, %10, %11, %100, %110, %111, %1110, %1100, %1010, %10000, %100001
-    ASSERT (LIB_PARAMS & $FF) + LP_IIIIP < 256
+    DB   %1000, %101, %1001, %100000   ; (int, int, int), (int, void *), (int, int, void *), five ints
+    ASSERT (LIB_PARAMS & $FF) + 15 < 256 && $ - LIB_PARAMS == 16
+    ASSERT LP_IIIIP == LXP_IIIIP && LP_PPI == LXP_PPI && LP_VARIADIC == LXP_VARIADIC
 
 ; ============================================================================
-; LIB_FIND -- the library function named NM
+; LIB_FIND -- the library function named NM: the ROM's (LIB_NAMES), else (Phase 10) the loaded library's
+; (LX_TABLE, while LIB_LOADED is set)
 ; In:  NM_PTR, NM_LEN (1-31)
 ; Out: Z: HL = its address, D = its signature, E = its parameter list (LIB_PARAMS). NZ: none
 ; Destroys: AF, BC, DE, HL
@@ -84,9 +91,17 @@ LIB_FIND:
     inc  hl
     inc  hl                            ; past the address and the signature
     jr   .entry
-.none:
+.none:                                 ; (A = 0) the end of a table: after the ROM's (in the EXROM, $C000-$DFFF:
+    bit  5, h                          ; bit 5 of its high byte clear), the loaded library's (LX_TABLE, $F4xx)
+    jr   nz, .nz
+    ld   hl, LX_TABLE
+    ld   a, (LIB_LOADED)
+    or   a
+    jr   nz, .entry
+.nz:
     dec  a                             ; NZ
     ret
+    ASSERT (LX_TABLE >> 8) & $20 && !(LEAPC_EXROM_BASE >> 8 & $20) && !((LEAPC_EXROM_END - 1) >> 8 & $20)
 
 ; ============================================================================
 ; XL_BIND -- declare the undeclared identifier NM if it names a library function (EXROM; HOME: the

@@ -24,12 +24,12 @@ Copied 2026-10-13 (M1.1) with `git archive v2.0.1-emu.1`. Paths below `platform/
 | `kernel/io/io.asm` | keyboard | HOME | **delta D7** |
 | `kernel/graphics/graphics.asm` | text, attributes, scroll, pixels, line, sprites, font (the editor's bold and string output: EXROM) | both | **deltas D6, D8, D12, D13** |
 | `kernel/math/math.asm` | 16-bit negate, absolute value, signed compare | HOME | **delta D3** |
-| `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | pristine |
+| `kernel/interrupt/interrupt.asm` | IM 1 handler: FRAMES, keyboard scan, BREAK latch | HOME | **delta D4** |
 | `kernel/bank/bank.asm` | EXROM paging (depth-counted) | HOME | **delta D14** |
-| `rom/v2_ay_beep.asm` | AY beep (HOME pieces; the EXROM piece `AY_BEEP`) | both | pristine |
-| `kernel/storage/storage.asm` | tape: block I/O (HOME), header logic (EXROM) | both | **delta D9** |
-| `rom/exrom_editor.asm` | editor engine | EXROM | pristine |
-| `rom/exrom_sound.asm` | `SOUND` register write | EXROM | pristine |
+| `rom/v2_ay_beep.asm` | AY beep (HOME pieces; the EXROM piece `AY_BEEP_PLAY`) | both | **delta D17** |
+| `kernel/storage/storage.asm` | tape: block I/O (HOME), header logic (EXROM) | both | **deltas D9, D18** |
+| `rom/exrom_editor.asm` | editor engine | EXROM | **deltas D15, D16, D17** |
+| `rom/exrom_sound.asm` | `SOUND` register write | EXROM | **delta D19** |
 | `rom/exrom_format.asm` | integer formatting (V2's float formatting not assembled) | EXROM | **delta D10** |
 | `rom/exrom_calc.asm` | FP calculator: **not assembled since Phase 8**; kept as the reference the float core (`src/runtime/fpcore.asm`, `spec.md` §4.9) was re-engineered from | — | pristine |
 
@@ -65,6 +65,11 @@ The modules are assembled in V2's production configuration (`include/leapc_rom.i
 | D12 | `kernel/graphics/graphics.asm` | Conditional assembly only: `IFNDEF GFX_NO_EDITOR_TEXT` around `GFX_PUTCHAR_BOLD` and `GFX_PRINT_STRING` (32 B), `IFNDEF GFX_EDITOR_TEXT_ONLY` around the rest | Phase 8 (ledger L44-L45): the same for the editor's bold keywords and string output; they call HOME's `GFX_CHAR_SETUP` and `GFX_PUTCHAR`, exported to the EXROM |
 | D13 | `kernel/graphics/graphics.asm` | `FONT_TABLE`: the glyphs of the digit `1` (`$20,$60,$A0,$20,$20,$20,$F8,$00`: a flag and a full-width base) and the letter `l` (`$60,$20,$20,$20,$20,$20,$18,$00`: a tail to the right, no base). Data only, no size change | Phase 9 (owner-approved): V2's `1` and `l` differed in two pixels, and a user typing `l.0` for `1.0` could not tell them apart on the screen (`docs/milestones/M9.md`). Both stay distinct from `I`, `|` and `!`, in plain and in bold (the editor's keywords) |
 | D14 | `kernel/bank/bank.asm` | `BANK_PAGE_EXROM_IN` and `BANK_PAGE_EXROM_OUT` lose their `di` (−2 B); each keeps its `ei`, so interrupts are on at the return as before | Phase 9, a defect found by Fuse at the TS2068's own timing (ledger L60): the routines ran about 120 T with interrupts off and the TS2068's INT lasts 32 T, so a frame interrupt arriving then was lost. Float code pages the EXROM in and out for every operation, and `FRAMES` (`frames()`, the keyboard's timing) counted 5,966 of 6,024 frames in a float loop. The ISR touches none of the banking state (the depth, `PORT_FF_SHADOW`, the ports, chunk 6), and a BREAK cannot unwind inside them (every runtime page-in is under `NOBRK`) |
+| D15 | `rom/exrom_editor.asm` | Deletions only: `EDITOR_INIT` no longer clears `EDITOR_REDRAW_HOOK` and `EDITOR_NAV_HOOK`; the built-in UP/DOWN handling and the second dispatch block for an unset navigation hook go (UP, DOWN, delete line and insert line share one dispatch through the hook); `EDITOR_REDRAW_SCREEN`'s default rendering for an unset redraw hook goes (it jumps to the hook). Comments mark each place | Phase 10, Fix 4 (ledger L65; the improvements report): the Leap-C shell sets both hooks before every editing session (`SH_LOOP`), so the fallbacks could never run (the ROM coverage of Phase 9 showed them unexecuted). A later caller of the editor engine without hooks would need them back: no library slot serves the editor (`spec.md` §2.4) |
+| D16 | `rom/exrom_editor.asm` | Deletions only: `EDITOR_LOOP`'s cases for `KEY_NEXT_ERROR` and `KEY_PREV_ERROR`, `EDITOR_MOVE_CURSOR`'s cases for `EDIR_HOME` and `EDIR_END` | Phase 10, Fix 4: no key of Leap-C's map gives these codes (delta D7 removed NEXT/PREV ERROR's; HOME and END were never mapped) |
+| D17 | `rom/exrom_editor.asm`, `rom/v2_ay_beep.asm` | Deletions only: `EDITOR_BLOCK_DELETE`; the EXROM's `AY_BEEP` entry (`call AY_BEEP_PERIOD`) | Phase 10, Fix 4: no caller (the coverage report's two never-entered routines). The shell deletes lines through its navigation hook; `beep()` calls `AY_BEEP_PERIOD` in HOME, then `AY_BEEP_PLAY` (unchanged) |
+| D18 | `kernel/storage/storage.asm` | Deletions only: `STORAGE_SAVE`'s clamp of the name's length and its padding with spaces | Phase 10, Fix 4: both callers (the shell's SAVE and the library's `tape_save`) pass 10 characters already padded (`SH_NAME`). `STORAGE_VERSION_WORD` stays: its package branch gives Leap-C's library tapes (type 4) their own version word (`spec.md` §8.4) |
+| D19 | `rom/exrom_sound.asm` | `SOUND_EXROM` loses its range check (registers 17 and above) and its carry result | Phase 10, Fix 4: its only caller is the shell's start-up chime, which writes registers 0-10. C's `sound()` is `LIB_SOUND` in HOME, which writes the AY itself and keeps its own 0-15 check (runtime error 4) |
 
 ## Names the platform expects from Leap-C
 
@@ -77,7 +82,7 @@ These names are defined by Leap-C files, so the platform files themselves do not
 | `RT_BREAKREQ` | `src/runtime/rtexit.asm` | called by the ISR (delta D4) when it accepts the BREAK key |
 | `VM_ERR_RANGE` | `src/runtime/rtexit.asm` (= `RT_ERR_ARG`) | the beep semitone range error (runtime error 4 at the program's `beep()` call) |
 | `V2_REDRAW_SCOPE`, `V2_RD_*` | `include/leapc_cells.inc` | V2 placed these editor cells at `$BEC0`, which is source RAM in the Leap-C layout |
-| `V2_FORMAT_WORD`, `PKG_ABI_WORD` | `include/leapc_rom.inc` (= `LEAPC_TAPE_VERSION` `$8C00`) | tape version word (`spec.md` §8.1) |
+| `V2_FORMAT_WORD`, `PKG_ABI_WORD` | `include/leapc_rom.inc` (`V2_FORMAT_WORD` = `LEAPC_TAPE_VERSION` `$8C00`; `PKG_ABI_WORD` = `LX_WORD` `$8D01`, Phase 10) | tape version words: program and data tapes (`spec.md` §8.1), library tapes (header type 4, V2's package type, §8.4) |
 | `KTAB_*` | `src/rom/exrom.asm` (= the HOME routines) | as in V2 production |
 | `KTAB_CALC_EXIT_TRAMPOLINE` | `src/rom/exrom.asm` (= `BANK_PAGE_EXROM_OUT`) | V2's trampoline was a bare `jp BANK_PAGE_EXROM_OUT` |
 

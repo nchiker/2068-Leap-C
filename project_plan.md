@@ -30,7 +30,7 @@ When a component would exceed its budget, apply these in order:
 1. **Shrink.** Measured optimisation, for example with the z80-skills shrink/optimize methods, keeping behaviour identical under the tests.
 2. **Move cold code to EXROM** (for example diagnostics), subject to the bank rules (`spec.md` §2.2).
 3. **Reallocate** from another component's unused budget or from the reserve. Record it in the ledger with the measured reason.
-4. **Owner decision** if the reserve would fall below its floor (HOME 512 B, EXROM 256 B): defer a feature or accept a smaller reserve.
+4. **Owner decision** if the reserve would fall below its floor (HOME 512 B, EXROM 256 B; since Phase 10, by owner decision, HOME 384 B and EXROM 128 B: ledger L73-L74): defer a feature or accept a smaller reserve.
 
 ### 1.3 Production code standards from the first line
 
@@ -71,7 +71,8 @@ When a component would exceed its budget, apply these in order:
 | 7 | Cassette SAVE/LOAD (resolves chunk-6 loading) | HOME +340 (block I/O moved), EXROM −331 | 4, 6 |
 | 8 | Language library completion and language polish | within existing budgets | 3, 7 |
 | 9 | Emulator and physical hardware validation | — | 8 |
-| 10 | Documentation and release qualification | — | 9 |
+| 10 | Recommended fixes and library loading (owner-approved after Phase 9) | HOME +133, EXROM +125; floors 384 / 128 | 9 |
+| 11 | Documentation and release qualification | — | 10 |
 
 ---
 
@@ -396,7 +397,28 @@ Phase 5 can start after M1.1, in parallel with Phases 2-4.
 
 ---
 
-## 12. Phase 10 — Documentation and release qualification
+## 12. Phase 10 — Recommended fixes and library loading
+
+Approved by the owner after Phase 9 (the improvements report, `spike/improvements/`), before documentation and release qualification, which became Phase 11.
+
+**Deliverables:**
+
+- **Fixes 1-5, each at its smallest:** `?:` with a float and an integer operand converts the integer (C89 6.3.15; the deviation retired); errors 21, 22, 52, 70 and 76 name the identifier; `RT_UDIV`'s unreachable branch removed; the unreachable vendored EXROM code removed (platform deltas D15 onward; `beep()` and `sound()` unchanged); the cursor at a compile error's column.
+- **Library loading, Stage 1, with V2-style jump-table slots:** an assembly image for image region 3 (a header, an export table in `LIB_NAMES`'s records, code and data); 16 slots of `jp` in HOME at an address that never moves; `tools/lib2tape.py` and the ABI include; `LIB "name"` and `LIB` in the shell; region 3 closed while a library is loaded, the ROM's table then the library's searched by the same binding; BREAK, runtime errors and the canary inside a library as inside the ROM's library; an example library, a library tape and a check program in the hardware kit.
+- **Out of scope:** Stage 2 (C libraries compiled on the machine); Fix 6 (the line store to the EXROM) unless HOME would fall below 128 B free.
+
+**Owner decisions:** V2-style slots, not only an identity word; the reserve floors may be lowered as far as the phase needs, not below 128 B in either ROM, each change in the ledger.
+
+**Completion criteria:**
+
+- [ ] Every fix and feature has tests that fail without it.
+- [ ] The full Phase 9 qualification on the final images: `make test` with ROM coverage, `make fuse` (the frames case included), `make timing`, the `--ram warm` and `--ram random:7` suites, `make capacity`, the kit's verification with its 30-minute soak, `make check`, `make repro`.
+- [ ] Library loading exercised on ZEsarUX (a real tape signal) and on Fuse.
+- [ ] `spec.md` v0.12, the budget ledger, `docs/milestones/M10.md`.
+
+---
+
+## 13. Phase 11 — Documentation and release qualification
 
 **Deliverables:**
 
@@ -417,7 +439,7 @@ Phase 5 can start after M1.1, in parallel with Phases 2-4.
 
 ---
 
-## 13. Risks managed during implementation (not feasibility gates)
+## 14. Risks managed during implementation (not feasibility gates)
 
 | Risk | Response |
 |---|---|
@@ -431,7 +453,7 @@ Phase 5 can start after M1.1, in parallel with Phases 2-4.
 
 ---
 
-## 14. First milestone
+## 15. First milestone
 
 **M1.1 — Foundation and lexer** (§3).
 

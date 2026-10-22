@@ -38,6 +38,12 @@ CC_COMPILE:
     ld   de, IMG_LIM
     ld   bc, IMG_REGIONS * 4 + 6
     ldir
+    ld   a, (LIB_LOADED)               ; Phase 10: a loaded library holds image region 3, so it is full
+    or   a                             ; ([end][end]), as #pragma hires makes region 4 (spec.md 3.2, 7.2)
+    jr   z, .open
+    ld   a, LEAPC_IMG3_END >> 8
+    ld   (IMG_LIM + 4 * 2 + 1), a      ; (its [low]'s high byte: LEAPC_IMG3_BASE and _END differ only there)
+.open:
     ld   hl, (PROG_END)
     ld   (WS_LOC), hl
     call LEX_INIT

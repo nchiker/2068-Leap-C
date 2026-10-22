@@ -24,6 +24,9 @@ byte that changed is reported. The same before and after the run. Spans:
     the whole region is canary: the compiler writes only code and data. In the run, writes to the
     region-4 gap are display file 2 when the program switches to the hi-res mode (`hires_ok`);
   - the stack ($F800 .. $FEFF): its low-water mark is measured, not a hit unless below $F800.
+  - (Phase 10) with a library loaded (LIB_LOADED), image region 3 is the library's: the compile, which closes the
+    region, must leave its image exactly as it was; at run time it is the library's own RAM (as the ROM library's
+    cells are), not checked.
 The source (the line store) must be unchanged: exectest checks that itself.
 """
 INV_SLOTS = (9, 10, 11, 19, 20)
@@ -108,20 +111,37 @@ class Canary:
         self.stack_low[what] = low
         return low
 
+    def _library(self):
+        """Image region 3's (base, end) when a library is loaded in it (Phase 10), else None."""
+        if not self.m.read(self.S("LIB_LOADED"), 1)[0]:
+            return None
+        return regions(self.S)[2]
+
     def before_compile(self):
+        lib = self._library()
+        self.lib_image = self.m.read(lib[0], lib[1] - lib[0]) if lib else None
         self.compile_spans = dead_spans(self.S) + [("region %d" % (k + 1), lo, hi)
-                                                   for k, (lo, hi) in enumerate(regions(self.S))]
+                                                   for k, (lo, hi) in enumerate(regions(self.S))
+                                                   if not (lib and k == 2)]
         self._fill(self.compile_spans + [("stack", STACK[0], STACK[1])])
 
     def after_compile(self):
-        """Hits of the compile: the dead spans, and each region outside its code and data."""
+        """Hits of the compile: the dead spans, each region outside its code and data, a loaded library changed."""
         lim = limits(self.m)
         spans = dead_spans(self.S)
         for k, ((base, end), (low, high)) in enumerate(zip(regions(self.S), lim)):
             if base <= low <= high <= end:
                 spans.append(("region %d" % (k + 1), low, high))
         self._low("compile")
-        return self._check(spans)
+        hits = self._check(spans)
+        if self.lib_image is not None:
+            lo = regions(self.S)[2][0]
+            now = self.m.read(lo, len(self.lib_image))
+            bad = [lo + i for i, (a, b) in enumerate(zip(now, self.lib_image)) if a != b]
+            if bad:
+                hits.append(dict(span="the loaded library (region 3)", first="$%04X" % bad[0], last="$%04X" % bad[-1],
+                                 bytes=len(bad)))
+        return hits
 
     def before_run(self, hires_ok=False):
         lim = limits(self.m)

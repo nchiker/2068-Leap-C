@@ -50,8 +50,8 @@ def case(name, title, group):
 
 
 # ===================================================================== typed programs
-# (name, lines, screen rows {row: text} (the others blank), report row 22 (or rows 22 and 23), keys during the
-# run, matrix)
+# (name, lines, screen rows {row: text} (the others blank), report row 22 (or rows 22 and 23, or (Phase 10) rows
+# 22 and 23 and the cursor's column in its line after the report), keys during the run, matrix)
 TYPED = [
     ("hello", ["int main(void)", "{", '    puts("HELLO, WORLD");', "    return 0;", "}"],
      {0: "HELLO, WORLD"}, "EXIT 0", None, True),
@@ -121,9 +121,9 @@ TYPED = [
     ("printf-width", ["int main(void)", "{", '    printf("[%5d][%3s][%c]", 42, "ab", 65);', "    return 0;", "}"],
      {0: "[   42][ ab][A]"}, "EXIT 0", None, False),
     ("runtime-error", ["int main(void)", "{", '    puts("BEFORE");', "    beep(1, 99);", "    return 0;", "}"],
-     {0: "BEFORE"}, "RUNTIME ERROR 4: BAD ARGUMENT", None, False),
+     {0: "BEFORE"}, ("RUNTIME ERROR 4: BAD ARGUMENT", "LINE 1", 0), None, False),
     ("compile-error", ["int main(void)", "{", "    int total = 0;", "    totl = 5;", "    return total;", "}"],
-     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'totl'"), None, False),
+     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'totl'", 9), None, False),
     # Phase 8: floating point (the '.' typed on the matrix), its runtime error, a missing ';' reported at its line
     ("float", ["float area(float r)", "{", "    return 3.14159 * r * r;", "}", "int main(void)", "{",
                '    printf("%.2f %f", area(2), 1.0 / 8);', "    return area(1) * 100;", "}"],
@@ -131,7 +131,7 @@ TYPED = [
     ("float-error", ["int main(void)", "{", "    float z = 0;", '    puts("DIVIDE");', "    return 1 / z;", "}"],
      {0: "DIVIDE"}, "RUNTIME ERROR 6: NUMBER TOO BIG", None, False),
     ("missing-semi", ["int main(void)", "{", "    int x = 1", "    return x;", "}"],
-     None, ("ERROR 20: SYNTAX ERROR", "LINE 3"), None, False),
+     None, ("ERROR 20: SYNTAX ERROR", "LINE 3", 13), None, False),
     # Phase 9: the undeclared identifier's name on the status row: the owner's own mistake (the letter l
     # typed for the digit 1), a name longer than the 15 characters shown, a name from a macro's body
     ("undeclared-l", ["int main(void)", "{", "    float third = l.0 / 3;", '    printf("%f", third);',
@@ -142,6 +142,29 @@ TYPED = [
      None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'counter_of_itme'"), None, False),
     ("undeclared-macro", ["#define LIMIT maximum_value", "int main(void)", "{", "    return LIMIT;", "}"],
      None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'maximum_value'"), None, False),
+    # Phase 10, Fix 2: five more errors name the identifier (a #define's ALREADY DEFINED has no name); UNDEFINED
+    # FUNCTION and UNDEFINED LABEL are reported at the end, when the compiler last named another identifier
+    ("redeclared", ["typedef int T;", "typedef int T;", "int main(void)", "{", "    return 0;", "}"],
+     None, ("ERROR 21: REDECLARED", "LINE 2  'T'"), None, False),
+    ("already-defined", ["int f(void) { return 1; }", "int f(void) { return 2; }", "int main(void)", "{",
+                         "    return f();", "}"],
+     None, ("ERROR 22: ALREADY DEFINED", "LINE 2  'f'"), None, False),
+    ("define-twice", ["#define N 3", "#define N 3", "int main(void)", "{", "    return N;", "}"],
+     None, ("ERROR 22: ALREADY DEFINED", "LINE 2"), None, False),
+    ("no-member", ["struct point { int x, y; };", "struct point p;", "int main(void)", "{", "    return p.z;", "}"],
+     None, ("ERROR 52: NO SUCH MEMBER", "LINE 5  'z'"), None, False),
+    ("undefined-function", ["int main(void)", "{", "    prnt(1);", "    return 0;", "}", "int other(void)", "{",
+                            "    return 2;", "}"],
+     None, ("ERROR 70: UNDEFINED FUNCTION", "LINE 3  'prnt'"), None, False),
+    ("undefined-label", ["int main(void)", "{", "    int x = 1;", "    goto nowhere;", "    return x;", "}"],
+     None, ("ERROR 76: UNDEFINED LABEL", "LINE 4  'nowhere'"), None, False),
+    # Phase 10, Fix 5: the cursor on the error's column: on the token where the compile stopped, at the line's end
+    # for a missing token (missing-semi above), on a wrapped line's second row
+    ("bad-character", ["int main(void)", "{", "    int a = 3 @ 4;", "    return a;", "}"],
+     None, ("ERROR 10: BAD CHARACTER", "LINE 3", 14), None, False),
+    ("error-wrapped", ["int main(void)", "{", "    int alpha = 1, beta = 2, gamma = 3, delta = 4 @ 5;", "    return alpha;",
+                       "}"],
+     None, ("ERROR 10: BAD CHARACTER", "LINE 3", 50), None, False),
 ]
 
 
@@ -158,7 +181,7 @@ def type_program(sh, lines, matrix):
 
 
 def typed_case(name, lines, screen, report, keys, matrix):
-    report, row23 = report if isinstance(report, tuple) else (report, None)
+    report, row23, col = (report + (None,))[:3] if isinstance(report, tuple) else (report, None, None)
 
     def fn(sh):
         m, S = sh.m, sh.S
@@ -201,6 +224,9 @@ def typed_case(name, lines, screen, report, keys, matrix):
         if errline:
             if sh.index() != errline - 1 or sh.edit_line() != lines[errline - 1]:
                 bad.append("cursor on line %d %r, expected %d" % (sh.index() + 1, sh.edit_line(), errline))
+            offset = m.w16(S("EDIT_BUF_OFFSET"))
+            if col is not None and offset != col:
+                bad.append("cursor at column %d of its line, expected %d" % (offset, col))
         elif sh.index() != len(lines):
             bad.append("cursor on line %d" % (sh.index() + 1))
         if sh.store() != lines:
@@ -211,7 +237,9 @@ def typed_case(name, lines, screen, report, keys, matrix):
 
 for _i, (_n, _l, _s, _r, _k, _mx) in enumerate(TYPED):
     case("typed-%02d-%s" % (_i + 1, _n), "typed%s, RUN: %s" % (" on the keyboard matrix" if _mx else "",
-                                                               _r if isinstance(_r, str) else " / ".join(_r)),
+                                                               _r if isinstance(_r, str) else " / ".join(
+                                                                   x if isinstance(x, str) else "column %d" % x
+                                                                   for x in _r if x is not None)),
          "typed")(typed_case(_n, _l, _s, _r, _k, _mx))
 
 

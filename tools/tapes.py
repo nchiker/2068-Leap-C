@@ -137,6 +137,29 @@ class Tape:
         t.silence(0.5)
         return t
 
+    @classmethod
+    def from_tzx_direct(cls, data):
+        """(Phase 10) A TZX file's direct-recording blocks (ID $15: one bit a sample, the most significant first,
+        a fixed number of T-states each) as a Tape: V2's package tapes (its tools/make_extension_tzx.py) are one."""
+        t, p = cls(), 10
+        while p < len(data) and data[p] == 0x15:
+            per, _pause, last = struct.unpack_from("<HHB", data, p + 1)
+            n = data[p + 6] | data[p + 7] << 8 | data[p + 8] << 16
+            body = data[p + 9:p + 9 + n]
+            bits = [b >> (7 - k) & 1 for b in body[:-1] for k in range(8)] + \
+                   [body[-1] >> (7 - k) & 1 for k in range(last)] if body else []
+            for b in bits:
+                if t.runs and t.runs[-1][0] == b:
+                    t.runs[-1] = (b, t.runs[-1][1] + per)
+                else:
+                    t.runs.append((b, per))
+            p += 9 + n
+        if p != len(data):
+            raise ValueError("not only direct-recording blocks (ID $15)")
+        t.level = t.runs[-1][0] if t.runs else 0
+        t.silence(0.5)
+        return t
+
     def to_rwa(self, lead=1.0, tail=1.0, sample_t=SAMPLE_T):
         """Point-sampled: level 1 -> $C8, 0 -> $38, the lead and the tail idle ($80)."""
         out = bytearray()

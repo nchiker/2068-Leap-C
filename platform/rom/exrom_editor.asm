@@ -61,21 +61,14 @@
 ; EDITOR_INIT
 ; Clears editor state. Call once at cold start (and again on NEW).
 ; In:  none
-; Out: EDIT_BUF_OFFSET = 0, line buffer zeroed,
-;      EDITOR_REDRAW_HOOK = 0 (default rendering — see that sysvar's
-;      comment), EDITOR_NAV_HOOK = 0 (default UP/DOWN handling — see
-;      that sysvar's comment)
+; Out: EDIT_BUF_OFFSET = 0, line buffer zeroed (Leap-C, delta D15: the
+;      hooks are left alone; the shell sets both before every session)
 ; Destroys: AF, HL, BC
 ; ============================================================================
 EDITOR_INIT:
     xor  a
     ld   hl, 0
     ld   (EDIT_BUF_OFFSET), hl
-    ld   (EDITOR_REDRAW_HOOK), hl    ; also 0 — default rendering unless
-                                    ; a caller (e.g. basic/) sets this
-    ld   (EDITOR_NAV_HOOK), hl        ; also 0 — default (no-op)
-                                    ; UP/DOWN handling unless a caller
-                                    ; sets this
     ld   hl, EDIT_LINE_BUF
     ld   bc, EDIT_LINE_BUF_LEN
     jp KTAB_MEM_FILL_ZERO
@@ -125,11 +118,7 @@ EDITOR_LOOP:
     cp   KEY_DELETE_LINE
     jp   z, .delete_line_key
     cp   KEY_INSERT_LINE
-    jp   z, .insert_line
-    cp   KEY_NEXT_ERROR
-    jp   z, .next_error
-    cp   KEY_PREV_ERROR
-    jp   z, .prev_error
+    jp   z, .insert_line           ; (Leap-C, delta D16: no key gives NEXT or PREV ERROR)
     cp   $20
     jr   c, EDITOR_LOOP            ; STUDY (D5b): was `or a / jp z` (A=0 only); every
                                    ; code < $20 that has no handler above (BREAK $10 ...)
@@ -218,20 +207,11 @@ EDITOR_LOOP:
     ld   hl, V2_REDRAW_SCOPE
     ld   (hl), b                   ; STUDY: UP/DOWN -> the redraw hook may take the cursor-only /
     ENDIF                          ; two-line path (it verifies the geometry itself)
-    push af                       ; save direction across the hook check
+; EDIR_UP/EDIR_DOWN/EDIR_DELETE_LINE/EDIR_INSERT_LINE dispatch (Leap-C,
+; delta D15: the shell sets EDITOR_NAV_HOOK before every session, so the
+; built-in fallbacks for an unset hook are gone; A = the direction)
+.do_nav_only:
     ld   hl, (EDITOR_NAV_HOOK)
-    ld   a, h
-    or   l
-    jr   nz, .use_nav_hook
-
-    pop  af                         ; no hook set — built-in (currently
-                                    ; no-op) UP/DOWN handling
-    call EDITOR_MOVE_CURSOR
-    call EDITOR_REDRAW_SCREEN
-    jp   EDITOR_LOOP
-
-.use_nav_hook:
-    pop  af                           ; A = EDIR_UP/EDIR_DOWN, for the hook
     ; Z80 has no indirect CALL instruction — only indirect JP. The
     ; standard idiom: push the address we want control to return to,
     ; then JP (HL); the hook's own RET pops that pushed address and
@@ -286,42 +266,6 @@ EDITOR_LOOP:
 .insert_line:
     ld   a, EDIR_INSERT_LINE
     jr   .do_nav_only
-
-.next_error:
-    ld   a, EDIR_NEXT_ERROR
-    jr   .do_nav_only
-
-.prev_error:
-    ld   a, EDIR_PREV_ERROR
-    ; fall through to .do_nav_only
-
-; EDIR_DELETE_LINE/EDIR_INSERT_LINE/EDIR_NEXT_ERROR/EDIR_PREV_ERROR
-; dispatch. Unlike .do_nav above
-; (EDIR_UP/DOWN, which EDITOR_MOVE_CURSOR genuinely implements), these
-; four have NO built-in kernel/editor meaning at all — so unlike
-; .do_nav, there's no fallback to EDITOR_MOVE_CURSOR when no hook is
-; set, just a clean no-op instead. Same indirect-call idiom as .do_nav
-; otherwise (push a return address, then JP (HL) — see that block's
-; own comment for why, Z80 has no indirect CALL).
-.do_nav_only:
-    push af
-    ld   hl, (EDITOR_NAV_HOOK)
-    ld   a, h
-    or   l
-    jr   nz, .use_nav_hook_only
-
-    pop  af                            ; no hook set — genuine no-op
-    jp   EDITOR_LOOP
-
-.use_nav_hook_only:
-    pop  af
-    ld   de, .hook_returned_only
-    push de
-    jp   (hl)
-.hook_returned_only:
-    jr   .hook_returned            ; identical tail to .hook_returned above
-                                   ; (redraw, then back to the loop) — jump
-                                   ; there instead of duplicating it
 
 ; ============================================================================
 ; EDITOR_EXIT
@@ -520,8 +464,9 @@ EDITOR_BACKSPACE:
 
 ; ============================================================================
 ; EDITOR_MOVE_CURSOR
-; Moves the cursor within the current line buffer. LEFT/RIGHT/HOME/END
-; are implemented. UP/DOWN/TOP/BOTTOM need the multi-line scrollable
+; Moves the cursor within the current line buffer. LEFT/RIGHT are
+; implemented (Leap-C, delta D16: no key gives HOME or END, whose cases
+; are gone). UP/DOWN/TOP/BOTTOM need the multi-line scrollable
 ; program view — deliberate no-ops for now, not undefined behaviour.
 ; In:  A = direction (EDIR_* constant)
 ; Out: EDIT_BUF_OFFSET updated (clamped, never past content or below 0)
@@ -532,10 +477,6 @@ EDITOR_MOVE_CURSOR:
     jr   z, .left
     cp   EDIR_RIGHT
     jr   z, .right
-    cp   EDIR_HOME
-    jr   z, .home
-    cp   EDIR_END
-    jr   z, .end
     ret                              ; UP/DOWN/TOP/BOTTOM: no-op, see header
 
 .left:
@@ -565,48 +506,8 @@ EDITOR_MOVE_CURSOR:
     ld   (EDIT_BUF_OFFSET), hl
     ret
 
-.home:
-    ld   hl, 0
-    ld   (EDIT_BUF_OFFSET), hl
-    ret
-
-.end:
-    call EDITOR_SCAN_LEN              ; B = content length
-    ld   h, 0
-    ld   l, b
-    ld   (EDIT_BUF_OFFSET), hl
-    ret
-
-; ============================================================================
-; EDITOR_BLOCK_DELETE
-; Deletes every program line in the inclusive range [HL, DE], addressed by
-; editor line position (0-based index into the visible/logical program,
-; e.g. as set by a mark-start/mark-end selection) rather than by line
-; number — this ROM's BASIC has no line numbers.
-; No-op if the range is empty or out of order. Aborts without changing
-; the program if any label inside the range is still referenced by a
-; GOTO/GOSUB/RESTORE outside it (see docs/basic_language_reference.md,
-; "Label table").
-; In:  HL = first line position, DE = last line position
-; Out: carry clear on success, carry set + program unchanged on abort
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-EDITOR_BLOCK_DELETE:
-    ; Mark-start/mark-end selection mechanism in the editor's input loop
-    ; still doesn't exist (TODO, unchanged) — HL/DE below are shown as
-    ; already-resolved positions for now.
-    ;
-    ; Non-destructive guarantee (see docs/basic_language_reference.md,
-    ; "Label table"): before deleting, check the enclosing scope's label
-    ; table for any label defined inside [HL, DE] that's referenced by a
-    ; GOTO/GOSUB/RESTORE outside the range but still in that scope. This
-    ; check is NOT implemented here or in kernel/memory — scanning
-    ; program text for GOTO/GOSUB/RESTORE references needs a BASIC-syntax
-    ; parser, which is basic/'s job. kernel/memory only has MEM_LABEL_
-    ; LOOKUP against the DEFINITION table; the reference-scan half of
-    ; this guarantee is still an open TODO once basic/ exists, not just
-    ; an implementation detail to fill in here.
-    jp KTAB_MEM_LINE_DELETE_RANGE
+; (EDITOR_BLOCK_DELETE: removed in Leap-C, delta D17; it had no caller. The
+; shell deletes lines through its navigation hook)
 
 ; ============================================================================
 ; EDITOR_REDRAW_SCREEN (internal)
@@ -616,9 +517,9 @@ EDITOR_BLOCK_DELETE:
 ; done by the hardware itself, no interrupt/timer code needed. Full
 ; multi-line scrolling program view is still TODO (see EDITOR_ENTER).
 ;
-; Checks EDITOR_REDRAW_HOOK first: if a caller has set it (nonzero —
-; see that sysvar's comment), control passes there instead of using the
-; default rendering below. A plain JP, not CALL — the hook has the same
+; Leap-C (delta D15): control passes to EDITOR_REDRAW_HOOK, which the
+; shell sets before every session (V2's default rendering for an unset
+; hook is gone). A plain JP, not CALL — the hook has the same
 ; "no input, no output, ret when done" contract as this routine itself,
 ; so whatever called EDITOR_REDRAW_SCREEN in the first place gets
 ; control back correctly once the hook's own RET runs. This is what
@@ -627,26 +528,6 @@ EDITOR_BLOCK_DELETE:
 ; ============================================================================
 EDITOR_REDRAW_SCREEN:
     ld   hl, (EDITOR_REDRAW_HOOK)
-    ld   a, h
-    or   l
-    jr   nz, .use_hook
-
-    call KTAB_GFX_CLS
-    ld   hl, EDIT_LINE_BUF
-    ld   b, 0
-    ld   c, 0
-    call KTAB_GFX_PRINT_STRING
-
-    ld   hl, (EDIT_BUF_OFFSET)
-    ld   b, 0                     ; cursor's fixed row, matches the print
-                                  ; above — both will need to track the
-                                  ; real cursor row once multi-line
-                                  ; scrolling exists
-    ld   c, l                      ; EDIT_BUF_OFFSET fits in one byte
-                                  ; (max 127, column is 0-31 anyway)
-    jp KTAB_GFX_INVERT_ATTR
-
-.use_hook:
     jp   (hl)                     ; Home address — safe regardless of
                                   ; chunk 6's own paging state, see this
                                   ; file's own header

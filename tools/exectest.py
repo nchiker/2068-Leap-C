@@ -40,7 +40,12 @@ Phase 3 (the library and the runtime):
   // breakdeferred                 ... and NOBRK was above 0 (the request waited for the section's end)
 Phase 4 (memory layout):
   // stacklow: ADDR                the run writes no byte of $F400-$FEFF below ADDR (a canary fills
-                                   that range before the run; image region 3 must be unused)
+                                   that range before the run; image region 3 must be unused, or hold a
+                                   library: then from $F800)
+Phase 10 (loaded libraries):
+  // library: NAME                 the library build/libs/NAME.bin (tools/lib2tape.py) is in image region 3
+                                   and LIB_LOADED set before the compile, as LIB "NAME" leaves them; its
+                                   labels are the symbols lib:LABEL (break: at, breakpc:)
 After every run: IX is the caller's again (a sentinel), SP is back above the return slot, and the
 line store (the source) is unchanged.
 
@@ -70,7 +75,7 @@ def parse_case(path):
     exp = []
     for l in text.split("\n"):
         s = l.strip()
-        m = re.match(r"//\s*(expect|mem|golden|maxi|rundepth|region):\s*(.*)$", s) or \
+        m = re.match(r"//\s*(expect|mem|golden|maxi|rundepth|region|library):\s*(.*)$", s) or \
             re.match(r"//\s*(screen|keys|rtline|ay|attr|pixel|break|cell|breakpc|stacklow):\s*(.*)$", s) or \
             re.match(r"//\s*(noaudit|breakdeferred)()\s*$", s)
         if m:
@@ -179,22 +184,24 @@ CANARY = 0xA5
 
 
 def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=True, depth=0, keys=None,
-                    brk=None, stack_canary=False, invariants=False, canary=False, shell=None):
+                    brk=None, stack_canary=False, invariants=False, canary=False, shell=None, library=None):
     """restore=False: keep the machine as the previous run left it (recovery tests). depth=1: run
     with the EXROM paged in, as the shell does (RT_RUN pages it out and back). keys: the keyboard
     feed (parse_keys). brk: ("at", symbol, n) or ("after", n): BREAK pressed then.
     invariants: arm the banking invariants (memguard) for the compile and the run; a violation ends
     the case with res.violation. canary: the RAM canary (memguard.Canary): res.canary_hits (the
-    compile's and the run's) and res.stack_lows."""
+    compile's and the run's) and res.stack_lows. library (Phase 10): the library loaded first (Machine.lib_load)."""
     from lcharness import STOP_ADDR
     if shell is not None:
-        return shell_run(m, shell, lines, maxi, audit, keys, brk, stack_canary, invariants)
+        return shell_run(m, shell, lines, maxi, audit, keys, brk, stack_canary, invariants, library)
     S = m.sym
     res = Result()
     res.audit = []
     if restore:
         m.restore()
     m.put_store(c2src.records(lines))
+    if library:
+        m.lib_load(library)
     src0 = m.read(m.sym("PROG_AREA_START"), m.w16(m.sym("PROG_END")) - m.sym("PROG_AREA_START"))
     r = m.call("BANK_PAGE_EXROM_OUT", maxi=100_000)
     assert r["ok"], "BANK_PAGE_EXROM_OUT did not return"
@@ -224,19 +231,20 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
         res.mem = mem
         return res
     # the program's functions in allocation order (image regions 1, 2, 3, 4: region 4 lies below region 1,
-    # so the order is the address less $C000, modulo 64 K); library functions (ROM addresses) are not
-    funcs = sorted(((alloc_order(e.val), e) for e in res.globals if e.kind == 2 and e.flags & 8 and e.val >= 0x6000),
-                   key=lambda t: t[0])
+    # so the order is the address less $C000, modulo 64 K); library functions (ROM addresses, a loaded library's
+    # in region 3) are not
+    funcs = program_functions(res.globals, library)
     if guard:                                   # (chunk 6 is RAM now: ZRCP writes what is mapped)
         guard.before_run(hires_ok=any("mode(" in l for l in lines))
     if depth:
         r = m.call("BANK_PAGE_EXROM_IN", maxi=100_000)
         assert r["ok"], "BANK_PAGE_EXROM_IN did not return"
     res.stack_low = None
+    canary_lo = 0xF800 if library else STACK_CANARY[0]
     if stack_canary:
-        lim = S("IMG_LIM") + 8                  # region 3 [low][high] must be [base][end]: unused
-        assert (mem.w(lim), mem.w(lim + 2)) == (0xF400, 0xF800), "stacklow: image region 3 is in use"
-        m.write(STACK_CANARY[0], bytes([CANARY]) * (STACK_CANARY[1] - STACK_CANARY[0]))
+        lim = S("IMG_LIM") + 8                  # region 3 [low][high] must be [base][end]: unused, or a library's
+        assert library or (mem.w(lim), mem.w(lim + 2)) == (0xF400, 0xF800), "stacklow: image region 3 is in use"
+        m.write(canary_lo, bytes([CANARY]) * (STACK_CANARY[1] - canary_lo))
     m.setreg("IX", SENTINEL_IX)
     pc, pressed = run_loop(m, res, funcs, STOP_ADDR, maxi, audit, keys, brk, start=lambda st, n: call_to(m, "RT_RUN", st, n))
     res.run_t = m.tstates()
@@ -246,8 +254,8 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
             res.violation += ["run: " + v for v in memguard.fired(m)]
         memguard.arm(m, False)
     if stack_canary:
-        d = m.read(STACK_CANARY[0], STACK_CANARY[1] - STACK_CANARY[0])
-        res.stack_low = next((STACK_CANARY[0] + i for i, x in enumerate(d) if x != CANARY), None)
+        d = m.read(canary_lo, STACK_CANARY[1] - canary_lo)
+        res.stack_low = next((canary_lo + i for i, x in enumerate(d) if x != CANARY), None)
     if pressed:
         press_break(m, False)
     rg = m.regs()
@@ -279,7 +287,13 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
 
 
 
-def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants):
+def program_functions(globals_, library):
+    """The program's defined functions in allocation order: not the ROM's, nor a loaded library's."""
+    return sorted(((alloc_order(e.val), e) for e in globals_ if e.kind == 2 and e.flags & 8 and e.val >= 0x6000
+                   and not (library and 0xF400 <= e.val < 0xF800)), key=lambda t: t[0])
+
+
+def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants, library=None):
     """compile_and_run's shell path (Phase 6): the source injected, the editor on the append line,
     `run` typed and ENTER through the ISR's latch; the compile and the run are the shell's own
     (SH_COMPILE from paging depth 1, RT_RUN from SH_RUN). After the run, the program's screen and
@@ -293,6 +307,8 @@ def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants):
     res.ran = res.forced_break = False
     res.stack_low = None
     sh.load(lines, len(lines))
+    if library:
+        m.lib_load(library)
     base = S("PROG_AREA_START")
     src0 = m.read(base, m.w16(S("PROG_END")) - base)
     for ch in "run":
@@ -320,16 +336,16 @@ def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants):
         memguard.arm(m, False)
         return res
     if not res.errnum:
-        funcs = sorted(((alloc_order(e.val), e) for e in res.globals if e.kind == 2 and e.flags & 8 and e.val >= 0x6000),
-                       key=lambda t: t[0])
+        funcs = program_functions(res.globals, library)
         pc = m.run_to([S("RT_RUN")], 10_000_000)
         assert pc == S("RT_RUN"), "SH_RUN did not reach RT_RUN (PC=%04X)" % pc
         rg = m.regs()
         res.sp_expected = rg["SP"]              # (at RT_RUN's `ret`: the run's end, in HOME)
+        canary_lo = 0xF800 if library else STACK_CANARY[0]
         if stack_canary:
-            lim = res.limits[2]                 # region 3 [low][high] must be [base][end]: unused
-            assert lim == (0xF400, 0xF800), "stacklow: image region 3 is in use"
-            m.write(STACK_CANARY[0], bytes([CANARY]) * (rg["SP"] - STACK_CANARY[0]))
+            lim = res.limits[2]                 # region 3 [low][high] must be [base][end]: unused, or a library's
+            assert library or lim == (0xF400, 0xF800), "stacklow: image region 3 is in use"
+            m.write(canary_lo, bytes([CANARY]) * (rg["SP"] - canary_lo))
         m.setreg("IX", SENTINEL_IX)
         end = S("RT_RUN.leave")                 # (SH_RUN.rtdone is in the EXROM: chunk 6)
         pc, pressed = run_loop(m, res, funcs, end, maxi, audit, keys, brk,
@@ -345,8 +361,8 @@ def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants):
             pressed = res.forced_break = True
             pc = m.run_to([end], 20_000_000)
         if stack_canary:
-            d = m.read(STACK_CANARY[0], res.sp_expected - STACK_CANARY[0])
-            res.stack_low = next((STACK_CANARY[0] + i for i, x in enumerate(d) if x != CANARY), None)
+            d = m.read(canary_lo, res.sp_expected - canary_lo)
+            res.stack_low = next((canary_lo + i for i, x in enumerate(d) if x != CANARY), None)
         if pressed:
             press_break(m, False)
         rg = m.regs()
@@ -458,8 +474,9 @@ def expected_report(m, res, lines):
     S = m.sym
     if res.errnum:
         row = "LINE %d" % res.errline if res.errline else ""
-        if res.errnum == ER["E_UNDECL"] and row:
-            row += "  '%s'" % undeclared_name(m, lines)[:UNDECL_NAME_MAX]
+        named = [ER[n] for n in ("E_REDECL", "E_REDEF", "E_UNDECL", "E_MEMBER", "E_UNDEFFN", "E_UNDEFLABEL")]
+        if res.errnum in named and row and m.read(m.sym("NM_LEN"), 1)[0]:
+            row += "  '%s'" % undeclared_name(m, lines, res.errline)[:UNDECL_NAME_MAX]
         return (gen_diag.report("E", res.errnum), row)
     if res.a:
         line = "LINE %d" % res.rtline if res.rtline else ""
@@ -471,14 +488,17 @@ def expected_report(m, res, lines):
 UNDECL_NAME_MAX = 15                        # the shell shows at most 15 characters (SH_NAME_MAX)
 
 
-def undeclared_name(m, lines):
-    """The name an UNDECLARED IDENTIFIER report shows (Phase 9): the compiler's NM, which must be a
-    whole word of the source (the use, or a macro's body); otherwise a marker that fails the check."""
+def undeclared_name(m, lines, line=None):
+    """The name a report shows (Phase 9: UNDECLARED IDENTIFIER; Phase 10: errors 21, 22, 52, 70, 76): the
+    compiler's NM, which must be a whole word of the error's line, or of a #define line (a macro's body);
+    otherwise a marker that fails the check."""
     S = m.sym
     name = m.read(m.w16(S("NM_PTR")), m.read(S("NM_LEN"), 1)[0]).decode("latin-1")
+    where = lines if not line or line > len(lines) else \
+        [lines[line - 1]] + [l for l in lines if l.lstrip().startswith("#") and "define" in l]
     ok = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,30}", name) and any(
-        re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), l) for l in lines)
-    return name if ok else "<NM %r is no word of the source>" % name
+        re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), l) for l in where)
+    return name if ok else "<NM %r is no word of line %s or a #define>" % (name, line)
 
 
 def image_size(limits):
@@ -488,6 +508,8 @@ def image_size(limits):
         used = (end - base) - (high - low)
         if k == 3 and low == high:              # region 4 reserved by #pragma hires: its data only
             used = end - high
+        if k == 2 and low == high == end:       # region 3 closed by a loaded library (Phase 10): nothing
+            used = 0
         total += used
     return total
 
@@ -555,7 +577,8 @@ def check_case(m, path, guards=False, shell=None, invariants=None):
     run = run or "stacklow" in keys
     res = compile_and_run(m, lines, maxi=maxi, audit="noaudit" not in keys, run=run, depth=depth,
                           keys=kfeed, brk=brk, stack_canary="stacklow" in keys and not guards,
-                          invariants=guards if invariants is None else invariants, canary=guards, shell=shell)
+                          invariants=guards if invariants is None else invariants, canary=guards, shell=shell,
+                          library=dict(exp).get("library"))
     if shell is not None:
         depth = 1                               # (the shell runs programs from paging depth 1)
     msgs = []
