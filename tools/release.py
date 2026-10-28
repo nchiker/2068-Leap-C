@@ -7,10 +7,13 @@
                                    as tests/doc/ holds them) and the hardware check programs (tapes/checks/, the kit's)
                                    as .tap and .tzx, the shapes library's tapes and source (libs/), the beta's guides
                                    (docs/: EMULATORS, USER_GUIDE, BETA_TESTING, EXAMPLES, and their pictures), LICENSE,
-                                   NOTICE, TAPES.md (what each tape is) and SHA256SUMS (every file)
+                                   NOTICE, TAPES.md (what each tape is) and SHA256SUMS (every file); and the user's
+                                   manual in Word (docs/: MANUAL's .docx and .doc, make manual)
   leapc-VERSION-hardware-kit.zip   build/kit (EPROM images with Intel HEX, the tapes as .tap/.tzx/.wav, the checklist,
                                    the emulators' results, CHECKSUMS.txt), LICENSE and NOTICE
-  SHA256SUMS                       the two zips
+  2068_Leap-C_Users_Manual.docx    the user's manual, Word edition (docs/manual/, make manual), and its Word 97
+  2068_Leap-C_Users_Manual.doc     edition: also published on their own
+  SHA256SUMS                       the two zips and the two manuals
 
 The leapc_exrom.dck cartridge is left out: ZEsarUX refuses it (it takes only DOCK-bank cartridges; docs/EMULATORS.md
 section 10) and it was never tested elsewhere. The zips are reproducible: sorted entries, fixed times and modes, so
@@ -36,6 +39,7 @@ BUILD = os.path.join(ROOT, "build")
 OUT = os.path.join(BUILD, "release")
 STAMP = (2026, 10, 22, 0, 0, 0)                 # every zip entry's time (reproducible zips)
 DOCS = ["EMULATORS.md", "USER_GUIDE.md", "BETA_TESTING.md", "EXAMPLES.md"]
+MANUALS = ["2068_Leap-C_Users_Manual.docx", "2068_Leap-C_Users_Manual.doc"]   # the Word editions (make manual)
 EXAMPLE_SETS = [("examples_", "ex", "example", "docs/EXAMPLES.md"), ("user_guide_", "ug", "guide", "docs/USER_GUIDE.md")]
 CHECKS = [("h1_hello", "H1", "hello"), ("h2_keys", "H2", "keys"), ("h3_hz60", "H3", "hz60"), ("h4_cont1", "H4", "cont1"),
           ("h5_cont4", "H5", "cont4"), ("h6_float", "H6", "float"), ("h7_sound", "H7", "sound"), ("h8_brk", "H8", "brk"),
@@ -104,7 +108,7 @@ def emulator_pack(version):
         files["libs/shapes" + ext] = open(os.path.join(BUILD, "libs", "shapes" + ext), "rb").read()
     files["libs/shapes.asm"] = open(os.path.join(ROOT, "libs", "shapes.asm"), "rb").read()
     files["TAPES.md"] = "\n".join(rows).encode()
-    for d in DOCS:
+    for d in DOCS + MANUALS:
         files["docs/" + d] = open(os.path.join(ROOT, "docs", d), "rb").read()
     for img in sorted(os.listdir(os.path.join(ROOT, "docs", "images"))):
         files["docs/images/" + img] = open(os.path.join(ROOT, "docs", "images", img), "rb").read()
@@ -112,6 +116,7 @@ def emulator_pack(version):
         files[f] = open(os.path.join(ROOT, f), "rb").read()
     files["README.txt"] = ("Leap-C %s: the emulator pack\n\n"
                            "Start with docs/EMULATORS.md (setting up Fuse, ZEsarUX or TSRun), then docs/USER_GUIDE.md.\n"
+                           "The full user's manual is docs/2068_Leap-C_Users_Manual.docx (Word; .doc for older Word).\n"
                            "docs/BETA_TESTING.md says what to test and how to report it.\n"
                            "roms/  the ROM images; tapes/  programs to LOAD (TAPES.md lists them); libs/  the shapes library.\n"
                            "Links in the documents to other files of the project point into the repository:\n"
@@ -140,6 +145,9 @@ def main():
     for need in ("leapc_home.bin", "libs/shapes.tzx", "kit/CHECKSUMS.txt"):
         if not os.path.exists(os.path.join(BUILD, need)):
             sys.exit("release: build/%s is missing (make build and make kit first)" % need)
+    for m in MANUALS:
+        if not os.path.exists(os.path.join(ROOT, "docs", m)):
+            sys.exit("release: docs/%s is missing (make manual first)" % m)
     shutil.rmtree(OUT, ignore_errors=True)
     os.makedirs(OUT)
     names = []
@@ -148,6 +156,9 @@ def main():
         write_zip(os.path.join(OUT, top + ".zip"), top, files)
         names.append(top + ".zip")
         print("release: %s.zip, %d files" % (top, len(files)))
+    for m in MANUALS:
+        shutil.copyfile(os.path.join(ROOT, "docs", m), os.path.join(OUT, m))
+        names.append(m)
     sums = "".join("%s  %s\n" % (sha(open(os.path.join(OUT, n), "rb").read()), n) for n in names)
     open(os.path.join(OUT, "SHA256SUMS"), "w").write(sums)
     print(sums, end="")
