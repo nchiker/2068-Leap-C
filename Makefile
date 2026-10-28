@@ -42,7 +42,7 @@
 #                       repository through `git archive` (the cross-version tape tests)
 # Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
 .PHONY: all build prod testimg libs check budget inventory test test-fast canary capacity repro audit v2ref clean \
-	fuse timing poweron kit qualify release tapetol provenance
+	fuse timing poweron kit qualify release tapetol provenance manual
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -119,6 +119,11 @@ poweron: build
 
 kit: build
 	python3 tools/hwkit.py
+
+# The Word editions of the user's manual (docs/manual/*.md -> docs/2068_Leap-C_Users_Manual.docx and .doc).
+manual:
+	python3 tools/build_manual_docx.py
+	python3 tools/build_manual_doc.py
 
 release: kit
 	python3 tools/release.py

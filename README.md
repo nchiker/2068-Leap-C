@@ -44,6 +44,7 @@ Then read the [user guide](docs/USER_GUIDE.md), try the [examples](docs/EXAMPLES
 | | |
 |---|---|
 | [docs/EMULATORS.md](docs/EMULATORS.md) | setting up Fuse, ZEsarUX and TSRun on Windows, macOS and Linux; the PC keyboard; tapes; troubleshooting |
+| [docs/USER_MANUAL.md](docs/USER_MANUAL.md) | the full user's manual in eight parts: a beginner's guide to C, keywords, the library and concepts A to Z, examples, appendices; also in Word |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | the editor, the commands, the C you can use, the library, errors, limits |
 | [docs/EXAMPLES.md](docs/EXAMPLES.md) | Leap-C by example: 27 short programs (every one is a test) |
 | [docs/BETA_TESTING.md](docs/BETA_TESTING.md) | what to test, how to report, known limitations |
