@@ -1,6 +1,6 @@
 # Running Leap-C in an emulator
 
-Leap-C is a pair of replacement ROMs for the Timex Sinclair 2068: a C editor and compiler instead of TS2068 BASIC. To try it you need an emulator of the TS2068 and the ROM files from the emulator pack (`leapc-1.0.0-beta.2-emulators.zip`). This page tells you how to set up each emulator on Windows, macOS and Linux, what a correct start looks like, how to type C on a PC keyboard, and how to use tapes.
+Leap-C is a pair of replacement ROMs for the Timex Sinclair 2068: a C editor and compiler instead of TS2068 BASIC. To try it you need an emulator of the TS2068 and the ROM files from the emulator pack (`leapc-1.0.0-emulators.zip`). This page tells you how to set up each emulator on Windows, macOS and Linux, what a correct start looks like, how to type C on a PC keyboard, and how to use tapes.
 
 **Which emulator?**
 

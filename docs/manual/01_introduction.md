@@ -2,7 +2,7 @@
 
 **For the Timex Sinclair 2068 with the Leap-C ROMs.**
 
-*Edition for release 1.0.0-beta.2.* This manual describes 1.0.0-beta.2, the current public beta. It is emulator-qualified: it has been tested on Fuse 1.9.1 and on ZEsarUX 13.0 (with a small patch), and it has **not yet been run on a physical TS2068**. Where something depends on real hardware, the manual says so.
+*Edition for release 1.0.0.* This manual describes Leap-C 1.0.0. It is emulator-qualified: it has been tested on Fuse 1.9.1 and on ZEsarUX 13.0 (with a small patch), and it has **not yet been run on a physical TS2068**. Where something depends on real hardware, the manual says so.
 
 ---
 
@@ -41,7 +41,7 @@ Leap-C is built on the platform of 2068-Leap V2, a BASIC for the same machine. I
 
 ## The status of this release
 
-Release 1.0.0-beta.2 is a **public beta**. It is feature-complete for release 1, and it has been tested by thousands of automated tests on two emulators: Fuse 1.9.1 and ZEsarUX 13.0 (with a patch). It has **not been run on a physical TS2068**, a real cassette recorder or a real keyboard. Your reports come before release 1.0; [BETA_TESTING.md](../BETA_TESTING.md) says what to try and how to report.
+Release 1.0.0 is the first release, after two public betas. It has been tested by thousands of automated tests on two emulators: Fuse 1.9.1 and ZEsarUX 13.0 (with a patch). It has **not been run on a physical TS2068**, a real cassette recorder or a real keyboard; reports from real machines are very welcome ([BETA_TESTING.md](../BETA_TESTING.md) says what to try and how to report).
 
 Every complete program in this manual that carries `// expect:` lines is an automated test. The build compiles and runs it on the ROMs and checks that it does what its comments say (see [Appendix I](08_appendices.md)).
 
@@ -49,7 +49,7 @@ Every complete program in this manual that carries `// expect:` lines is an auto
 
 **In a web browser.** The quickest way: open <https://nchiker.github.io/TSRun/?rom=leapc>. You get the TS2068 with Leap-C, with nothing to install. Tapes do not load there.
 
-**On an emulator.** Download `leapc-1.0.0-beta.2-emulators.zip` from the [releases page](https://github.com/nchiker/2068-Leap-C/releases). It holds three ROM files:
+**On an emulator.** Download `leapc-1.0.0-emulators.zip` from the [releases page](https://github.com/nchiker/2068-Leap-C/releases). It holds three ROM files:
 
 | File | What it is | Used by |
 |---|---|---|

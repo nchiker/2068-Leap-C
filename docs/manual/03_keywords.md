@@ -1,6 +1,6 @@
 # Part 3 -- Keywords
 
-Every keyword, directive, operator and command of Leap-C 1.0.0-beta.2, in alphabetical order. The 32 reserved words of C89 each have an entry, including the three that Leap-C does not support. Operators are grouped by kind (`Arithmetic operators`, `Bitwise operators` and so on), with a table of their precedence under `Operator precedence`. The commands you type on the editor's last line (`FREE`, `LIB`, `LIST`, `LOAD`, `NEW`, `RUN`, `SAVE`, `VERIFY`) are entered in the same alphabetical order. The functions of the built-in library, such as `printf` and `plot`, are in [Part 4](04_library.md).
+Every keyword, directive, operator and command of Leap-C 1.0.0, in alphabetical order. The 32 reserved words of C89 each have an entry, including the three that Leap-C does not support. Operators are grouped by kind (`Arithmetic operators`, `Bitwise operators` and so on), with a table of their precedence under `Operator precedence`. The commands you type on the editor's last line (`FREE`, `LIB`, `LIST`, `LOAD`, `NEW`, `RUN`, `SAVE`, `VERIFY`) are entered in the same alphabetical order. The functions of the built-in library, such as `printf` and `plot`, are in [Part 4](04_library.md).
 
 ## How to read an entry
 
