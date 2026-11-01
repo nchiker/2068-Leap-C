@@ -33,6 +33,8 @@ import subprocess
 import sys
 import zlib
 
+PORT = 10856                    # ZEsarUX's remote port for --verify (--port)
+
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -172,7 +174,7 @@ def zesarux_verify(soak_frames):
     from lcharness import Machine
     from shelltest import Shell, ENTER
     import tapetest
-    m = Machine(BUILD, 10856)
+    m = Machine(BUILD, PORT)
     out = {}
     try:
         m.start()
@@ -325,7 +327,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--soak-minutes", type=int, default=10)
+    ap.add_argument("--port", type=int, default=10856)     # ZEsarUX's remote port for --verify (make qualify: QUALIFY_PORT)
     a = ap.parse_args()
+    global PORT
+    PORT = a.port
     made = build_kit()
     print("hwkit: %s: 2 EPROM images, %d tapes (.tap, .tzx, .wav)" % (os.path.relpath(KIT, ROOT), len(made)))
     if not a.verify:
