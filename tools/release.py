@@ -2,7 +2,8 @@
 """The release assets (Phase 11, the public beta): two zips in build/release/, built from build/ (make build, make kit).
 
   leapc-VERSION-emulators.zip      the emulator pack: the ROM images (roms/: leapc_zesarux.bin for ZEsarUX,
-                                   leapc_home.bin and leapc_exrom.bin for Fuse and TSRun), the documents' example
+                                   leapc_home.bin and leapc_exrom.bin for Fuse and TSRun), their symbol files (symbols/: the
+                                   labels and cells hosts such as the Leap IDE drive the ROM by), the documents' example
                                    programs (tapes/examples/: exNN from docs/EXAMPLES.md, ugNN from docs/USER_GUIDE.md,
                                    as tests/doc/ holds them) and the hardware check programs (tapes/checks/, the kit's)
                                    as .tap and .tzx, the shapes library's tapes and source (libs/), the beta's guides
@@ -75,6 +76,8 @@ def emulator_pack(version):
     files = {}
     for f in ("leapc_home.bin", "leapc_exrom.bin", "leapc_zesarux.bin"):
         files["roms/" + f] = open(os.path.join(BUILD, f), "rb").read()
+    for f in ("leapc_home.sym", "leapc_exrom.sym"):   # the ROMs' labels, for hosts that drive the ROM by name
+        files["symbols/" + f] = open(os.path.join(BUILD, f), "rb").read()
     rows = ["# The tapes in this pack", "",
             "Each program tape loads with `LOAD \"\"` (or `LOAD \"name\"` with the tape name below); "
             "a library tape with `LIB \"shapes\"`. docs/EMULATORS.md section 7 says how to play a tape in each emulator. "
@@ -118,7 +121,7 @@ def emulator_pack(version):
                            "Start with docs/EMULATORS.md (setting up Fuse, ZEsarUX or TSRun), then docs/USER_GUIDE.md.\n"
                            "The full user's manual is docs/2068_Leap-C_Users_Manual.docx (Word; .doc for older Word).\n"
                            "docs/BETA_TESTING.md says what to test and how to report it.\n"
-                           "roms/  the ROM images; tapes/  programs to LOAD (TAPES.md lists them); libs/  the shapes library.\n"
+                           "roms/  the ROM images; symbols/  their labels (.sym); tapes/  programs to LOAD (TAPES.md lists them); libs/  the shapes library.\n"
                            "Links in the documents to other files of the project point into the repository:\n"
                            "https://github.com/nchiker/2068-Leap-C\n"
                            "SHA256SUMS lists every file's SHA-256. Licence: LICENSE (MIT) and NOTICE.\n" % version).encode()

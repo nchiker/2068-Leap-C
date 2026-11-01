@@ -408,6 +408,7 @@ STMT_DO:
     ld   hl, (CG_PC)
     push hl                            ; [the top]
     call STATEMENT
+.cond:                                 ; (hosts: TOK_LINE = the `while` line, CG_PC = the condition's code)
     ld   a, (TOK_KIND)
     cp   TK_WHILE
     jp   nz, CC_E_SYNTAX

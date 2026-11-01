@@ -322,6 +322,7 @@ SH_WAIT_KEY:
     ld   (KBD_KEYHIT), a               ; (A = 0)
 .read:                                 ; (the test harness knows a report's key wait by this call)
     call IO_READ_KEY
+.key_ret:                              ; (hosts: this return address at SP in IO_READ_KEY = the report's wait)
     or   a
     ret
 
