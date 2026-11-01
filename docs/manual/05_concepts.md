@@ -47,7 +47,7 @@ One object, array or not, must fit in one region of the compiled image: the larg
 
 ## BREAK
 
-BREAK is **CAPS SHIFT + SPACE**. Hold both keys while a program is running and it stops. The report rows show `BREAK` and `LINE m`, and when you press a key the editor comes back with your program exactly as it was, the cursor on line *m*: the line where the function that was running starts.
+BREAK is **CAPS SHIFT + SPACE**. Hold both keys while a program is running and it stops. The report shows `BREAK`, and when you press a key the editor comes back with your program exactly as it was, the cursor at the start of the line where the function that was running starts. The status row's `LINE n/m` gives its number.
 
 BREAK works anywhere a program can be: in a tight loop, in `pause()`, during a `beep()`, in `getkey()` and `gets()`, in the middle of a calculation. A BREAK that falls inside one of the ROM's own short uninterruptible sections (a `beep()`, a floating-point operation, a tape transfer) waits until that section ends, which is at once for a person.
 
@@ -117,19 +117,18 @@ Leap-C is a **compiler**. Your program is kept as plain text: the lines exactly 
 1. shows `COMPILING` on the status row;
 2. reads the whole text and translates it into **Z80 machine code**, in memory (the *image*);
 3. clears the screen, starts the program at `main`, and runs it at the full speed of the machine;
-4. when the program ends, leaves its screen as it is and shows a **report** on rows 22 and 23 until you press a key.
+4. when the program ends, leaves its screen as it is and shows a **report** on row 23 until you press a key.
 
 ```
 Hello, TS2068!
 
 ...
 EXIT 0
-IMAGE 39 B  HEAP 18340 B
 ```
 
-`EXIT 0` is the value `main` returned (or the argument of `exit()`), shown as a signed number; a `void main` shows `EXIT 0`. `IMAGE` is the size of the compiled program, its code and its static data together; `HEAP` is the largest block `malloc()` could give the program (see [Heap](#heap)). The command `FREE` shows the same two figures for the last compile, and how much room is left for the source (see [Memory](#memory)).
+`EXIT 0` is the value `main` returned (or the argument of `exit()`), shown as a signed number; a `void main` shows `EXIT 0`. The command `FREE` shows the size of the source and how much room is left for it (see [Memory](#memory)).
 
-**The compile stops at the first error.** There is no list of errors: the report is `ERROR n: MESSAGE` with the line, the editor comes back with the cursor at the place where the compiler gave up, and you correct that one and run again. Nothing has been executed, so there is nothing to undo.
+**The compile stops at the first error.** There is no list of errors: the report is `ERROR n MESSAGE`, the editor comes back with the cursor at the place where the compiler gave up, and you correct that one and run again. Nothing has been executed, so there is nothing to undo.
 
 ```c
 // expect: error E_UNDECL 4
@@ -143,9 +142,9 @@ Only the first of the two mistakes, the undeclared `a`, is reported. See [Errors
 
 **The image is not saved.** The compiled code is built again at every `RUN` and thrown away when you edit; `SAVE` writes only the source text. The source is what `LIST` shows, so the program always appears as you wrote it.
 
-**Compile speed** is about 13 ms per line (13.4 ms over the test corpus), so a program of 50 lines compiles in under a second, and an 850-line program, the largest typical one, in about 11 seconds.
+**Compile speed** varies with the program. The typical program of the capacity measurements, 851 lines, compiles at 8.83 ms per line, in about 7.5 seconds; the test corpus, 14,353 lines of short test programs, averages about 13.7 ms per line. A program of 50 lines compiles in under a second.
 
-**Where the code goes.** The compiler fills four regions of memory in order, code from the bottom up and data from the top down. If the program does not fit in all four, the compile stops with `ERROR 101: PROGRAM TOO BIG`; if the source and the compiler's tables do not fit together, with `ERROR 100: OUT OF MEMORY`. Both are explained in [Memory](#memory).
+**Where the code goes.** The compiler fills four regions of memory in order, code from the bottom up and data from the top down. If the program does not fit in all four, the compile stops with `ERROR 101 PROGRAM TOO BIG`; if the source and the compiler's tables do not fit together, with `ERROR 100 OUT OF MEMORY`. Both are explained in [Memory](#memory).
 
 **See also** [Errors](#errors), [Memory](#memory), [Programs](#programs), `RUN` and `FREE` in [Part 3](03_keywords.md#run).
 
@@ -189,7 +188,7 @@ Here `a < b` is false because `b` is unsigned and so `a` is converted to 65535, 
 
 ## Differences from standard C
 
-Leap-C compiles a **subset of C89** (ANSI C), roughly Small-C plus `unsigned`, `struct`, `enum`, `typedef`, function pointers, multi-dimensional arrays and `float`. Whatever is outside the subset is a compile error, `ERROR 1: NOT SUPPORTED`, and never a silent miscompilation. These are the places where Leap-C differs from the C you may know:
+Leap-C compiles a **subset of C89** (ANSI C), roughly Small-C plus `unsigned`, `struct`, `enum`, `typedef`, function pointers, multi-dimensional arrays and `float`. Whatever is outside the subset is a compile error, `ERROR 1 NOT SUPPORTED`, and never a silent miscompilation. These are the places where Leap-C differs from the C you may know:
 
 | | Standard C | Leap-C |
 |---|---|---|
@@ -203,6 +202,7 @@ Leap-C compiles a **subset of C89** (ANSI C), roughly Small-C plus `unsigned`, `
 | standard library | `stdio.h`, `stdlib.h`, `string.h` ... | only the built-in library of [Part 4](04_library.md): no `scanf`, `fopen`, `atof`, `qsort` |
 | `#include` | needed for the library | not needed: `printf` and the rest are built in; `#include <leap.h>` is accepted and does nothing; any other `#include` is not supported |
 | preprocessor | `#if`, `#ifdef`, `#error`, function-like macros | only `#define NAME text`, `#undef` and `#pragma hires` |
+| `NULL` | defined by `stddef.h`, `stdio.h` and others | **predefined** as `0`, with no `#include`; a program may `#define NULL` once itself (its definition replaces the predefined one) or `#undef NULL`. Nothing else is predefined: no `EOF`, `RAND_MAX`, `size_t` |
 | redefining a macro | allowed if identical | `ALREADY DEFINED`, even with the same text: `#undef` it first |
 | `//` comments | C99 | accepted (a Leap-C extension) |
 | `printf` | `%e`, `%g`, flags, precision | `%d %u %x %c %s %%`, `%f` and `%.Nf`, and a width; **no flags** (`- 0 + #`), no `%e` or `%g`; any other letter prints the next argument as a character; the return value is undefined |
@@ -236,14 +236,13 @@ Some things you may expect that **do** work: the whole of C89's expression opera
 
 There are two kinds.
 
-**Compile errors** are found by `RUN` **before anything runs**. The compile stops at the first one. The report rows show
+**Compile errors** are found by `RUN` **before anything runs**. The compile stops at the first one. The report shows
 
 ```
-ERROR 23: UNDECLARED IDENTIFIER
-LINE 5  'cont'
+ERROR 23 UNDECLARED IDENTIFIER
 ```
 
-the number and message, and the line (counted from 1, the first line of the program). For the errors about a name (21 `REDECLARED`, 22 `ALREADY DEFINED`, 23 `UNDECLARED IDENTIFIER`, 52 `NO SUCH MEMBER`, 70 `UNDEFINED FUNCTION` and 76 `UNDEFINED LABEL`) the report also gives the name, its first 15 characters. Press a key (once every key is up; see [The editor](#the-editor)) and the editor comes back with that line on the screen and the cursor **at the place where the compiler stopped**: just after the offending word, or at the end of the line when something is missing (a forgotten `;` belongs at the end of its line). When the parser expects a token and finds another, the error is reported at the line of the *previous* token, so a statement without its `;` is reported on its own line, not on the next.
+the number and message, on one row. **The report gives no line: the cursor does.** Press a key (once every key is up; see [The editor](#the-editor)) and the editor comes back with the line of the error on the screen and the cursor **at the place where the compiler stopped**: just after the offending word, or at the end of the line when something is missing (a forgotten `;` belongs at the end of its line). The status row then shows `LINE n/m`, and *n* is the line of the error, counted from 1, the first line of the program. When the parser expects a token and finds another, the error is reported at the line of the *previous* token, so a statement without its `;` is reported on its own line, not on the next.
 
 ```c
 // expect: error E_UNDECL 5
@@ -254,16 +253,15 @@ int main(void)
 }
 ```
 
-reports `ERROR 23: UNDECLARED IDENTIFIER`, `LINE 5  'cont'`, with the cursor just after `cont`. (Without the `// expect` line the same mistake is on line 4.)
+reports `ERROR 23 UNDECLARED IDENTIFIER`; after the key the cursor is just after `cont` and the status row shows `LINE 5/6`. (Without the `// expect` line the same mistake is on line 4.)
 
-**Runtime errors** happen while the program is running. The program stops, the screen keeps what the program drew, and the report rows show
+**Runtime errors** happen while the program is running. The program stops, the screen keeps what the program drew, and the report shows
 
 ```
-RUNTIME ERROR 4: BAD ARGUMENT
-LINE 3
+RUNTIME ERROR 4 BAD ARGUMENT
 ```
 
-The line is where the **function that failed starts** (its first line), not the statement that failed; this is the line where the cursor lands, in column 0, when you press a key. If the place cannot be told (a failure in part of a function that runs on in the last image region), the report gives no line.
+When you press a key the cursor lands in column 0 of the line where the **function that failed starts** (its first line), not on the statement that failed, and the status row gives that line's number. If the place cannot be told (a failure in part of a function that runs on in the last image region), the cursor stays where it was.
 
 ```c
 // expect: rterror 4
@@ -279,7 +277,7 @@ int main(void)
 }
 ```
 
-The register number 99 is checked, so `sound()` stops the program with runtime error 4; the line reported is 3, where `bad` starts.
+The register number 99 is checked, so `sound()` stops the program with runtime error 4; the cursor goes to line 3, where `bad` starts.
 
 The six runtime errors:
 
@@ -453,7 +451,7 @@ int fact(int n)
 * **Recursion** is supported. A function with one `int` parameter and one `int` local uses about 10 bytes of stack per level, so about **190 levels** can be reached from `main`; with no parameter and no local, 381; with four parameters and ten locals, 47. Too deep and the program stops with runtime error 1, `STACK OVERFLOW`, rather than overwrite memory.
 * **Function pointers** can be declared, assigned, called through, kept in arrays and passed as arguments. The library's functions have addresses too.
 * **Variadic functions** cannot be written; only `printf` takes any number of arguments.
-* A function that is called and never defined is `UNDEFINED FUNCTION` (error 70), reported with its name at the line of its first use.
+* A function that is called and never defined is `UNDEFINED FUNCTION` (error 70), reported at the line of its first use.
 * **`main`.** The program starts at `main`; without it, `RUN` says `NO MAIN FUNCTION` (error 71). Write `int main(void)` or `void main(void)`. The value `main` returns is shown as `EXIT n`. `exit(n)` ends the program from any depth, with the same report.
 
 ```c
@@ -490,9 +488,9 @@ int fact(int n)
 
 The **heap** is memory a program can ask for while it runs, with `malloc` and give back with `free`.
 
-* `p = malloc(n);` returns the address of a block of at least `n` bytes, or **0 (a null pointer)** when nothing fits. It also returns 0 for a request of 32 KB or more. Always test the result.
+* `p = malloc(n);` returns the address of a block of at least `n` bytes, or **0 (a null pointer, `NULL`)** when nothing fits. It also returns 0 for a request of 32 KB or more. Always test the result.
 * `free(p);` gives the block back. `free(0)` does nothing. Freeing a pointer that did not come from `malloc`, or freeing twice, is not checked, and damages the heap.
-* The heap is the part of the source region that the source does not use: from the end of your program text to `$BFFE`. It is therefore **bigger when the program is shorter**: about 18,316 bytes for a minimal program, and only a few hundred when the source is nearly 18 KB. The `HEAP` figure of the report after `RUN`, and of `FREE`, is the largest block `malloc` can return (`malloc(h)` succeeds and `malloc(h + 1)` gives 0).
+* The heap is the part of the source region that the source does not use: from the end of your program text to `$BFFE`. It is therefore **bigger when the program is shorter**: about 18,316 bytes for a minimal program, and only a few hundred when the source is nearly 18 KB. The largest block `malloc` can return at the start of a run is the `FREE` figure *f* of the `FREE` report less 4 bytes (less 5 when *f* is odd): `malloc(f - 4)` succeeds and `malloc(f - 3)` gives 0.
 * The blocks are searched first-fit, and neighbouring free blocks are joined as `malloc` passes them. Each block has a 2-byte header, so the usable room is slightly smaller than the heap.
 * **Every run starts with a new, empty heap.** A program that does not free its memory does not leak it into the next run, and a program stopped by BREAK or an error leaves nothing to repair.
 
@@ -524,6 +522,13 @@ The result of `malloc` is a `void *`, which converts to any object pointer witho
 ## High resolution
 
 The TS2068 has a second display file at `$6000-$77FF` (6,144 bytes), and a **high-resolution colour mode** that uses it. `mode(1)` switches to that mode and `mode(0)` back to the normal one; any other argument stops the program with runtime error 4. The end of a program, however it ends, restores mode 0.
+
+**What mode 1 shows.** The pixels are the same as in mode 0, at `$4000-$57FF`. The colours are not: in mode 1 the memory at `$6000-$77FF` holds **one attribute byte for every 8 by 1 pixels**, laid out like the pixels, instead of one for every 8 by 8 cell. So two lines one pixel row apart can have different inks.
+
+* **Every `mode(1)` resets those attributes** to paper 7 (white) and ink 0 (black). What `paper`, `ink` or `cls()` did before does not carry over.
+* **Only `plot` and `draw` write them.** Each pixel they set gives its 8 by 1 cell the print attribute, as in mode 0 it gives the 8 by 8 cell.
+* **Everything else uses the normal attributes** at `$5800-$5AFF`, which mode 1 does not show: printed text (`print`, `printf`, `putchar`, `puts`), `cls()`, `attr()`, `sprite_get` and `sprite_put`. Text still appears, because its pixels are shown, but in the colours of mode 1's attributes: `ink` and `paper` have no visible effect on it. `attr()` reads the normal attributes, not the colours of mode 1. `cls()` clears the pixels but not mode 1's attributes.
+* `mode(0)` shows the normal attributes again, as they were.
 
 The memory at `$6000-$77FF` is also the last of the four regions the compiler fills with your program (see [Memory](#memory)). Only a large program reaches it, but if it does, the program and the second display file would be in the same place. So:
 
@@ -582,7 +587,7 @@ An initialiser that is wrong (too many elements, a string too long for its array
 
 ## Memory
 
-This concept explains where your program and its data live, and what `FREE` and the report after `RUN` tell you.
+This concept explains where your program and its data live, and what `FREE` tells you.
 
 ### The memory map
 
@@ -627,19 +632,24 @@ Two things take a region away:
 
 ### The reports
 
-After a successful `RUN`, and in answer to `FREE`, the report rows are
+A report is one row, row 23, white on black across all 32 columns; rows 0 to 22 keep what the program or the editor left there. After a successful `RUN` it is
+
+```
+EXIT n
+```
+
+and in answer to `FREE`
 
 ```
 SOURCE s B  FREE f B
-IMAGE i B  HEAP h B
 ```
 
-`SOURCE` is the size of the source in the line store, `FREE` the room left for it; `IMAGE` the bytes of code and data of the last compile (0 before the first), not counting a region that a library or the pragma closed; `HEAP` the largest block the program could take with `malloc`.
+`EXIT` is the program's exit status (see [Compiling](#compiling)). `SOURCE` is the size of the source in the line store, `FREE` the room left for it. The room left is also the heap a program would have with the source as it is: the largest block `malloc` can return is 4 or 5 bytes less (see [Heap](#heap)). The size of the compiled program is not reported.
 
 ### Two ways to run out
 
-* `ERROR 100: OUT OF MEMORY`: the **source and the compiler's tables** no longer fit together in the source region. Shorten the program. Each name the compiler learns costs workspace (13 bytes for a global scalar, a local or a member, 20 for an array, 24 for a two-parameter prototype), and each `switch` case 6 bytes. For ordinary programs this is the limit that bites first: the typical program above uses 12.7 KB of image and about 7 KB of the image's room stays unused.
-* `ERROR 101: PROGRAM TOO BIG`: the **compiled code and data** do not fit in the four regions. Shorten the code, or move data out of the image into the heap.
+* `ERROR 100 OUT OF MEMORY`: the **source and the compiler's tables** no longer fit together in the source region. Shorten the program. Each name the compiler learns costs workspace (13 bytes for a global scalar, a local or a member, 20 for an array, 24 for a two-parameter prototype), and each `switch` case 6 bytes. For ordinary programs this is the limit that bites first: the typical program above uses 12.7 KB of image and about 7 KB of the image's room stays unused.
+* `ERROR 101 PROGRAM TOO BIG`: the **compiled code and data** do not fit in the four regions. Shorten the code, or move data out of the image into the heap.
 
 ### The stack
 
@@ -746,7 +756,7 @@ A pointer holds the **address** of something in memory. It is 16 bits, so it can
 * `&x` is the address of `x`; `*p` is the thing `p` points to. `p->m` is `(*p).m` for a structure.
 * **Pointer arithmetic scales.** If `p` points to an `int`, `p + 1` points to the next `int`, 2 bytes on; `q - p`, the difference of two pointers into the same array, is the number of elements between them, an `int`. `p[i]` is `*(p + i)`.
 * `void *` points to anything. `malloc` returns one, and it converts to and from any object pointer without a cast. Other pointer types need a cast to be assigned to each other.
-* **A null pointer is 0.** `if (p == 0)`, or `if (!p)`, tests for it, and `malloc` returns it when nothing fits. The examples in this manual write it as 0.
+* **A null pointer is 0.** `if (p == 0)`, or `if (!p)`, tests for it, and `malloc` returns it when nothing fits. `NULL` is predefined as `0` (see [The preprocessor](#the-preprocessor)), so `if (p == NULL)` is the same test. The tested examples in this manual write it as 0.
 * A pointer may be cast to and from an integer, which gives access to any address: `*(char *)0x5800 = 0x3A;` stores a byte in the attributes. The functions `inp` and `outp` do the same for the I/O ports.
 * **There are no checks.** Leap-C does not know where an array ends, and a null or wild pointer is used as it stands: writing through a wrong address can change the program, the screen or the stack. This is C.
 * A **pointer to a function** is declared `int (*fp)(int);`, assigned a function's name and called as `fp(7)` (see [Functions](#functions)).
@@ -781,9 +791,9 @@ A Leap-C program is C: declarations of variables, types and functions, one after
 
 * A program is typed in the editor, one **line** at a time. A line is at most **127 characters**, and a string literal must be wholly on one line, at most 126 characters. There is no TAB key: indent with spaces (they count in the 18 KB).
 * The editor keeps the lines as text, `[length][text][end of line]`, in the source store, from `$7800` up. `LIST` shows them, `SAVE` writes them to tape, and `RUN` compiles them. See [Memory](#memory).
-* A program starts with the screen as the editor left it, so call `cls()` before printing. The print colours are paper 7 (white) and ink 0 (black); the heap is empty; the static data is as initialised (or 0); `rand()` starts the sequence of `srand(1)`.
+* A program starts on a **clear screen**: `RUN` clears it to paper 7 (white) and ink 0 (black) just before the program starts. The print position is row 0, column 0; the print colours are paper 7 and ink 0, with bright, flash, `inverse` and `over` off; the display is in mode 0; the heap is empty; the static data is as initialised (or 0); `rand()` starts the sequence of `srand(1)`. `RUN` does not set the border, but the editor has already made it white. `cls()` is needed only to clear the screen again while the program runs.
 * A program ends when `main` returns, when it calls `exit(n)`, when a runtime error stops it, or when you press BREAK. The AY sound chip is silenced, the screen mode is normal again, and the report appears.
-* **`RUN`, `LIST`, `FREE`, `NEW`, `SAVE`, `LOAD`, `VERIFY` and `LIB` are not part of C.** They are commands, typed alone on the empty line after the last line of the program (see [The editor](#the-editor)).
+* **`RUN`, `LIST`, `FREE`, `NEW`, `SAVE`, `LOAD`, `VERIFY` and `LIB` are not part of C.** They are commands, typed alone on the empty line after the last line of the program, starting in its first column (see [The editor](#the-editor)).
 * Comments are `/* ... */`, which may span lines, and `// ...` to the end of the line.
 
 ```c
@@ -811,7 +821,7 @@ The screen is 24 rows of 32 characters, and 256 by 192 pixels.
 
 * **Text:** rows 0 to 23, columns 0 to 31. Row 0 is the top. `at(row, col)` moves the print position (a row beyond 23 becomes 23; the column is taken modulo 32), `tab(col)` moves along the current row. Text goes on at the start of the next row after column 31, and below row 23 the screen scrolls up. `'\n'` moves to the start of the next row. `cls()` clears the screen to the current colours and puts the print position at row 0, column 0.
 * **Pixels:** x from 0 to 255 and y from 0 to 191, counted **from the top left**: `plot(0, 0)` is the top left corner, `plot(255, 191)` the bottom right. This is the other way up from Sinclair BASIC. `plot` and `draw` outside the screen do nothing (a `draw` moves its ends to the edge); `point(x, y)` is 1 if the pixel is set and 0 if not, or off the screen.
-* **Attributes:** each character cell (8 by 8 pixels) has one attribute byte: *flash* 128, *bright* 64, *paper* times 8, plus *ink*. `attr(row, col)` reads it, and is 0 outside the screen. Printing, `plot`, `draw` and `cls` use the current colours; `plot` gives its cell the print attribute.
+* **Attributes:** each character cell (8 by 8 pixels) has one attribute byte: *flash* 128, *bright* 64, *paper* times 8, plus *ink*. `attr(row, col)` reads it, and is 0 outside the screen. Printing, `plot`, `draw` and `cls` use the current colours; `plot` gives its cell the print attribute. In high-resolution mode the colours are held differently (see [High resolution](#high-resolution)).
 * **Colours** are the numbers 0 to 7:
 
 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
@@ -1096,11 +1106,11 @@ The punctuation of C, typed with SYMBOL SHIFT and a key (the first eight are Lea
 | `)` 9 | `_` 0 | `"` P | `;` O | `:` Z | `<` R | `>` T | `?` C |
 | `=` L | `+` K | `-` J | `*` B | `/` V | `,` N | `.` M | |
 
-Two-character operators are typed one character at a time: `<=` is SYMBOL SHIFT + R, then SYMBOL SHIFT + L. Two letters pressed together type nothing.
+Two-character operators are typed one character at a time: `<=` is SYMBOL SHIFT + R, then SYMBOL SHIFT + L. No single key gives `<=`, `>=` or `<>`: SYMBOL SHIFT + Q, W and E, and the other SYMBOL SHIFT keys not in the table (X, I, SPACE, ENTER), type nothing. Nor do CAPS SHIFT + 2, 3, 4 and 9: there is **no CAPS LOCK**, so hold CAPS SHIFT for each capital. Two letters pressed together type nothing.
 
-**Commands.** A command is typed **alone on the empty line after the last line** of the program (the *append line*), in upper or lower case. Anything else there becomes a new line of the program. `RUN` compiles and runs; `LIST` shows the program a page at a time (a key shows the next page, BREAK ends the listing); `FREE` shows the memory; `NEW` clears the program; `SAVE`, `LOAD`, `VERIFY` and `LIB` work with the tape. A word that begins like a command but is not one (`save(x);`) is source. See [Part 3](03_keywords.md#run).
+**Commands.** A command is typed **alone on the empty line after the last line** of the program (the *append line*), in upper or lower case, **starting in the first column**. Spaces may follow it, but not precede it: ` RUN`, with a space before it, is stored as a line of the program. Anything else there becomes a new line of the program. `RUN` compiles and runs; `LIST` shows the program a page at a time (a key shows the next page, BREAK ends the listing); `FREE` shows the memory; `NEW` clears the program; `SAVE`, `LOAD`, `VERIFY` and `LIB` work with the tape. A word that begins like a command but is not one (`save(x);`) is source. See [Part 3](03_keywords.md#run).
 
-**After a report, press a key once every key is up.** Every command ends with a report on rows 22 and 23, which stays until you press a key. Leap-C ignores a key that was still held from the command (the ENTER of `RUN`, or BREAK), and drops a key that was latched meanwhile, so a report cannot vanish before you read it: **let go of everything, then press one key**. The key is not typed. Then the editor is redrawn with your program as it was; after a compile error or a runtime error the cursor is on the line, and at the place the report gave.
+**After a report, press a key once every key is up.** Every command ends with a report on row 23, the status row, which stays until you press a key. Leap-C ignores a key that was still held from the command (the ENTER of `RUN`, or BREAK), and drops a key that was latched meanwhile, so a report cannot vanish before you read it: **let go of everything, then press one key**. The key is not typed. Then the editor is redrawn with your program as it was. After a compile error, a runtime error or BREAK, the cursor is on the line of the error (for a compile error, at the place where the compile stopped; otherwise in column 0), and the status row's `LINE n/m` gives its number: the report itself shows no line.
 
 **See also** [Compiling](#compiling), [Errors](#errors), [Programs](#programs), [Part 3](03_keywords.md#run), [Appendix D](08_appendices.md#appendix-d-character-set-and-keyboard).
 
@@ -1112,6 +1122,7 @@ The preprocessor changes the program text before the compiler reads it. In Leap-
 
 * **`#define NAME replacement`** defines an object-like macro: wherever `NAME` appears afterwards as a word, the replacement, the rest of its line, stands instead. The replacement is checked for lexical errors where it is defined, and expanded where it is used. A macro's own name inside its expansion stays a plain name, so a macro cannot call itself. Macros may use other macros, nested up to 8 deep, and one expansion makes at most 255 tokens (`NESTING TOO DEEP` beyond).
 * **`#undef NAME`** forgets it. Defining a macro that already exists is `ALREADY DEFINED` (error 22), even if the text is the same; `#undef` it first.
+* **`NULL` is predefined**, as if every program began with `#define NULL 0`. A program may define `NULL` once itself, with any replacement, and its definition takes the place of the predefined one; or it may `#undef NULL`. After that the usual rules apply: a second definition of its own is `ALREADY DEFINED`. No other name is predefined: there is no `EOF`, `RAND_MAX` or `size_t`.
 * **`#include <leap.h>`** (or `"leap.h"`) is accepted and does **nothing**, because the library is built in. Any other `#include` is not supported.
 * **`#pragma hires`** reserves the memory of the high-resolution screen (see [High resolution](#high-resolution)). Any other pragma, or one with anything after `hires`, is an error. It is the only pragma.
 * Function-like macros (`#define f(x)`), `#if`, `#ifdef`, `#error`, `#line` and the rest are `NOT SUPPORTED`. The names of macros are names: a keyword cannot be one.
@@ -1152,7 +1163,7 @@ int main(void)
 }
 ```
 
-The second `#define N` is `ALREADY DEFINED`, reported on line 3 (the report gives no name for a `#define`).
+The second `#define N` is `ALREADY DEFINED`, reported on line 3.
 
 Because there is no `#if`, there is no include guard or conditional compilation: write the one program you want. Constants are better as `enum` values or as macros; text such as `"hello"` is better as a string.
 

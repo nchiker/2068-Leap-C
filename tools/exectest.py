@@ -234,6 +234,8 @@ def compile_and_run(m, lines, maxi=20_000_000, audit=True, run=True, restore=Tru
     # so the order is the address less $C000, modulo 64 K); library functions (ROM addresses, a loaded library's
     # in region 3) are not
     funcs = program_functions(res.globals, library)
+    r = m.call("GFX_CLS", maxi=500_000)         # as SH_RUN before RT_RUN: the program starts on a cleared screen
+    assert r["ok"], "GFX_CLS did not return"
     if guard:                                   # (chunk 6 is RAM now: ZRCP writes what is mapped)
         guard.before_run(hires_ok=any("mode(" in l for l in lines))
     if depth:
@@ -297,9 +299,9 @@ def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants, li
     """compile_and_run's shell path (Phase 6): the source injected, the editor on the append line,
     `run` typed and ENTER through the ISR's latch; the compile and the run are the shell's own
     (SH_COMPILE from paging depth 1, RT_RUN from SH_RUN). After the run, the program's screen and
-    memory are kept in res.rows and res.mem (the report then overwrites rows 22-23). Then the
-    report (res.report: the texts of rows 22 and 23, as built and as shown) and a key back to the
-    editor (res.after)."""
+    memory are kept in res.rows and res.mem (the report then overwrites row 23). Then the
+    report (res.report: SH_REPORT_BUF as built, row 23 as shown, row 22 before and after it: 1.0's
+    report is one row) and a key back to the editor (res.after)."""
     S = m.sym
     res = Result()
     res.audit, res.violation, res.canary_hits, res.stack_lows = [], [], [], {}
@@ -388,11 +390,13 @@ def shell_run(m, sh, lines, maxi, audit, keys, brk, stack_canary, invariants, li
     # the report, then a key back to the editor
     pc = m.run_to([m.xsym("SH_REPORT")], 60_000_000)
     assert pc == S("SH_REPORT"), "no report (PC=%04X)" % pc
-    built = tuple(m.read(S(b), 33).split(b"\0")[0].decode("latin-1") for b in ("SH_REPORT_BUF", "SH_STATUS_BUF"))
+    built = m.read(S("SH_REPORT_BUF"), 33).split(b"\0")[0].decode("latin-1")
+    under = m.screen_rows()[22]                 # row 22 before the report (1.0: the report leaves it alone)
     pc = m.run_to([S("IO_READ_KEY")], 60_000_000)
     assert pc == S("IO_READ_KEY"), "no key wait after the report (PC=%04X)" % pc
-    shown = tuple(m.screen_rows()[22:24])
-    res.report = dict(built=built, shown=shown, wait=m.w16(m.regs()["SP"]) == S("SH_WAIT_KEY.read") + 3)
+    rows = m.screen_rows()
+    res.report = dict(built=built, shown=rows[23], row22=(under, rows[22]),
+                      wait=m.w16(m.regs()["SP"]) == S("SH_WAIT_KEY.read") + 3)
     sh.key(ord(" "))
     res.after = dict(editor=sh.in_editor(), index=sh.index(), edit=sh.edit_line(),
                      depth=m.read(S("BANK_EXROM_DEPTH"), 1)[0], running=m.read(S("RUNNING"), 1)[0],
@@ -467,55 +471,22 @@ def run_loop(m, res, funcs, end, maxi, audit, keys, brk, start):
 
 
 def expected_report(m, res, lines):
-    """The report the shell must show after shell_run (rows 22 and 23), from the compile's and the
-    run's results: gen_diag's message texts, the image's size from the compiler's limits and the heap
-    from the source's end (spec.md 6.3)."""
+    """The report the shell must show after shell_run (row 23, one row since 1.0), from the compile's and
+    the run's results: gen_diag's message texts, or EXIT n (spec.md 6.3). 1.0 dropped the LINE m row (the
+    editor resumes on the line: check_report checks the cursor), the undeclared identifier's name and the
+    IMAGE/HEAP figures (owner's decision)."""
     import gen_diag
-    S = m.sym
     if res.errnum:
-        row = "LINE %d" % res.errline if res.errline else ""
-        named = [ER[n] for n in ("E_REDECL", "E_REDEF", "E_UNDECL", "E_MEMBER", "E_UNDEFFN", "E_UNDEFLABEL")]
-        if res.errnum in named and row and m.read(m.sym("NM_LEN"), 1)[0]:
-            row += "  '%s'" % undeclared_name(m, lines, res.errline)[:UNDECL_NAME_MAX]
-        return (gen_diag.report("E", res.errnum), row)
+        return gen_diag.report("E", res.errnum)
     if res.a:
-        line = "LINE %d" % res.rtline if res.rtline else ""
-        return (gen_diag.report("RT", res.a), line)
+        return gen_diag.report("RT", res.a)
     ex = res.hl - 65536 if res.hl & 0x8000 else res.hl
-    return ("EXIT %d" % ex, "IMAGE %d B  HEAP %d B" % (image_size(res.limits), heap_free(m.w16(S("PROG_END")))))
-
-
-UNDECL_NAME_MAX = 15                        # the shell shows at most 15 characters (SH_NAME_MAX)
-
-
-def undeclared_name(m, lines, line=None):
-    """The name a report shows (Phase 9: UNDECLARED IDENTIFIER; Phase 10: errors 21, 22, 52, 70, 76): the
-    compiler's NM, which must be a whole word of the error's line, or of a #define line (a macro's body);
-    otherwise a marker that fails the check."""
-    S = m.sym
-    name = m.read(m.w16(S("NM_PTR")), m.read(S("NM_LEN"), 1)[0]).decode("latin-1")
-    where = lines if not line or line > len(lines) else \
-        [lines[line - 1]] + [l for l in lines if l.lstrip().startswith("#") and "define" in l]
-    ok = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,30}", name) and any(
-        re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), l) for l in where)
-    return name if ok else "<NM %r is no word of line %s or a #define>" % (name, line)
-
-
-def image_size(limits):
-    """The image's bytes from the compiler's limits [(low, high)] per region (as SH_IMAGE)."""
-    total = 0
-    for k, ((base, end), (low, high)) in enumerate(zip(REGIONS, limits)):
-        used = (end - base) - (high - low)
-        if k == 3 and low == high:              # region 4 reserved by #pragma hires: its data only
-            used = end - high
-        if k == 2 and low == high == end:       # region 3 closed by a loaded library (Phase 10): nothing
-            used = 0
-        total += used
-    return total
+    return "EXIT %d" % ex
 
 
 def heap_free(prog_end):
-    """The largest block malloc() can return with the source ending at prog_end (as SH_MEMORY)."""
+    """The largest block malloc() can return with the source ending at prog_end (RT_RUN's heap: from the source's
+    end, made even, to LIB_HEAP_END, less the first block's 2-byte header; 1.0's report no longer shows it)."""
     return max(0, 0xBFFE - ((prog_end + 1) & ~1) - 2)
 
 
@@ -528,7 +499,9 @@ def check_report(m, res, lines):
     if res.report["built"] != want:
         msgs.append("report %r, expected %r" % (res.report["built"], want))
     if res.report["shown"] != res.report["built"]:
-        msgs.append("rows 22-23 show %r, not the report %r" % (res.report["shown"], res.report["built"]))
+        msgs.append("row 23 shows %r, not the report %r" % (res.report["shown"], res.report["built"]))
+    if res.report["row22"][0] != res.report["row22"][1]:
+        msgs.append("the report changed row 22: %r -> %r" % res.report["row22"])
     if not res.report["wait"]:
         msgs.append("the report does not wait in SH_WAIT_KEY")
     a = res.after

@@ -2,7 +2,9 @@
 
 ## Appendix A: Reports and messages
 
-What the bottom two rows of the screen can say. A command or a run ends with a **report** on rows 22 and 23, in white on black, drawn over whatever is on the screen; it stays until a key is pressed. The key is not typed: it only dismisses the report. A key still held down from the command (the ENTER of `RUN`, BREAK) is let go of first, and a key pressed meanwhile, its auto-repeat included, is ignored, so a report cannot vanish before you can read it. Then the editor is redrawn with your program as it was.
+What the bottom row of the screen can say. A command or a run ends with a **report**: one row, row 23, in white on black across all 32 columns (the colour swatch is not shown). Row 22 and everything above keep what was there. The report stays until a key is pressed. The key is not typed: it only dismisses the report. A key still held down from the command (the ENTER of `RUN`, BREAK) is let go of first, and a key pressed meanwhile, its auto-repeat included, is ignored, so a report cannot vanish before you can read it. Then the editor is redrawn with your program as it was.
+
+**A report gives no line number.** After a compile error, a runtime error or BREAK, the key brings the editor back with the cursor on the line concerned, and the status row's `LINE n/m` then gives its number.
 
 The commands are described in [Part 3](03_keywords.md) and the errors in [Part 5](05_concepts.md#errors).
 
@@ -10,7 +12,7 @@ The commands are described in [Part 3](03_keywords.md) and the errors in [Part 5
 
 | Message | Meaning |
 |---|---|
-| `LINE n/m` | not an error: the cursor is on line *n* of a program of *m* lines (row 23, white on black, with a red, green and blue swatch at the right). After switching on it is `LINE 1/0` |
+| `LINE n/m` | not an error: the cursor is on line *n* of a program of *m* lines (row 23, white on black, with a red, green and blue swatch at the right). After switching on the row shows the version, `2068 LEAP-C 1.0`, until the first key; then `LINE 1/0` |
 | `PROGRAM FULL` | the line you just entered does not fit in the memory for the source; it was not stored and stays in the edit buffer |
 | `COMPILING` | `RUN` is compiling |
 | `SAVING name` | a tape is being written |
@@ -19,22 +21,20 @@ The commands are described in [Part 3](03_keywords.md) and the errors in [Part 5
 
 ### The report of RUN
 
-| Row 22 | Row 23 | Meaning |
-|---|---|---|
-| `EXIT n` | `IMAGE i B  HEAP h B` | the program ended. *n* is what `main` returned, or the argument of `exit()` (signed; 0 for a `void main`). *i* is the size of the compiled program in bytes, *h* the largest block `malloc()` could have returned |
-| `ERROR n: MESSAGE` | `LINE m` | the compile stopped at the first error; the messages are in [Appendix B](#appendix-b-compile-error-codes). For errors 21, 22, 23, 52, 70 and 76 row 23 also gives the name: `LINE 5  'cont'` (at most 15 characters). When you press a key the editor shows line *m* with the cursor at the place where the compiler stopped (after a missing `;`, at the end of the line) |
-| `RUNTIME ERROR n: MESSAGE` | `LINE m` | the program stopped; the messages are in [Appendix C](#appendix-c-runtime-errors). *m* is the line where the function that failed starts; the row has no `LINE` when that is unknown |
-| `BREAK` | `LINE m` | you pressed BREAK (CAPS SHIFT + SPACE), or SPACE during `tape_save` or `tape_load` |
+| Report | Meaning |
+|---|---|
+| `EXIT n` | the program ended. *n* is what `main` returned, or the argument of `exit()` (signed; 0 for a `void main`) |
+| `ERROR n MESSAGE` | the compile stopped at the first error; the messages are in [Appendix B](#appendix-b-compile-error-codes). When you press a key the editor shows the line of the error with the cursor on the token where the compiler stopped (after a missing `;`, at the end of the line) |
+| `RUNTIME ERROR n MESSAGE` | the program stopped; the messages are in [Appendix C](#appendix-c-runtime-errors). When you press a key the cursor is in column 0 of the line where the function that failed starts; when that is unknown the cursor stays where it was |
+| `BREAK` | you pressed BREAK (CAPS SHIFT + SPACE), or SPACE during `tape_save` or `tape_load`. The cursor goes to a line as for a runtime error |
 
-The program's own screen stays above (rows 0 to 21) while the report is up. A program starts with the screen as the editor left it, so call `cls()` before printing. Compile speed is about 13 ms per line: a longer program shows `COMPILING` a little longer.
+The program's own screen stays above (rows 0 to 22) while the report is up. A program starts on a clear screen: `RUN` clears it to paper 7 and ink 0 just before the program starts, and the print position is row 0, column 0. A longer program shows `COMPILING` longer: a typical program compiles at about 9 ms per line (see [Compiling](05_concepts.md#compiling)).
 
 ### The reports of the other commands
 
-Row 23 of every tape command's report, whatever the outcome, is `SOURCE s B  FREE f B`.
-
-| Command | Row 22 | Meaning |
+| Command | Report | Meaning |
 |---|---|---|
-| `FREE` | `SOURCE s B  FREE f B` and `IMAGE i B  HEAP h B` | *s* is the size of the program in the line store, *f* the room left for it, *i* the size of the last compiled program (0 before any), *h* the heap a program would have with the source as it is |
+| `FREE` | `SOURCE s B  FREE f B` | *s* is the size of the program in the line store, *f* the room left for it |
 | `LIST` | (the listing) | the program a page (23 rows) at a time with keywords in bold; a key shows the next page; BREAK ends the listing |
 | `SAVE "name"` | `SAVED name` | the program is on tape |
 | | `BREAK` | SPACE stopped it; no data block was written |
@@ -50,17 +50,17 @@ Row 23 of every tape command's report, whatever the outcome, is `SOURCE s B  FRE
 | | `BAD TAPE VERSION`, `BREAK`, `BAD NAME` | as for `LOAD` |
 | `LIB "name"`, `LIB ""` | `LIBRARY name: n FUNCTIONS` | see [Part 6](06_libraries.md#loading-a-library) |
 | | `BAD TAPE VERSION`, `LOAD FAILED`, `BREAK`, `BAD NAME` | as there |
-| `LIB` | `NO LIBRARY` | the library was unloaded |
+| `LIB` | `NO LIBRARY` | the library was unloaded (shown on the status row) |
 
 A failed `LOAD` leaves your program and the editor as they were, except when the tape's program did not fit above the program in memory and part of it had already arrived: then the program is empty, as after `NEW`. That includes BREAK pressed once part of such a program has arrived.
 
-A command is recognised only on the empty last line, alone on the line apart from spaces, in capitals or small letters; anything else typed there is a new line of the program. The tape commands are the word, spaces and a quote, so `save(x);` is C source and `SAVE` alone is also source.
+A command is recognised only on the empty last line, starting in its first column and alone on the line apart from spaces after it, in capitals or small letters (with a space before it, ` RUN` is stored as a line of the program); anything else typed there is a new line of the program. The tape commands are the word, spaces and a quote, so `save(x);` is C source and `SAVE` alone is also source.
 
 ---
 
 ## Appendix B: Compile error codes
 
-The report shows `ERROR n: MESSAGE` and `LINE m`. The compile **stops at the first error**; nothing ran. Numbers are grouped by tens: 1 not supported, 10-19 characters and numbers, 20-29 declarations, 40-49 types, 50-59 expressions, 70-79 statements and functions, 90-99 limits, 100-109 memory. Line numbers count from 1 at the program's first line; an error is at the line of the token where it was found, and for a missing token (`;`, `)`, `]`, `}`, `:`) at the line of the token before it, after which the missing one belongs.
+The report shows `ERROR n MESSAGE`. The compile **stops at the first error**; nothing ran. A key puts the cursor on the line of the error, and the status row's `LINE n/m` gives its number. Numbers are grouped by tens: 1 not supported, 10-19 characters and numbers, 20-29 declarations, 40-49 types, 50-59 expressions, 70-79 statements and functions, 90-99 limits, 100-109 memory. Line numbers count from 1 at the program's first line; an error is at the line of the token where it was found, and for a missing token (`;`, `)`, `]`, `}`, `:`) at the line of the token before it, after which the missing one belongs.
 
 | Code | Message | Cause |
 |---:|---|---|
@@ -74,9 +74,9 @@ The report shows `ERROR n: MESSAGE` and `LINE m`. The compile **stops at the fir
 | 16 | `NUMBER TOO LARGE` | an integer constant above 65535, or a floating constant, or a constant floating expression, beyond the range of `float` |
 | 17 | `STRING TOO LONG` | a string literal longer than the editor can make (a safeguard that no typed line reaches) |
 | 20 | `SYNTAX ERROR` | a token that cannot appear here: a missing `;`, `)` or `}`, a stray token, a braced initialiser of two values for a scalar |
-| 21 | `REDECLARED` | the name is already declared differently in this scope (row 23 shows the name) |
+| 21 | `REDECLARED` | the name is already declared differently in this scope |
 | 22 | `ALREADY DEFINED` | a second body, initialiser or `struct`/`enum` definition; also a macro defined twice, even with the same text (use `#undef` first) |
-| 23 | `UNDECLARED IDENTIFIER` | a name that was never declared (row 23 shows it) |
+| 23 | `UNDECLARED IDENTIFIER` | a name that was never declared |
 | 24 | `BAD TYPE SPECIFIERS` | a combination that is not a type: `int char`, `signed unsigned`, `short short`, `int T` |
 | 25 | `BAD DECLARATOR` | an array of functions, a function returning an array or a function, a `void` parameter or member, a function definition where one cannot be |
 | 26 | `BAD STORAGE CLASS` | two storage classes, `auto` at file scope, `typedef` with an initialiser |
@@ -88,24 +88,24 @@ The report shows `ERROR n: MESSAGE` and `LINE m`. The compile **stops at the fir
 | 42 | `TYPE TOO LARGE` | an object of more than 65535 bytes |
 | 50 | `CONSTANT REQUIRED` | a constant expression is needed here (a `case`, an array size, an initialiser of a global) |
 | 51 | `BAD OPERAND TYPE` | an operator on a type it does not take: `*` of an `int`, `.` of a non-struct, two pointers added |
-| 52 | `NO SUCH MEMBER` | the `struct` has no member of that name (row 23 shows it) |
+| 52 | `NO SUCH MEMBER` | the `struct` has no member of that name |
 | 53 | `NOT AN LVALUE` | `&` of a value, or an assignment to something that is not a variable |
 | 54 | `ASSIGNMENT TO CONST` | a `const` object assigned or incremented |
 | 55 | `WRONG ARGUMENT COUNT` | a call of a function with a prototype (a library function included) with too few or too many arguments |
-| 70 | `UNDEFINED FUNCTION` | a function called or used but never defined; the line is that of its first use, and row 23 shows the name. A library function without its library gives this |
+| 70 | `UNDEFINED FUNCTION` | a function called or used but never defined; the line is that of its first use. A library function without its library gives this |
 | 71 | `NO MAIN FUNCTION` | `RUN` with no `main`; reported at the last line |
 | 72 | `MISPLACED BREAK` | `break` outside a loop or `switch` |
 | 73 | `MISPLACED CONTINUE` | `continue` outside a loop |
 | 74 | `MISPLACED CASE` | `case` or `default` outside a `switch` |
 | 75 | `DUPLICATE CASE` | a `case` value twice (also `case A: case 'A':` when both are 65), or a second `default` |
-| 76 | `UNDEFINED LABEL` | a `goto` to a label that the function does not define; the line of the first such `goto`; row 23 shows the name |
+| 76 | `UNDEFINED LABEL` | a `goto` to a label that the function does not define; the line of the first such `goto` |
 | 90 | `NESTING TOO DEEP` | the compiler's stack guard: more than 15 `*` in a declarator; macros nested more than 8 deep or one expansion of more than 255 tokens; too many nested brackets, blocks or calls; more than 32 argument words pending |
 | 91 | `FRAME TOO LARGE` | more than 255 bytes of local variables in a function (use `static` or the heap) |
 | 92 | `TOO MANY PARAMETERS` | more than 16 parameters |
 | 100 | `OUT OF MEMORY` | the source and the compiler's tables no longer fit together: shorten the program |
 | 101 | `PROGRAM TOO BIG` | the compiled code and data do not fit the four image regions |
 
-Codes that are not in the table (2 to 9, 18, 19, 30 to 39, 43 to 49, 56 to 69, 77 to 89, 93 to 99 and 102 upward) are not used. Some programs that each cause an error, with the line the report gives (the line numbers count the `// expect:` comment as line 1):
+Codes that are not in the table (2 to 9, 18, 19, 30 to 39, 43 to 49, 56 to 69, 77 to 89, 93 to 99 and 102 upward) are not used. Some programs that each cause an error, with the line of the error (the line numbers count the `// expect:` comment as line 1):
 
 ```c
 // expect: error E_UNDECL 5
@@ -173,13 +173,13 @@ int f(void) { return 1; }
 int x;
 ```
 
-`NO MAIN FUNCTION` is reported at the program's last line: here `LINE 2`. (This one example is not an automated test: the test harness adds a line to the end of every example, which moves the last line.)
+`NO MAIN FUNCTION` is reported at the program's last line: here the cursor goes to line 2. (This one example is not an automated test: the test harness adds a line to the end of every example, which moves the last line.)
 
 ---
 
 ## Appendix C: Runtime errors
 
-The program stopped. The report is `RUNTIME ERROR n: MESSAGE` and `LINE m`; *m* is the line where the **function that failed starts** (its definition's first line). For an error raised by a library function (built-in or loaded) it is the function that **called** the library. A key returns to the editor with the cursor there. Where the part of a function that continues in the memory at `$6000` fails, the line is unknown and `LINE` is left out.
+The program stopped. The report is `RUNTIME ERROR n MESSAGE`. A key returns to the editor with the cursor in column 0 of the line where the **function that failed starts** (its definition's first line), and the status row's `LINE n/m` gives its number. For an error raised by a library function (built-in or loaded) it is the function that **called** the library. Where the part of a function that continues in the memory at `$6000` fails, the line is unknown and the cursor stays where it was.
 
 | Code | Message | Cause |
 |---:|---|---|
@@ -192,7 +192,7 @@ The program stopped. The report is `RUNTIME ERROR n: MESSAGE` and `LINE m`; *m* 
 
 Integer division by zero is **not** an error: it gives 0 (and the remainder is 0).
 
-Programs that stop with each error (the `// rtline:` line states the line the report gives; the line numbers count the comments):
+Programs that stop with each error (the `// rtline:` line states the line the cursor goes to; the line numbers count the comments):
 
 ```c
 // expect: rterror 4
@@ -339,11 +339,11 @@ The editing keys:
 | ENTER | store the line and go to the next | 13 |
 | CAPS SHIFT + 5 / 6 / 7 / 8 | cursor left / down / up / right (between the rows of a wrapped line first) | 1 / 2 / 3 / 4 |
 | CAPS SHIFT + 0 (DELETE) | delete the character before the cursor; on an empty line, delete the line | 8 |
-| CAPS SHIFT + 1 | delete the whole line | |
-| CAPS SHIFT + ENTER | insert an empty line before this one | |
+| CAPS SHIFT + 1 | delete the whole line | 15 |
+| CAPS SHIFT + ENTER | insert an empty line before this one | 11 |
 | BREAK (CAPS SHIFT + SPACE) | stop a running program, a listing or a tape command | |
 
-Moving off a line with the up or down key also stores it. Two letter keys pressed at the same moment type nothing. A held key repeats after about 0.6 s (35 frames), then every 5 frames. BREAK does nothing in the editor. Keywords turn **bold** when you leave a line (not identifiers that contain one, nor the text of strings, character constants and comments).
+Moving off a line with the up or down key also stores it. Two letter keys pressed at the same moment type nothing. There is **no CAPS LOCK**: CAPS SHIFT + 2, 3, 4 and 9 type nothing, so hold CAPS SHIFT for each capital. The SYMBOL SHIFT keys not in the tables above (Q, W, E, X, I, SPACE and ENTER) type nothing either; in particular no single key gives `<=`, `>=` or `<>`: type the two characters, such as SYMBOL SHIFT + R then SYMBOL SHIFT + L for `<=`. A held key repeats after about 0.6 s (35 frames), then every 5 frames. BREAK does nothing in the editor. Keywords turn **bold** when you leave a line (not identifiers that contain one, nor the text of strings, character constants and comments).
 
 ### What getkey() returns
 
@@ -357,9 +357,11 @@ Moving off a line with the up or down key also stores it. Two letter keys presse
 | 3 | cursor up (CAPS SHIFT + 7) |
 | 4 | cursor right (CAPS SHIFT + 8) |
 | 8 | DELETE (CAPS SHIFT + 0) |
+| 11 | CAPS SHIFT + ENTER (in the editor: insert a line) |
 | 13 | ENTER |
+| 15 | CAPS SHIFT + 1 (in the editor: delete the line) |
 
-`inkey()` returns 0 when no key has been pressed since the last call. The hardware kit's program H2 (`docs/hardware/keys.c`) prints each key's character and code, which is the way to find out what a key gives on your machine.
+`inkey()` returns 0 when no key has been pressed since the last call. A key that types nothing in the editor (CAPS SHIFT + 2, for instance) gives 0: `getkey()` returns 0 for it, and to `inkey()` it looks like no key at all. BREAK (CAPS SHIFT + SPACE) is not returned: it stops the program. The hardware kit's program H2 (`docs/hardware/keys.c`) prints each key's character and code, which is the way to find out what a key gives on your machine.
 
 ---
 
@@ -384,6 +386,7 @@ Most of these are limits of **memory** and move with what else the program uses.
 | nested `if` | 386 |
 | nested `while` | 193 |
 | macro expansions nested in one another | 8; tokens produced by one macro expansion: 255 |
+| predefined macros | one: `NULL`, as `0` (see [The preprocessor](05_concepts.md#the-preprocessor)) |
 | levels of `*` in a declarator | 15 |
 | `case` labels in a `switch` | memory-bound (6 bytes of compiler workspace each) |
 | the heap | up to about 18 KB with a small program (18,316 bytes in the largest block of the smallest program); less as the program grows (234 bytes with 18,193 bytes of source). `malloc` returns NULL for 32 KB or more |
@@ -399,7 +402,7 @@ Most of these are limits of **memory** and move with what else the program uses.
 | tape name | 1 to 10 characters (0 to 10 for `LOAD`, `VERIFY` and `LIB`: `""` is any) |
 | a library | 1,024 bytes (region 3), 1 to 99 functions |
 | tape search | about two minutes without a tape, then `LOAD FAILED` (or -1 from `tape_load`) |
-| compile speed | about 13 ms per source line |
+| compile speed | 8.83 ms per line for a typical program of 851 lines (about 7.5 s); about 13.7 ms per line over the test corpus |
 
 A program that needs more than a limit stops with `NESTING TOO DEEP`, `OUT OF MEMORY`, `PROGRAM TOO BIG` or a runtime `STACK OVERFLOW`; see [Appendix B](#appendix-b-compile-error-codes) and [Appendix C](#appendix-c-runtime-errors).
 
@@ -491,6 +494,7 @@ Keywords, directives and shell commands are in [Part 3](03_keywords.md); the bui
 | Floating point | [Floating point](05_concepts.md#floating-point) |
 | The editor and its keys | [The editor](05_concepts.md#the-editor), [Appendix D](#appendix-d-character-set-and-keyboard) |
 | How C here differs from standard C | [Differences from standard C](05_concepts.md#differences-from-standard-c) |
+| `NULL`, the predefined macro | [`#define`](03_keywords.md#define), [The preprocessor](05_concepts.md#the-preprocessor) |
 | Writing a library | [Writing your own library](06_libraries.md#writing-your-own-library) |
 | Worked programs | [Part 7](07_examples.md) |
 
@@ -499,7 +503,7 @@ Keywords, directives and shell commands are in [Part 3](03_keywords.md); the bui
 ## Appendix I: How this manual was checked
 
 * Every program in this manual in a `c` block that contains a `// expect:` line is a **test**. `tools/docexamples.py` copies each one to `tests/doc/<document>_<NN>.c` (a generated file that ends with the document and line it comes from), and the executable corpus compiles and runs it on the production ROM: directly, through the shell's `RUN`, and under the RAM canary (`tools/exectest.py`; `make test`). `make check` fails if `tests/doc/` falls out of step with the documents, so an edit to an example that is not regenerated is caught.
-* The `//` lines at the top of an example are its checked results, and ordinary comments to the compiler. `// expect: exit N` is the value `main` returns (the `EXIT n` report); `// expect: error E_NAME L` is the compile error and its line; `// expect: rterror N` is the runtime error, and `// rtline: L` the line the report gives; `// screen: ROW TEXT` is the text of a screen row (0 is the top); `// pixel: X Y V`, `// attr: ROW COL V` and `// ay: REG=V` are a pixel (from the top left), a cell's attribute and a sound chip register; `// keys: ...` are the keys typed while the program reads the keyboard (a number, `"text"`, `ENTER`, `DELETE`); `// library: shapes` loads the library first, as `LIB "shapes"` does. `// noaudit` tells the harness not to check every function return (for runaway recursion). The full list is at the top of `tools/exectest.py`.
+* The `//` lines at the top of an example are its checked results, and ordinary comments to the compiler. `// expect: exit N` is the value `main` returns (the `EXIT n` report); `// expect: error E_NAME L` is the compile error and its line; `// expect: rterror N` is the runtime error, and `// rtline: L` the line the cursor goes to; `// screen: ROW TEXT` is the text of a screen row (0 is the top); `// pixel: X Y V`, `// attr: ROW COL V` and `// ay: REG=V` are a pixel (from the top left), a cell's attribute and a sound chip register; `// keys: ...` are the keys typed while the program reads the keyboard (a number, `"text"`, `ENTER`, `DELETE`); `// library: shapes` loads the library first, as `LIB "shapes"` does. `// noaudit` tells the harness not to check every function return (for runaway recursion). The full list is at the top of `tools/exectest.py`.
 * The program of [Part 7](07_examples.md), example 18, needs a tape and has no `// expect:` line: it is **not** a test. Blocks without an expectation (the assembly and tape fragments of [Part 6](06_libraries.md), the pictures made of text) are not tests either.
 * The facts that are not examples come from the specification (`spec.md`), the error table (`include/leapc_errors.inc`), the library interface (`include/leapc_lib.inc`, `libs/shapes.asm`, `tools/lib2tape.py`), the user guide, the hardware checklist and the emulator guide, whose programs are themselves tests; where a fact is the design's and has not been seen on a machine, [Appendix G](#appendix-g-hardware-notes) says so.
 * Nothing in this manual has been tried on a physical TS2068.

@@ -85,6 +85,7 @@ import tapetest         # noqa: E402
 import canary           # noqa: E402
 import floattest        # noqa: E402
 import poweron          # noqa: E402
+import lcharness   # noqa: E402
 from lcharness import Machine   # noqa: E402
 
 ROOT = os.path.dirname(HERE)
@@ -268,7 +269,7 @@ def boot_checks(m):
     S = m.sym
     out = []
     rows = m.screen_rows()
-    out.append(("editor screen (Phase 5 shell)", not any(rows[:23]) and rows[23] == "LINE 1/0", repr(rows[22:])))
+    out.append(("editor screen (Phase 5 shell; 1.0: the version until the first key)", not any(rows[:23]) and rows[23] == lcharness.VERSION_TEXT, repr(rows[22:])))
     r = m.regs()
     out.append(("idle key wait", r["PC"] == S("IO_READ_KEY"), "PC=%04X" % r["PC"]))
     out.append(("stack in $F800-$FEFF", 0xF800 <= r["SP"] <= 0xFF00, "SP=%04X" % r["SP"]))

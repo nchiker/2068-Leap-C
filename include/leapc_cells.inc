@@ -174,15 +174,16 @@ SH_DRAW_ROW:    DEFS 1              ; ... the screen row of its next part ...
 SH_DRAW_LEFT:   DEFS 1              ; ... and its parts (screen rows) left
 SH_CMD_PTR:     DEFS 2              ; the record being drawn or measured
 SH_LINE_COUNT:  DEFS 2              ; lines in the source at the last full redraw (the status line)
-SH_ERR_LINE:    DEFS 2              ; SH_RUN: the source line of the error being reported (0: unknown)
+SH_VER_FLAG:    DEFS 1              ; 1.0: the version on the status row while nonzero (SHELL_COLD 2, SH_REDRAW counts down)
+                DEFS 1              ; (unused: was SH_ERR_LINE's high byte; kept so later cells keep their addresses)
 SH_HEIGHTS:     DEFS SH_VIEW_MAX    ; SH_VIEW: the screen rows of each line above the cursor line
 SH_STATUS_BUF:  DEFS 33             ; the status row's text (32 characters and the NUL)
-SH_REPORT_BUF:  DEFS 33             ; Phase 6: a report's first row (row 22: SH_REPORT)
+SH_REPORT_BUF:  DEFS 33             ; Phase 6: a report's text (1.0: one row, row 23: SH_REPORT)
 SH_ERR_COL:     DEFS 2              ; Phase 10: a compile error's column, applied once by SH_LOAD_EDIT (0 between
                                     ; a report and the editor's resumption; LIB's report of a forged tape with 100
                                     ; or more functions may write its NUL over the low byte, keeping it 0)
     ASSERT SH_ERR_COL == SH_REPORT_BUF + 33
-SH_IMAGE_SIZE:  DEFS 2              ; Phase 6: the size of the last image compiled (SH_IMAGE; FREE)
+SH_IMAGE_SIZE:  DEFS 2              ; (1.0: unused since no report shows the image's size; kept, as SH_ERR_LINE)
 
 ; ---- tape (Phase 7: the shell's SAVE, LOAD, VERIFY and the library's tape_save, tape_load; spec.md 8). The
 ; platform's STORAGE_* system variables hold the header and the transfer's state.

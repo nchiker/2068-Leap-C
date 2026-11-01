@@ -182,7 +182,7 @@ ZEsarUX's sound is on by default (the AY chip: the start chord, `beep()`, `sound
 ## 5. What a correct start looks like
 
 1. You hear a short chord (C, E and G, played one after another and held: just under a second).
-2. The screen is white with a black **status row** at the bottom: `LINE 1/0` on the left (the cursor is on line 1 of a program with 0 lines) and three coloured squares, red, green and blue, on the right. A black block is the cursor. The border is white.
+2. The screen is white with a black **status row** at the bottom: the version, `2068 LEAP-C 1.0`, on the left until the first key, then `LINE 1/0` (the cursor is on line 1 of a program with 0 lines) and three coloured squares, red, green and blue, on the right. A black block is the cursor. The border is white.
 
 ![The Leap-C editor after a cold start](images/editor_start.png)
 

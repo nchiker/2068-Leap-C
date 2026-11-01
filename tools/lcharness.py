@@ -36,6 +36,13 @@ ZESARUX = os.environ.get("LEAPC_ZESARUX", os.path.expanduser("~/Applications/ZEs
 FAST_ARGS = [] if os.environ.get("LEAPC_REALTIME") else ["--emulatorspeed", "1000", "--frameskip", "49"]
 RET_SLOT = 0xFF00          # return address slot for routine calls (spec.md 3.1: unused by the ROM)
 TAPE_SLOTS = (14, 15, 16, 17, 18)  # breakpoint slots of the SAVE capture (set_bps: 1-8; memguard: 9-11; 12-13 ad hoc)
+def _version_text():
+    """The ROM's version text (include/leapc_version.inc): the status row from power-on to the first key (1.0)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "include", "leapc_version.inc")
+    return re.search(r'SH_VERSION:\s*DB\s*"([^"]*)"', open(path).read()).group(1)
+
+
+VERSION_TEXT = _version_text()
 AUTOLOAD_PC = 0x11F8       # ZEsarUX's TS2068 autoload trigger (storage/tape.c gestionar_autoload_spectrum)
 STOP_ADDR = 0xFF02         # `jr $` written here; routine calls return to it
 GLYPH_PROG = 0xF400        # glyph rendering program (image region 3, free at the idle prompt)

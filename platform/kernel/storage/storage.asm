@@ -202,6 +202,11 @@ STORAGE_SAVE:
     ld   a, 10
     ld   (STORAGE_PROGRESS_PCT), a
     call STORAGE_REPORT_PROGRESS          ; safe inter-block update;
+    ei                                    ; Leap-C delta D23: 50 frames of silence between the
+    ld   b, 50                            ; header and the data block, as the stock ROM's SAVE
+.gap:                                     ; (tools that end a block at a long pulse then see two)
+    halt
+    djnz .gap
                                          ; never draw inside a tape block
 
     pop  de                               ; caller's real data length

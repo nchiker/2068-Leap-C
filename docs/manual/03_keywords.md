@@ -30,9 +30,9 @@ Three things matter everywhere:
 
 * **A program is a set of functions.** Statements live inside functions, and the program starts at `main`. A statement ends with `;`. (See [Programs](05_concepts.md#programs).)
 * **Keywords turn bold** when you leave the line, so you can see at once that you typed one correctly. A name that merely contains a keyword (`int1`, `_if`), a keyword in capitals (`INT`), and the text of a string or comment are not highlighted.
-* **A word that is not supported is not skipped.** The reserved words `long`, `union` and `volatile` give `ERROR 1: NOT SUPPORTED`, and so does anything else outside the language; Leap-C never compiles it into something different.
+* **A word that is not supported is not skipped.** The reserved words `long`, `union` and `volatile` give `ERROR 1 NOT SUPPORTED`, and so does anything else outside the language; Leap-C never compiles it into something different.
 
-Examples that print call `cls()` first, because a program starts with the screen as the editor left it.
+Examples that print call `cls()` first. `RUN` already starts a program on a clear screen with the print position at row 0, column 0, so this is not needed; it keeps an example correct when it is copied into a larger program that has printed before.
 
 ---
 
@@ -75,10 +75,10 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `%` with a floating operand | `ERROR 51: BAD OPERAND TYPE` |
-| a pointer times, divided by or `%` anything; the sign `-` of a pointer; two pointers added | `ERROR 51: BAD OPERAND TYPE` |
+| `%` with a floating operand | `ERROR 51 BAD OPERAND TYPE` |
+| a pointer times, divided by or `%` anything; the sign `-` of a pointer; two pointers added | `ERROR 51 BAD OPERAND TYPE` |
 | a floating overflow, or a floating number divided by zero, at run time | run-time error 6, `NUMBER TOO BIG` |
-| the same in a constant expression | `ERROR 16: NUMBER TOO LARGE` |
+| the same in a constant expression | `ERROR 16 NUMBER TOO LARGE` |
 
 ```c
 // expect: error E_OPERAND 4
@@ -127,10 +127,10 @@ Here `n` goes 10, 14, 12, 36, 7, 3 and `m` goes 3, 24, 29, 20, 20, 5. The last s
 
 | Mistake | What happens |
 |---|---|
-| the left side is not an lvalue (`5 = 3`, an array, a call) | `ERROR 53: NOT AN LVALUE` |
-| the left side is `const` | `ERROR 54: ASSIGNMENT TO CONST` |
-| a pointer assigned from a pointer of another type without a cast, or from an integer other than 0 | `ERROR 40: TYPE MISMATCH` |
-| one structure assigned to another | `ERROR 1: NOT SUPPORTED` |
+| the left side is not an lvalue (`5 = 3`, an array, a call) | `ERROR 53 NOT AN LVALUE` |
+| the left side is `const` | `ERROR 54 ASSIGNMENT TO CONST` |
+| a pointer assigned from a pointer of another type without a cast, or from an integer other than 0 | `ERROR 40 TYPE MISMATCH` |
+| one structure assigned to another | `ERROR 1 NOT SUPPORTED` |
 
 ```c
 // expect: error E_LVALUE 4
@@ -169,8 +169,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `auto` at file scope | `ERROR 26: BAD STORAGE CLASS` |
-| two storage classes in one declaration | `ERROR 26: BAD STORAGE CLASS` |
+| `auto` at file scope | `ERROR 26 BAD STORAGE CLASS` |
+| two storage classes in one declaration | `ERROR 26 BAD STORAGE CLASS` |
 
 ```c
 // expect: error E_STORAGE 2
@@ -213,8 +213,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| a floating operand | `ERROR 51: BAD OPERAND TYPE` |
-| a pointer operand of `~`, `<<`, `>>` | `ERROR 51: BAD OPERAND TYPE` |
+| a floating operand | `ERROR 51 BAD OPERAND TYPE` |
+| a pointer operand of `~`, `<<`, `>>` | `ERROR 51 BAD OPERAND TYPE` |
 
 ```c
 // expect: error E_OPERAND 5
@@ -256,7 +256,7 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `break` outside a loop or `switch` | `ERROR 72: MISPLACED BREAK` |
+| `break` outside a loop or `switch` | `ERROR 72 MISPLACED BREAK` |
 
 ```c
 // expect: error E_BREAK 4
@@ -310,10 +310,10 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `case` outside a `switch` | `ERROR 74: MISPLACED CASE` |
-| the same value twice in one `switch` | `ERROR 75: DUPLICATE CASE` |
-| a label that is not a constant (`case x:`) | `ERROR 50: CONSTANT REQUIRED` |
-| a floating label | `ERROR 50: CONSTANT REQUIRED` |
+| `case` outside a `switch` | `ERROR 74 MISPLACED CASE` |
+| the same value twice in one `switch` | `ERROR 75 DUPLICATE CASE` |
+| a label that is not a constant (`case x:`) | `ERROR 50 CONSTANT REQUIRED` |
+| a floating label | `ERROR 50 CONSTANT REQUIRED` |
 
 ```c
 // expect: error E_CASE 4
@@ -480,7 +480,7 @@ int main(void)
 **Notes.**
 
 * If one of *a* and *b* is floating and the other an integer, the integer is converted, so `k ? 1 : 0.5` is a floating 1.0 (the last item above).
-* A pointer or `void` operand together with a floating one is `ERROR 40: TYPE MISMATCH`.
+* A pointer or `void` operand together with a floating one is `ERROR 40 TYPE MISMATCH`.
 
 **See also** `if`, `Logical operators`, [Expressions](05_concepts.md#expressions).
 
@@ -510,7 +510,7 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `=`, `+=`, `++` and so on applied to a `const` object | `ERROR 54: ASSIGNMENT TO CONST` |
+| `=`, `+=`, `++` and so on applied to a `const` object | `ERROR 54 ASSIGNMENT TO CONST` |
 
 ```c
 // expect: error E_CONST 5
@@ -552,7 +552,7 @@ The even numbers are skipped; the program adds 1 + 3 + 5 + 7 + 9.
 
 | Mistake | What happens |
 |---|---|
-| `continue` outside a loop, even inside a `switch` | `ERROR 73: MISPLACED CONTINUE` |
+| `continue` outside a loop, even inside a `switch` | `ERROR 73 MISPLACED CONTINUE` |
 
 ```c
 // expect: error E_CONTINUE 4
@@ -590,8 +590,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `default` outside a `switch` | `ERROR 74: MISPLACED CASE` |
-| a second `default` in one `switch` | `ERROR 75: DUPLICATE CASE` |
+| `default` outside a `switch` | `ERROR 74 MISPLACED CASE` |
+| a second `default` in one `switch` | `ERROR 75 DUPLICATE CASE` |
 
 **See also** `switch`, `case`, `break`.
 
@@ -622,17 +622,18 @@ int main(void)
 * **Only object-like macros exist.** A macro with arguments, `#define SQ(x) ((x) * (x))`, is not supported; write a function instead.
 * A keyword cannot be the name of a macro.
 * **A name can be defined only once.** Defining it a second time is an error, even with the same text (C allows that; Leap-C does not). Remove the first with `#undef`.
+* **`NULL` is predefined** as `0`, as if every program began with `#define NULL 0`, so `p = NULL;` and `if (p == NULL)` need no `#include`. A program may `#define NULL` once itself, with any replacement: its definition takes the place of the predefined one (so a line copied from a header, such as `#define NULL ((void *)0)`, is accepted). It may also `#undef NULL`, after which `NULL` is an ordinary name. A second definition of the program's own is `ALREADY DEFINED`, as for any macro. No other name is predefined: there is no `EOF`, `RAND_MAX` or `size_t`.
 * The tokens of one expansion, nested ones included, are limited to 255.
 
 **Errors.**
 
 | Mistake | What happens |
 |---|---|
-| a name defined twice | `ERROR 22: ALREADY DEFINED` |
-| a macro with arguments | `ERROR 1: NOT SUPPORTED` |
-| no name, a number or a keyword as the name | `ERROR 20: SYNTAX ERROR` |
-| a character that is not C in the replacement | `ERROR 10: BAD CHARACTER` |
-| macros nested more than 8 deep, or an expansion of more than 255 tokens | `ERROR 90: NESTING TOO DEEP` |
+| a name defined twice | `ERROR 22 ALREADY DEFINED` |
+| a macro with arguments | `ERROR 1 NOT SUPPORTED` |
+| no name, a number or a keyword as the name | `ERROR 20 SYNTAX ERROR` |
+| a character that is not C in the replacement | `ERROR 10 BAD CHARACTER` |
+| macros nested more than 8 deep, or an expansion of more than 255 tokens | `ERROR 90 NESTING TOO DEEP` |
 
 ```c
 // expect: error E_REDEF 3
@@ -681,7 +682,7 @@ The program adds 3 + 2 + 1.
 
 | Mistake | What happens |
 |---|---|
-| `do` without its `while` | `ERROR 20: SYNTAX ERROR` |
+| `do` without its `while` | `ERROR 20 SYNTAX ERROR` |
 
 ```c
 // expect: error E_SYNTAX 6
@@ -712,7 +713,7 @@ int main(void)
 }
 ```
 
-`long double` is not supported (`ERROR 1: NOT SUPPORTED`).
+`long double` is not supported (`ERROR 1 NOT SUPPORTED`).
 
 **See also** `float`, `long`, [Floating point](05_concepts.md#floating-point).
 
@@ -772,8 +773,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| the same `enum` tag defined twice | `ERROR 22: ALREADY DEFINED` |
-| a constant with the same name as a variable in the same scope | `ERROR 21: REDECLARED` |
+| the same `enum` tag defined twice | `ERROR 22 ALREADY DEFINED` |
+| a constant with the same name as a variable in the same scope | `ERROR 21 REDECLARED` |
 
 **See also** `case`, `typedef`, `#define`, [Types](05_concepts.md#types).
 
@@ -809,7 +810,7 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `extern` together with another storage class | `ERROR 26: BAD STORAGE CLASS` |
+| `extern` together with another storage class | `ERROR 26 BAD STORAGE CLASS` |
 
 **See also** `static`, [Programs](05_concepts.md#programs), [Memory](05_concepts.md#memory).
 
@@ -849,10 +850,10 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| a constant that is too big, in the source (`1e39`) | `ERROR 16: NUMBER TOO LARGE` |
-| a malformed constant (`1e`, `1.5ff`, `1..2`) | `ERROR 15: BAD NUMBER` |
-| a floating array size or `case` label | `ERROR 50: CONSTANT REQUIRED` |
-| a floating `switch` value | `ERROR 51: BAD OPERAND TYPE` |
+| a constant that is too big, in the source (`1e39`) | `ERROR 16 NUMBER TOO LARGE` |
+| a malformed constant (`1e`, `1.5ff`, `1..2`) | `ERROR 15 BAD NUMBER` |
+| a floating array size or `case` label | `ERROR 50 CONSTANT REQUIRED` |
+| a floating `switch` value | `ERROR 51 BAD OPERAND TYPE` |
 
 **See also** `double`, `Casts`, `int`, [Floating point](05_concepts.md#floating-point), [Numbers](05_concepts.md#numbers).
 
@@ -893,14 +894,13 @@ The comma operator runs two things in the start and in the step. After the fifth
 
 `FREE` -- **command**
 
-Shows how much memory is left. It reports two lines in the status colours at the bottom of the screen, until you press a key:
+Shows how much memory is left. It reports one row, white on black at the bottom of the screen, until you press a key:
 
 ```
 SOURCE s B  FREE f B
-IMAGE i B  HEAP h B
 ```
 
-`SOURCE` is the size of your program in the line store and `FREE` the room left for it. `IMAGE` is the size of the last program that compiled successfully (0 before any), and `HEAP` the largest block that `malloc` could return to a program with the source as it is now.
+`SOURCE` is the size of your program in the line store and `FREE` the room left for it.
 
 ```
 FREE
@@ -910,8 +910,7 @@ The program is shown as it was when you press a key.
 
 **Notes.**
 
-* The source can be about 18 KB; a typical program of 850 lines fits. The heap is up to about 18 KB with a small program, and less as the source grows.
-* `RUN` ends with the same `IMAGE` and `HEAP` figures.
+* The source can be about 18 KB; a typical program of 850 lines fits. The heap is up to about 18 KB with a small program, and less as the source grows (see [Memory](05_concepts.md#memory)).
 
 **See also** `RUN`, `NEW`, [Memory](05_concepts.md#memory), [Appendix E](08_appendices.md) (limits).
 
@@ -946,9 +945,9 @@ again:
 
 | Mistake | What happens |
 |---|---|
-| a `goto` to a label the function does not define (reported at the first such `goto`) | `ERROR 76: UNDEFINED LABEL`, and the label's name is shown |
-| the same label twice in one function | `ERROR 22: ALREADY DEFINED` |
-| a number instead of a name (`goto 5`) | `ERROR 20: SYNTAX ERROR` |
+| a `goto` to a label the function does not define (reported at the first such `goto`) | `ERROR 76 UNDEFINED LABEL`, and the label's name is shown |
+| the same label twice in one function | `ERROR 22 ALREADY DEFINED` |
+| a number instead of a name (`goto 5`) | `ERROR 20 SYNTAX ERROR` |
 
 ```c
 // expect: error E_UNDEFLABEL 4
@@ -996,8 +995,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| an `else` with no `if` | `ERROR 20: SYNTAX ERROR` |
-| a structure or a `void` call as the test | `ERROR 51: BAD OPERAND TYPE` |
+| an `else` with no `if` | `ERROR 20 SYNTAX ERROR` |
+| a structure or a `void` call as the test | `ERROR 51 BAD OPERAND TYPE` |
 
 ```c
 // expect: error E_SYNTAX 5
@@ -1017,7 +1016,7 @@ int main(void)
 
 `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, `#error`, `#line`, ... -- **directive** (not supported)
 
-Leap-C has four directives: `#define`, `#undef`, `#include` and `#pragma hires`. **Any other directive** stops the compile with `ERROR 1: NOT SUPPORTED`, at the line of the directive. This includes the conditional compilation family (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`), `#error` and `#line`. So does any `#pragma` other than `#pragma hires`, a `#define` with arguments, and an `#include` of any file but `leap.h`.
+Leap-C has four directives: `#define`, `#undef`, `#include` and `#pragma hires`. **Any other directive** stops the compile with `ERROR 1 NOT SUPPORTED`, at the line of the directive. This includes the conditional compilation family (`#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`), `#error` and `#line`. So does any `#pragma` other than `#pragma hires`, a `#define` with arguments, and an `#include` of any file but `leap.h`.
 
 ```c
 // expect: error E_NOTSUP 2
@@ -1067,8 +1066,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `#include` of any other file (`<stdio.h>`) | `ERROR 1: NOT SUPPORTED` |
-| something after the file name | `ERROR 20: SYNTAX ERROR` |
+| `#include` of any other file (`<stdio.h>`) | `ERROR 1 NOT SUPPORTED` |
+| something after the file name | `ERROR 20 SYNTAX ERROR` |
 
 ```c
 // expect: error E_NOTSUP 2
@@ -1120,8 +1119,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `++5`, `(a + b)++` | `ERROR 53: NOT AN LVALUE` |
-| `++` or `--` on a `const` object | `ERROR 54: ASSIGNMENT TO CONST` |
+| `++5`, `(a + b)++` | `ERROR 53 NOT AN LVALUE` |
+| `++` or `--` on a `const` object | `ERROR 54 ASSIGNMENT TO CONST` |
 
 ```c
 // expect: error E_LVALUE 4
@@ -1156,14 +1155,14 @@ int main(void)
 
 **Notes.**
 
-* A constant is written in decimal, in hexadecimal with `0x`, or in octal with a leading `0`. Its value must be 0 to 65535; larger gives `ERROR 16: NUMBER TOO LARGE`. A suffix `u` or `U` is accepted; `l` and `L` are not supported.
+* A constant is written in decimal, in hexadecimal with `0x`, or in octal with a leading `0`. Its value must be 0 to 65535; larger gives `ERROR 16 NUMBER TOO LARGE`. A suffix `u` or `U` is accepted; `l` and `L` are not supported.
 * Division by zero gives 0 and not an error.
 
 **Errors.**
 
 | Mistake | What happens |
 |---|---|
-| contradictory words (`int char`, `signed unsigned`) | `ERROR 24: BAD TYPE SPECIFIERS` |
+| contradictory words (`int char`, `signed unsigned`) | `ERROR 24 BAD TYPE SPECIFIERS` |
 
 **See also** `short`, `signed`, `unsigned`, `long`, [Numbers](05_concepts.md#numbers), [Types](05_concepts.md#types).
 
@@ -1175,9 +1174,9 @@ int main(void)
 
 Loads a library of assembly-language functions from tape, or unloads the one that is loaded. `LIB "name"` loads the library with that name (1 to 10 characters); `LIB ""` loads the next library on the tape, whatever its name. `LIB` on its own unloads the library.
 
-While the tape plays the status row shows `LOADING`, then `LOADING name` when the header is found. The report is shown on the bottom two rows until a key is pressed:
+While the tape plays the status row shows `LOADING`, then `LOADING name` when the header is found. The report is shown on the bottom row until a key is pressed:
 
-| First row | When |
+| Report | When |
 |---|---|
 | `LIBRARY name: n FUNCTIONS` | the library arrived whole: its name (as written on the tape) and the number of functions it adds |
 | `BAD TAPE VERSION` | not a library for this ROM; nothing was written |
@@ -1185,13 +1184,13 @@ While the tape plays the status row shows `LOADING`, then `LOADING name` when th
 | `BREAK` | SPACE or BREAK stopped it |
 | `BAD NAME` | more than 10 characters, no closing quote, or something after it |
 
-The second row is `SOURCE s B  FREE f B`. `LIB` alone shows `NO LIBRARY` on the status row until a key is pressed.
+`LIB` alone shows `NO LIBRARY` on the status row until a key is pressed.
 
 ```
 LIB "shapes"
 ```
 
-After the tape has played, the bottom rows read `LIBRARY shapes: 3 FUNCTIONS`; the program can then call `circle`, `box` and `isqrt` without declaring them.
+After the tape has played, the bottom row reads `LIBRARY shapes: 3 FUNCTIONS`; the program can then call `circle`, `box` and `isqrt` without declaring them.
 
 **Notes.**
 
@@ -1199,7 +1198,7 @@ After the tape has played, the bottom rows read `LIBRARY shapes: 3 FUNCTIONS`; t
 * The library **stays** through `NEW`, `LOAD` and `RUN`: a program loaded from tape can use it at once. `LIB` alone unloads it, and a reset clears it.
 * A loaded library occupies the 1 KB of program memory called image region 3, so the largest program you can compile is 1 KB smaller.
 * If a failure writes into that region, no library is left loaded; any other failure keeps the library that was loaded before.
-* Without the library, a call to one of its functions is `ERROR 70: UNDEFINED FUNCTION`.
+* Without the library, a call to one of its functions is `ERROR 70 UNDEFINED FUNCTION`.
 * A library tape, a program tape and a data tape are different kinds: `LIB` skips program and data tapes, and `LOAD`, `VERIFY` and `tape_load` skip library tapes.
 
 **See also** `LOAD`, `NEW`, [Part 6](06_libraries.md), [Tapes](05_concepts.md#tapes).
@@ -1231,17 +1230,15 @@ LIST
 
 Reads a program from tape and puts it in the editor, **replacing** the program that is there. `LOAD "name"` loads the program with that name; `LOAD ""` loads the next program on the tape, whatever it is called. While the tape plays, the status row shows `LOADING` and, once the header is found, `LOADING name`.
 
-Afterwards two rows are shown until a key is pressed:
+Afterwards the report is shown on the bottom row until a key is pressed:
 
-| First row | When |
+| Report | When |
 |---|---|
 | `LOADED name` | the program arrived whole; the cursor is on the empty line after its last line |
 | `LOAD FAILED` | no program tape found, or a bad block |
 | `BAD TAPE VERSION` | the tape is not a Leap-C tape |
 | `BREAK` | SPACE or BREAK stopped it |
 | `BAD NAME` | more than 10 characters, no closing quote, or something after it |
-
-The second row is `SOURCE s B  FREE f B`.
 
 ```
 LOAD "hello"
@@ -1302,7 +1299,7 @@ int main(void)
 
 `long` -- **keyword** (not supported)
 
-Reserved, and gives `ERROR 1: NOT SUPPORTED`. There are no 32-bit integers in Leap-C: `int` is 16 bits. The same error is given by `long double`, and by a constant with the suffix `L` (`10L`, `1ul`).
+Reserved, and gives `ERROR 1 NOT SUPPORTED`. There are no 32-bit integers in Leap-C: `int` is 16 bits. The same error is given by `long double`, and by a constant with the suffix `L` (`10L`, `1ul`).
 
 ```c
 // expect: error E_NOTSUP 2
@@ -1320,7 +1317,7 @@ int main(void)
 
 **Notes.**
 
-* A constant above 65535 without a suffix is `ERROR 16: NUMBER TOO LARGE`.
+* A constant above 65535 without a suffix is `ERROR 16 NUMBER TOO LARGE`.
 * For a bigger range, use `unsigned` (0 to 65535), a pair of `int`s, or `float` (about 9.6 significant digits).
 
 **See also** `int`, `unsigned`, `float`, `short`, [Numbers](05_concepts.md#numbers), [Differences from standard C](05_concepts.md#differences-from-standard-c).
@@ -1362,8 +1359,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| a name that is not a member | `ERROR 52: NO SUCH MEMBER`, and the name is shown |
-| `.` or `->` on something that is not a structure | `ERROR 51: BAD OPERAND TYPE` |
+| a name that is not a member | `ERROR 52 NO SUCH MEMBER`, and the name is shown |
+| `.` or `->` on something that is not a structure | `ERROR 51 BAD OPERAND TYPE` |
 
 ```c
 // expect: error E_MEMBER 6
@@ -1488,10 +1485,10 @@ The name of an array stands for the address of its first element, so `p = a` nee
 
 | Mistake | What happens |
 |---|---|
-| `*` of something that is not a pointer | `ERROR 51: BAD OPERAND TYPE` |
-| `&` of something that is not an object | `ERROR 53: NOT AN LVALUE` |
-| two pointers added | `ERROR 51: BAD OPERAND TYPE` |
-| a pointer stored in an integer, or an integer other than 0 stored in a pointer, without a cast | `ERROR 40: TYPE MISMATCH` |
+| `*` of something that is not a pointer | `ERROR 51 BAD OPERAND TYPE` |
+| `&` of something that is not an object | `ERROR 53 NOT AN LVALUE` |
+| two pointers added | `ERROR 51 BAD OPERAND TYPE` |
+| a pointer stored in an integer, or an integer other than 0 stored in a pointer, without a cast | `ERROR 40 TYPE MISMATCH` |
 
 ```c
 // expect: error E_OPERAND 5
@@ -1529,15 +1526,15 @@ int main(void)
 * `hires` is the only pragma. Its name is case-sensitive, and it is never replaced by a macro.
 * It may be given more than once, and anywhere a directive may be, but it applies **from its line on**: what is already in that memory when the compiler reaches the pragma stays there. Put it first.
 * Nothing else may follow `hires` on the line.
-* With the pragma the room for the program is smaller by that memory, so a very large program may be `ERROR 101: PROGRAM TOO BIG`.
+* With the pragma the room for the program is smaller by that memory, so a very large program may be `ERROR 101 PROGRAM TOO BIG`.
 
 **Errors.**
 
 | Mistake | What happens |
 |---|---|
-| any other pragma (`#pragma once`, `#pragma HIRES`), or none | `ERROR 1: NOT SUPPORTED` |
-| anything after `hires` | `ERROR 20: SYNTAX ERROR` |
-| a program that cannot fit once the memory is kept clear | `ERROR 101: PROGRAM TOO BIG` |
+| any other pragma (`#pragma once`, `#pragma HIRES`), or none | `ERROR 1 NOT SUPPORTED` |
+| anything after `hires` | `ERROR 20 SYNTAX ERROR` |
+| a program that cannot fit once the memory is kept clear | `ERROR 101 PROGRAM TOO BIG` |
 
 ```c
 // expect: error E_SYNTAX 2
@@ -1603,9 +1600,9 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| a value returned from a `void` function | `ERROR 40: TYPE MISMATCH` |
-| a pointer returned from an `int` function | `ERROR 40: TYPE MISMATCH` |
-| a structure returned | `ERROR 1: NOT SUPPORTED` |
+| a value returned from a `void` function | `ERROR 40 TYPE MISMATCH` |
+| a pointer returned from an `int` function | `ERROR 40 TYPE MISMATCH` |
+| a structure returned | `ERROR 1 NOT SUPPORTED` |
 
 **See also** `void`, `goto`, [Functions](05_concepts.md#functions), [Programs](05_concepts.md#programs).
 
@@ -1615,7 +1612,7 @@ int main(void)
 
 `RUN` -- **command**
 
-Compiles the whole program and, if there is no error, runs it. The status row shows `COMPILING` while it compiles. Nothing runs if the compiler finds a mistake. When the program ends, whatever is on the screen stays, and two report rows appear at the bottom, in the status colours, until you press a key. The key is not typed; it returns you to the editor with the program as it was.
+Compiles the whole program and, if there is no error, runs it. The status row shows `COMPILING` while it compiles. Nothing runs if the compiler finds a mistake. When the program ends, whatever is on the screen stays, and a report appears on the bottom row, white on black, until you press a key. The key is not typed; it returns you to the editor with the program as it was.
 
 ```
 int main(void)
@@ -1632,24 +1629,24 @@ Hello, TS2068!
 
 ...
 EXIT 0
-IMAGE 39 B  HEAP 18340 B
 ```
 
-`EXIT 0` is what `main` returned; `IMAGE` is the size of the compiled program and `HEAP` the memory `malloc` could have used.
+`EXIT 0` is what `main` returned.
 
-| Outcome | First row | Second row |
-|---|---|---|
-| the program ends | `EXIT n` (`main`'s value, or `exit()`'s; signed) | `IMAGE i B  HEAP h B` |
-| compile error | `ERROR n: MESSAGE` | `LINE m` |
-| run-time error | `RUNTIME ERROR n: MESSAGE` | `LINE m` |
-| BREAK pressed | `BREAK` | `LINE m` |
+| Outcome | Report |
+|---|---|
+| the program ends | `EXIT n` (`main`'s value, or `exit()`'s; signed) |
+| compile error | `ERROR n MESSAGE` |
+| run-time error | `RUNTIME ERROR n MESSAGE` |
+| BREAK pressed | `BREAK` |
 
 **Notes.**
 
-* **A compile error.** The compile stops at the first error. For an undeclared, undefined or duplicated name, the second row also shows the name, `LINE 5  'cont'`. When you press a key the editor shows line *m* with the cursor **at the place where the compiler stopped**; for a missing `;` that is the end of the line that lacks it. Line numbers count from 1.
-* **A run-time error** shows the message over what the program printed; the line is where the function that failed **starts** (its first line), and the cursor goes there.
-* **BREAK** (CAPS SHIFT + SPACE) stops any running program. The report is `BREAK` and `LINE m`.
-* A program starts with the screen as the editor left it: call `cls()` first if it prints.
+* **The report gives no line.** After an error or BREAK, the key puts the cursor on the line, and the status row's `LINE n/m` gives its number. Line numbers count from 1.
+* **A compile error.** The compile stops at the first error. When you press a key the editor shows the line with the cursor **at the place where the compiler stopped**; for a missing `;` that is the end of the line that lacks it.
+* **A run-time error** shows the message over what the program printed. The key puts the cursor at the start of the line where the function that failed **starts** (its first line). When that line is unknown the cursor stays where it was.
+* **BREAK** (CAPS SHIFT + SPACE) stops any running program. The report is `BREAK`, and the cursor goes to the line where the running function starts, as for a run-time error.
+* **A program starts on a clear screen.** Before it runs, `RUN` clears the screen to paper 7 (white) and ink 0 (black), and the program's print state starts afresh: the print position at row 0, column 0, the print colours paper 7 and ink 0 with bright and flash off, and `inverse` and `over` off. `RUN` does not set the border, but the editor has already made it white. Call `cls()` to clear the screen again while the program runs.
 * The messages are listed in [Appendix A](08_appendices.md), [B](08_appendices.md) and [C](08_appendices.md).
 * **After a report, press a key once every key is up**: Leap-C ignores a key still held from the command, so a report cannot vanish before you read it.
 
@@ -1663,16 +1660,14 @@ IMAGE 39 B  HEAP 18340 B
 
 `SAVE "name"` -- **command**
 
-Writes the program (its source) to tape. *name* is 1 to 10 characters. While the tape moves, the status row shows `SAVING name`. Afterwards two rows are shown until a key is pressed:
+Writes the program (its source) to tape. *name* is 1 to 10 characters. While the tape moves, the status row shows `SAVING name`. Afterwards the report is shown on the bottom row until a key is pressed:
 
-| First row | When |
+| Report | When |
 |---|---|
 | `SAVED name` | the program was written |
 | `BREAK` | SPACE or BREAK stopped it; no data block follows |
 | `BAD NAME` | no name, more than 10 characters, no closing quote, or something after it |
 | `NO PROGRAM` | the program is empty: nothing to save |
-
-The second row is `SOURCE s B  FREE f B`.
 
 ```
 SAVE "hello"
@@ -1739,7 +1734,7 @@ The byte 255 is -1 as a `signed char` and 255 as an `unsigned char`.
 
 | Mistake | What happens |
 |---|---|
-| `signed unsigned` | `ERROR 24: BAD TYPE SPECIFIERS` |
+| `signed unsigned` | `ERROR 24 BAD TYPE SPECIFIERS` |
 
 **See also** `char`, `unsigned`, `int`, [Characters](05_concepts.md#characters), [Types](05_concepts.md#types).
 
@@ -1785,8 +1780,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `sizeof` of a `void` value or of a function | `ERROR 41: INCOMPLETE TYPE` |
-| `sizeof` of a structure that is not yet defined | `ERROR 41: INCOMPLETE TYPE` |
+| `sizeof` of a `void` value or of a function | `ERROR 41 INCOMPLETE TYPE` |
+| `sizeof` of a structure that is not yet defined | `ERROR 41 INCOMPLETE TYPE` |
 
 **See also** `Casts`, `struct`, `malloc` in [Part 4](04_library.md#malloc), [Arrays](05_concepts.md#arrays), [Types](05_concepts.md#types).
 
@@ -1824,9 +1819,9 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `static` with another storage class, or on a parameter or a structure member | `ERROR 26: BAD STORAGE CLASS` |
-| a `static` function declared inside a function | `ERROR 26: BAD STORAGE CLASS` |
-| an initialiser that is not constant | `ERROR 50: CONSTANT REQUIRED` |
+| `static` with another storage class, or on a parameter or a structure member | `ERROR 26 BAD STORAGE CLASS` |
+| a `static` function declared inside a function | `ERROR 26 BAD STORAGE CLASS` |
+| an initialiser that is not constant | `ERROR 50 CONSTANT REQUIRED` |
 
 ```c
 // expect: error E_STORAGE 3
@@ -1876,11 +1871,11 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| a structure assigned to another | `ERROR 1: NOT SUPPORTED` |
-| a structure parameter or return value, a bit field | `ERROR 1: NOT SUPPORTED` |
-| `struct s { };`, a structure with no members | `ERROR 20: SYNTAX ERROR` |
-| the same tag defined twice | `ERROR 22: ALREADY DEFINED` |
-| an object of a structure that is not defined | `ERROR 41: INCOMPLETE TYPE` |
+| a structure assigned to another | `ERROR 1 NOT SUPPORTED` |
+| a structure parameter or return value, a bit field | `ERROR 1 NOT SUPPORTED` |
+| `struct s { };`, a structure with no members | `ERROR 20 SYNTAX ERROR` |
+| the same tag defined twice | `ERROR 22 ALREADY DEFINED` |
+| an object of a structure that is not defined | `ERROR 41 INCOMPLETE TYPE` |
 
 ```c
 // expect: error E_NOTSUP 7
@@ -1942,9 +1937,9 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| a pointer, a structure or a floating value as the expression | `ERROR 51: BAD OPERAND TYPE` |
-| the same value in two labels, or two `default`s | `ERROR 75: DUPLICATE CASE` |
-| a label that is not constant | `ERROR 50: CONSTANT REQUIRED` |
+| a pointer, a structure or a floating value as the expression | `ERROR 51 BAD OPERAND TYPE` |
+| the same value in two labels, or two `default`s | `ERROR 75 DUPLICATE CASE` |
+| a label that is not constant | `ERROR 50 CONSTANT REQUIRED` |
 
 ```c
 // expect: error E_DUPCASE 6
@@ -1994,8 +1989,8 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `typedef` with an initialiser | `ERROR 28: BAD INITIALISER` |
-| the same `typedef` name declared twice in one scope | `ERROR 21: REDECLARED` |
+| `typedef` with an initialiser | `ERROR 28 BAD INITIALISER` |
+| the same `typedef` name declared twice in one scope | `ERROR 21 REDECLARED` |
 
 **See also** `struct`, `enum`, `#define`, [Types](05_concepts.md#types), [Names](05_concepts.md#names).
 
@@ -2018,13 +2013,14 @@ int main(void) { return N; }
 **Notes.**
 
 * This is the only way to change a macro, because defining one twice is an error.
+* `#undef NULL` removes the predefined `NULL` (see `#define`), and `NULL` is then an ordinary name.
 * The directive may stand anywhere, including inside a function, to give a name a short life.
 
 **Errors.**
 
 | Mistake | What happens |
 |---|---|
-| anything after the name | `ERROR 20: SYNTAX ERROR` |
+| anything after the name | `ERROR 20 SYNTAX ERROR` |
 
 ```c
 // expect: error E_SYNTAX 3
@@ -2041,7 +2037,7 @@ int main(void) { return 0; }
 
 `union` -- **keyword** (not supported)
 
-Reserved, and gives `ERROR 1: NOT SUPPORTED`. Leap-C has no unions.
+Reserved, and gives `ERROR 1 NOT SUPPORTED`. Leap-C has no unions.
 
 ```c
 // expect: error E_NOTSUP 2
@@ -2094,17 +2090,15 @@ int main(void)
 
 `VERIFY "name"`, `VERIFY ""` -- **command**
 
-Checks a tape against the program in the editor. Nothing is written and nothing in the program changes. `VERIFY "name"` looks for the program with that name; `VERIFY ""` takes the next program tape, whatever its name. The status row shows `VERIFYING`, then `VERIFYING name` when the header is found. Two rows are shown afterwards until a key is pressed:
+Checks a tape against the program in the editor. Nothing is written and nothing in the program changes. `VERIFY "name"` looks for the program with that name; `VERIFY ""` takes the next program tape, whatever its name. The status row shows `VERIFYING`, then `VERIFYING name` when the header is found. The report is shown afterwards on the bottom row until a key is pressed:
 
-| First row | When |
+| Report | When |
 |---|---|
 | `VERIFIED name` | the tape holds exactly the program in the editor, and ends where it does |
 | `VERIFY FAILED` | the tape differs from the program |
 | `BAD TAPE VERSION` | not a Leap-C tape |
 | `BREAK` | SPACE or BREAK stopped it |
 | `BAD NAME` | more than 10 characters, no closing quote, or something after it |
-
-The second row is `SOURCE s B  FREE f B`.
 
 ```
 VERIFY "hello"
@@ -2152,9 +2146,9 @@ int main(void)
 
 | Mistake | What happens |
 |---|---|
-| `void v;` | `ERROR 41: INCOMPLETE TYPE` |
-| the value of a `void` call used (`f() + 1`) | `ERROR 51: BAD OPERAND TYPE` |
-| a `void` parameter with a name, or `void` combined with another type word | `ERROR 25: BAD DECLARATOR` or `ERROR 24: BAD TYPE SPECIFIERS` |
+| `void v;` | `ERROR 41 INCOMPLETE TYPE` |
+| the value of a `void` call used (`f() + 1`) | `ERROR 51 BAD OPERAND TYPE` |
+| a `void` parameter with a name, or `void` combined with another type word | `ERROR 25 BAD DECLARATOR` or `ERROR 24 BAD TYPE SPECIFIERS` |
 
 **See also** `return`, `Pointer and address operators`, `Casts`, [Functions](05_concepts.md#functions), [Pointers](05_concepts.md#pointers).
 
@@ -2164,7 +2158,7 @@ int main(void)
 
 `volatile` -- **keyword** (not supported)
 
-Reserved, and gives `ERROR 1: NOT SUPPORTED`. Leave it out.
+Reserved, and gives `ERROR 1 NOT SUPPORTED`. Leave it out.
 
 ```c
 // expect: error E_NOTSUP 2
@@ -2205,7 +2199,7 @@ The loop adds the digits of 1234: 4, 3, 2, 1.
 
 | Mistake | What happens |
 |---|---|
-| a `void` call as the test | `ERROR 51: BAD OPERAND TYPE` |
+| a `void` call as the test | `ERROR 51 BAD OPERAND TYPE` |
 
 ```c
 // expect: error E_OPERAND 5

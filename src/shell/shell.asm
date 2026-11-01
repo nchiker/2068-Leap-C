@@ -34,6 +34,11 @@
 ; Out: does not return
 ; ============================================================================
 SHELL_COLD:
+    call GFX_CLS                       ; 1.0: the version on the status row through the chime and up to the
+    ld   a, 2                          ; first key (Leap V2.1's VER): SH_DRAW_STATUS shows it while SH_VER_FLAG
+    ld   (SH_VER_FLAG), a              ; is nonzero; the editor's first redraw leaves 1, the redraw after the
+    ld   hl, SH_VERSION                ; first key 0 (a full one). NEW and the returns to the editor keep 0
+    call SH_STATUS_ROW
     call SH_RESET_EDIT
     call STARTUP_CHIME
 SH_LOOP:
@@ -173,16 +178,14 @@ SH_SPACES:
 
 ; ============================================================================
 ; SH_RUN -- RUN: compile the program and, if it compiles, run it (spec.md 1, 6.3); then the report
-; on rows 22 and 23 (SH_REPORT) until a key:
-;   a compile error  "ERROR n: MESSAGE" / "LINE m": the cursor on the line, its text loaded;
-;                    an undeclared identifier: "LINE m  'name'" (Phase 9);
-;   a runtime error  "RUNTIME ERROR n: MESSAGE" / "LINE m": the line where the definition of the
-;                    function that failed starts, the cursor on it (no line when unknown, spec.md 5.9);
-;   BREAK            "BREAK" / "LINE m", the same;
-;   the end          "EXIT n" / "IMAGE i B  HEAP h B": main's exit status, the image's code and
-;                    static data, the heap the program had (SH_MEMORY).
-; While it compiles, the status row shows COMPILING (a long program takes seconds: about 13 ms a line).
-; The program runs on a cleared screen; the report is drawn over its last two rows. The messages
+; on row 23 (SH_REPORT, one row since 1.0) until a key:
+;   a compile error  "ERROR n MESSAGE": the cursor goes to the line, on the token where the compile stopped;
+;   a runtime error  "RUNTIME ERROR n MESSAGE": the cursor goes to the line where the definition of the
+;                    function that failed starts (it stays put when unknown, spec.md 5.9);
+;   BREAK            "BREAK", the same;
+;   the end          "EXIT n": main's exit status.
+; While it compiles, the status row shows COMPILING (a long program takes seconds: about 9 ms a line).
+; The program runs on a cleared screen; the report is drawn over its last row. The messages
 ; are the diagnostics' (src/shell/diag.asm): they run once SH_COMPILE has paged the EXROM back in,
 ; and read only the compiler's error cells, never chunk 6 (bank rule 3)
 ; Out: carry clear. Destroys: AF, BC, DE, HL, IX
@@ -198,12 +201,11 @@ SH_RUN:
     call SH_APPEND
     ld   a, (CC_ERRNUM)
     ld   c, a                          ; (a compile error's message key is its number)
-    call DG_APPEND                     ; "n: MESSAGE"
+    call DG_APPEND                     ; "n MESSAGE"
     ld   hl, (CC_ERRLINE)
     jr   .line
 .compiled:
     push de
-    call SH_IMAGE                      ; the image's size, for the report and FREE
     call GFX_CLS
     call RT_RUN                        ; A = 0 (HL = the exit status), or A = the runtime error
 .rtdone:
@@ -215,7 +217,6 @@ SH_RUN:
     call SH_APPEND
     pop  hl
     call SH_APPEND_NUM
-    call SH_MEMORY                     ; "IMAGE i B  HEAP h B"
     jp   SH_REPORT
 .failed:                               ; A = the runtime error
     ld   b, a
@@ -228,18 +229,14 @@ SH_RUN:
     add  a, DG_RT
     ld   c, a                          ; (a runtime error's message key)
     ld   a, b
-    call DG_APPEND                     ; "n: MESSAGE"
+    call DG_APPEND                     ; "n MESSAGE"
     jr   .rtline
 .brk:
     call SH_APPEND                     ; "BREAK"
 .rtline:
     ld   hl, (RT_ERRLINE)
-.line:                                 ; HL = the line (0: unknown): "LINE m", the cursor on it
-    ld   (SH_ERR_LINE), hl
-    ld   de, SH_STATUS_BUF
-    xor  a
-    ld   (de), a
-    ld   a, h
+.line:                                 ; HL = the line (0: unknown): the cursor on it (1.0: the report shows
+    ld   a, h                          ; no line; the editor resumes on it)
     or   l
     jr   z, SH_REPORT
     call SH_JUMP_TO_LINE               ; the cursor on the line, its text in the edit buffer
@@ -266,39 +263,11 @@ SH_RUN:
 .col:
     ld   (SH_ERR_COL), hl              ; (SH_LOAD_EDIT puts the cursor there when the editor resumes)
 .nocol:
-    ld   de, SH_STATUS_BUF
-    ld   hl, SH_TXT_LINE               ; "LINE "
-    call SH_APPEND
-    ld   hl, (SH_ERR_LINE)
-    call SH_APPEND_NUM
-    ld   a, (NM_LEN)                   ; a name, and an error about it (CC_ERRNUM 0 after a runtime error
-    or   a                             ; or BREAK: the compile succeeded)
-    jr   z, SH_REPORT
-    ld   a, (CC_ERRNUM)
-    ld   hl, SH_NAMED
-    ld   bc, SH_NAMED_N
-    cpir
-    jr   nz, SH_REPORT
-    ld   hl, SH_TXT_NAME               ; Phase 9: "LINE m  'name'", the undeclared identifier's
-    call SH_APPEND                     ; first SH_NAME_MAX characters (left of the swatch). NM is
-    ld   hl, (NM_PTR)                  ; the name CX_PRIMARY looked up (1-31 characters of the
-    ld   a, (NM_LEN)                   ; source, which nothing has changed since)
-    cp   SH_NAME_MAX + 1
-    jr   c, .name
-    ld   a, SH_NAME_MAX
-.name:
-    ld   c, a
-    ld   b, 0
-    ldir
-    ex   de, hl
-    ld   (hl), "'"
-    inc  hl
-    ld   (hl), b                       ; (B = 0: the NUL)
     ; falls into SH_REPORT
 
 ; ============================================================================
-; SH_REPORT -- a report: the text in SH_REPORT_BUF on row 22 and SH_STATUS_BUF's on the status row,
-; both in the status bar's colours; then wait for a key, and the next redraw is a full one
+; SH_REPORT -- a report: the text in SH_REPORT_BUF on row 23 across the whole row (1.0: one row; up to 32
+; characters, no swatch), white on black; then wait for a key, and the next redraw is a full one
 ; SH_SHOW_MESSAGE -- the text at HL on the status row, the same (V2_SHOW_MESSAGE)
 ; SH_WAIT_KEY -- wait for a new key: a key still held from before (the ENTER of RUN or of a command,
 ; BREAK) is first let go, and a key latched before or meanwhile (pressed during a compile, left by the
@@ -308,13 +277,14 @@ SH_RUN:
 ; ============================================================================
 SH_REPORT:
     ld   hl, SH_REPORT_BUF
-    ld   a, 22
-    call SH_BAR_ROW
-    ld   hl, SH_STATUS_BUF
+    ld   a, 23
+    call SH_BAR_ROW                    ; the whole row (no swatch: a report may take 32 columns)
+    jr   SH_WAIT_FULL
 SH_SHOW_MESSAGE:
+    call SH_STATUS_ROW
+SH_WAIT_FULL:
     xor  a
     ld   (V2_REDRAW_SCOPE), a
-    call SH_STATUS_ROW
 SH_WAIT_KEY:
     ld   a, (KBD_CUR_ROW)              ; $FF: the ISR tracks no key (all released)
     inc  a
@@ -384,6 +354,10 @@ SH_ATTR_ROW:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 SH_DRAW_STATUS:
+    ld   hl, SH_VERSION
+    ld   a, (SH_VER_FLAG)
+    or   a
+    jr   nz, SH_STATUS_ROW
     ld   de, SH_STATUS_BUF
     ld   hl, SH_TXT_LINE               ; "LINE "
     call SH_APPEND
@@ -428,7 +402,7 @@ SH_LIST:
 .line:
     ld   a, h
     or   l
-    jr   z, SH_WAIT_KEY
+    jp   z, SH_WAIT_KEY
     ld   (SH_CMD_PTR), hl
     call SH_SETTLED                    ; HL = TOKEN_BUF
     push hl
@@ -470,7 +444,6 @@ SH_LIST:
 SH_FREE:
     ld   de, SH_REPORT_BUF
     call SH_SOURCE
-    call SH_MEMORY
     jp   SH_REPORT
 SH_SOURCE:
     ld   hl, SH_TXT_SOURCE             ; "SOURCE s B"
@@ -490,34 +463,6 @@ SH_SOURCE:
     jr   SH_APPEND_BYTES
 
 ; ============================================================================
-; SH_MEMORY -- the memory report in SH_STATUS_BUF: "IMAGE i B  HEAP h B". The image is the last
-; compile's (SH_IMAGE); the heap is what RT_RUN gives a program with the source as it is: from the
-; source's end (made even) to LIB_HEAP_END, less its first block's 2-byte header: the largest block
-; malloc() can return (0 when the source leaves no room)
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-SH_MEMORY:
-    ld   de, SH_STATUS_BUF
-    ld   hl, SH_TXT_IMAGE              ; "IMAGE i B"
-    call SH_APPEND
-    ld   hl, (SH_IMAGE_SIZE)
-    call SH_APPEND_BYTES
-    ld   hl, SH_TXT_HEAP               ; "  HEAP h B"
-    call SH_APPEND
-    push de
-    ld   hl, (PROG_END)
-    inc  hl
-    res  0, l
-    ex   de, hl
-    ld   hl, LIB_HEAP_END - 2
-    or   a
-    sbc  hl, de
-    pop  de
-    jr   nc, SH_APPEND_BYTES
-    ld   hl, 0
-    ; falls into SH_APPEND_BYTES
-
-; ============================================================================
 ; SH_APPEND_BYTES -- append the decimal text of HL and " B" at DE
 ; Out: DE -> the NUL written after it. Destroys: AF, BC, HL
 ; ============================================================================
@@ -525,50 +470,6 @@ SH_APPEND_BYTES:
     call SH_APPEND_NUM
     ld   hl, SH_TXT_B
     jp   SH_APPEND
-
-; ============================================================================
-; SH_IMAGE -- SH_IMAGE_SIZE = the size of the image just compiled: the code and static data in the
-; four image regions, from the compiler's limits (IMG_LIM: per region [low][high]; the code lies
-; below low, the data from high up, so the region's free bytes are high - low). Region 4 reserved
-; by #pragma hires is [high][high] (spec.md 3.2): only its data counts; region 3 closed by a loaded
-; library (Phase 10) counts nothing. (Any other region with high = low is full; region 4 full of code is
-; E_TOOBIG.)
-; Destroys: AF, BC, DE, HL, IX
-; ============================================================================
-SH_IMG_BYTES    EQU (LEAPC_IMG1_END - LEAPC_IMG1_BASE) + (LEAPC_IMG2_END - LEAPC_IMG2_BASE) + (LEAPC_IMG3_END - LEAPC_IMG3_BASE) + (LEAPC_IMG4_END - LEAPC_IMG4_BASE)
-SH_IMAGE:
-    ld   ix, IMG_LIM
-    ld   hl, SH_IMG_BYTES
-    ld   a, (LIB_LOADED)               ; Phase 10: region 3 holds a loaded library ([end][end]): not the image's
-    or   a
-    jr   z, .all
-    ld   hl, SH_IMG_BYTES - (LEAPC_IMG3_END - LEAPC_IMG3_BASE)
-.all:
-    ld   b, IMG_REGIONS
-.region:
-    push hl
-    ld   e, (ix + 0)
-    ld   d, (ix + 1)                   ; DE = low
-    ld   l, (ix + 2)
-    ld   h, (ix + 3)                   ; HL = high
-    or   a
-    sbc  hl, de                        ; the region's free bytes
-    jr   nz, .sub
-    ld   a, b
-    dec  a
-    jr   nz, .sub
-    ld   hl, -LEAPC_IMG4_BASE          ; region 4 reserved: its bytes below the data are free
-    add  hl, de
-.sub:
-    ex   de, hl
-    pop  hl
-    or   a
-    sbc  hl, de
-    ld   de, 4
-    add  ix, de
-    djnz .region
-    ld   (SH_IMAGE_SIZE), hl
-    ret
 
 ; ============================================================================
 ; SH_STORE_EDIT -- store the edit buffer as the cursor's line (replacing it), or after the last
@@ -873,6 +774,15 @@ SH_NAV_COMMIT:
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 SH_REDRAW:
+    ld   hl, SH_VER_FLAG               ; 1.0: the version's countdown; the redraw that takes it off the
+    ld   a, (hl)                       ; status row is a full one
+    or   a
+    jr   z, .scope
+    dec  (hl)
+    jr   nz, .scope
+    xor  a
+    ld   (V2_REDRAW_SCOPE), a
+.scope:
     ld   a, (V2_REDRAW_SCOPE)
     or   a
     jr   z, .full
@@ -1358,17 +1268,12 @@ SH_KW_VERIFY:   DB "VERIFY", 0
 SH_KW_LIB:      DB "LIB", 0
 SH_MSG_FULL:    DB "PROGRAM FULL", 0
 SH_MSG_COMPILING: DB "COMPILING", 0
+    INCLUDE "include/leapc_version.inc"
 SH_MSG_RUNTIME: DB "RUNTIME "
 SH_MSG_ERROR:   DB "ERROR ", 0
 SH_MSG_BREAK:   DB "BREAK", 0
 SH_TXT_LINE:    DB "LINE ", 0
-SH_TXT_NAME:    DB "  '", 0
-SH_NAMED:       DB E_REDECL, E_REDEF, E_UNDECL, E_MEMBER, E_UNDEFFN, E_UNDEFLABEL   ; errors that name NM
-SH_NAMED_N      EQU $ - SH_NAMED
-SH_NAME_MAX     EQU 15              ; "LINE 9999  '" and 15 characters and "'": 29 columns
 SH_TXT_EXIT:    DB "EXIT ", 0
-SH_TXT_IMAGE:   DB "IMAGE ", 0
-SH_TXT_HEAP:    DB "  HEAP ", 0
 SH_TXT_SOURCE:  DB "SOURCE ", 0
 SH_TXT_FREE:    DB "  FREE ", 0
 SH_TXT_B:       DB " B", 0

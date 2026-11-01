@@ -47,6 +47,7 @@ import c2src            # noqa: E402
 import c2tape           # noqa: E402
 import exectest         # noqa: E402
 import gen_diag         # noqa: E402
+import lcharness        # noqa: E402
 import tapes            # noqa: E402
 from e2etest import TYPED, EXEC_DIRS, decl_expect  # noqa: E402
 from fusedrive import Fuse, fuse_version, chord, BREAK, TPF  # noqa: E402
@@ -59,7 +60,6 @@ C_CHARS = ("abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 "
            "!\"#%&'()*+,-./:;<=>?[\\]^_{|}~ $@")
 IGNORED = {"maxi", "noaudit", "mem", "golden", "region", "rundepth", "ay", "attr", "pixel", "cell", "breakpc",
            "stacklow", "breakdeferred"}     # memory-level expectations: the ZEsarUX suites check them
-NAMED = {21, 22, 23, 52, 70, 76}            # the errors whose report names the identifier (Phase 9: 23; Phase 10)
 LIBS = os.path.join(BUILD, "libs")
 
 
@@ -70,29 +70,9 @@ def new_fuse(name, speed=20000):
 
 
 # =========================================================================== reports
-def image_size(f):
-    d = f.peek(f.S["IMG_LIM"], 16)
-    return exectest.image_size([(d[4 * k] | d[4 * k + 1] << 8, d[4 * k + 2] | d[4 * k + 3] << 8) for k in range(4)])
-
-
-def memory_row(f):
-    return "IMAGE %d B  HEAP %d B" % (image_size(f), exectest.heap_free(f.w16(f.S["PROG_END"])))
-
-
-def undeclared_name(f, lines, line=None):
-    name = f.peek(f.w16(f.S["NM_PTR"]), f.peek(f.S["NM_LEN"], 1)[0]).decode("latin-1")
-    where = lines if not line or line > len(lines) else \
-        [lines[line - 1]] + [l for l in lines if l.lstrip().startswith("#") and "define" in l]
-    ok = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,30}", name) and any(
-        re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), l) for l in where)
-    return name[:exectest.UNDECL_NAME_MAX] if ok else "<NM %r>" % name
-
-
-def error_rows(f, n, line, lines):
-    row = "LINE %d" % line
-    if n in NAMED and f.peek(f.S["NM_LEN"], 1)[0]:
-        row += "  '%s'" % undeclared_name(f, lines, line)
-    return [gen_diag.report("E", n, MSGS), row]
+# 1.0: a report is one row, row 23 (white on black, no swatch); row 22 stays the program's/editor's. RUN's report is
+# "ERROR n MESSAGE", "RUNTIME ERROR n MESSAGE", "BREAK" or "EXIT n": no LINE m (the editor resumes on the line:
+# editor_back), no identifier's name, no IMAGE/HEAP row (owner's decision); a tape command's or LIB's, the result alone
 
 
 def lib_command(f, name, path=None):
@@ -107,7 +87,7 @@ def lib_command(f, name, path=None):
     if r != "0":
         return "tape_open: %s" % r
     f.command('lib "%s"' % name, timeout=120)
-    msg = f.rows()[22]
+    msg = f.rows()[23]
     f.key(" ")
     img = open(os.path.join(LIBS, name + ".bin"), "rb").read()
     want = "LIBRARY %s: %d FUNCTIONS" % (name, img[2])
@@ -147,7 +127,7 @@ def c_boot(out):
     try:
         rows = f.rows()
         bad = []
-        if any(rows[:23]) or rows[23] != "LINE 1/0":
+        if any(rows[:23]) or rows[23] != lcharness.VERSION_TEXT:          # 1.0: the version until the first key
             bad.append("editor screen %r" % rows[22:])
         attrs = f.peek(0x5800 + 23 * 32, 32)
         if attrs != bytes([7] * 29 + [0x10, 0x20, 0x08]):
@@ -200,26 +180,25 @@ def c_typed(out):
     try:
         for name, lines, screen, report, keys, _matrix in TYPED:
             n += 1
-            report, row23, col = (report + (None,))[:3] if isinstance(report, tuple) else (report, None, None)
+            report, line, col = (report + (None, None))[:3] if isinstance(report, tuple) else (report, None, None)
             f.enter_program(lines)
             bad = []
             if f.store() != lines:
                 bad.append("stored %r" % f.store())
             rows = f.run(keys=[chr(k) for k in keys or []])
-            if rows[22] != report:
-                bad.append("report %r, expected %r" % (rows[22], report))
-            elif report.startswith("EXIT"):
-                if rows[23] != memory_row(f):
-                    bad.append("memory row %r, expected %r" % (rows[23], memory_row(f)))
-            elif row23 is not None and rows[23] != row23:
-                bad.append("row 23 %r, expected %r" % (rows[23], row23))
-            elif report.startswith("ERROR") and rows[23] != "LINE %d" % f.w16(f.S["CC_ERRLINE"]) and row23 is None:
-                bad.append("row 23 %r" % rows[23])
+            if rows[23] != report:
+                bad.append("report %r, expected %r" % (rows[23], report))
+            if line is not None:
+                errline = f.w16(f.S["CC_ERRLINE" if report.startswith("ERROR") else "RT_ERRLINE"])
+                if errline != line:
+                    bad.append("error line %d, expected %d" % (errline, line))
             if screen is not None:
-                want = [screen.get(r, "") for r in range(22)]
-                if rows[:22] != want:
-                    bad.append("screen %r" % [r for r in rows[:22] if r])
+                want = [screen.get(r, "") for r in range(23)]
+                if rows[:23] != want:
+                    bad.append("screen %r" % [r for r in rows[:23] if r])
             f.key(" ")
+            if line is not None:
+                bad += editor_back(f, lines, line)
             if col is not None and f.w16(f.S["EDIT_BUF_OFFSET"]) != col:
                 bad.append("cursor at column %d, expected %d" % (f.w16(f.S["EDIT_BUF_OFFSET"]), col))
             if bad:
@@ -255,13 +234,13 @@ def c_break(out):
                 f.cmd("press %d" % k)           # the report must stay up until the release, then wait
             try:
                 f.wait_frames(120)
-                held = f.rows()[22:24]
+                held = f.rows()[23]
             finally:
                 for k in reversed(BREAK):
                     f.cmd("release %d" % k)
             f.wait(f.at_key_wait, 60, "the report's key wait")
             rows = f.rows()
-            if held != ["BREAK", "LINE 1"] or rows[22:24] != ["BREAK", "LINE 1"]:
+            if held != "BREAK" or rows[23] != "BREAK" or rows[22]:
                 fails.append("%s: report while BREAK held %r, after %r" % (name, held, rows[22:24]))
             f.key(" ")
             fails += ["%s: %s" % (name, b) for b in editor_back(f, lines, 1)]
@@ -314,7 +293,7 @@ def load_tape(f, path, name, timeout=120):
     if r != "0":
         return "tape_open %s: %s" % (path, r)
     f.command('load ""', timeout=timeout)
-    msg = f.rows()[22]
+    msg = f.rows()[23]
     f.key(" ")
     return None if msg == "LOADED %s" % name else "LOAD showed %r" % msg
 
@@ -339,7 +318,7 @@ def c_save(out):
         f.enter_program(SAVE_PROGRAM)
         f.cmd("tape_rec_start")
         f.command('save "fusesave"')
-        msg = f.rows()[22]
+        msg = f.rows()[23]
         f.key(" ")
         f.cmd("tape_rec_stop")
         rec = os.path.join(f.wdir, "recorded.tzx")
@@ -360,8 +339,8 @@ def c_save(out):
                 bad.append("loaded %r" % f.store())
             else:
                 rows = f.run()
-                if rows[0] != "144 SAVED" or rows[22] != "EXIT 25":
-                    bad.append("run %r %r" % (rows[0], rows[22]))
+                if rows[0] != "144 SAVED" or rows[23] != "EXIT 25":
+                    bad.append("run %r %r" % (rows[0], rows[23]))
                 f.key(" ")
             shutil.copy(rec, os.path.join(WORK, "fuse_saved.tzx"))
             out("fuse: save: the recording (%s): %s" % (os.path.join("build", "fuse", "fuse_saved.tzx"),
@@ -388,8 +367,8 @@ def c_wav(out):
             bad.append("loaded %r" % f.store())
         else:
             rows = f.run()
-            if rows[0] != "144 SAVED" or rows[22] != "EXIT 25":
-                bad.append("run %r %r" % (rows[0], rows[22]))
+            if rows[0] != "144 SAVED" or rows[23] != "EXIT 25":
+                bad.append("run %r %r" % (rows[0], rows[23]))
         return not bad, "; ".join(bad), None
     finally:
         f.stop()
@@ -410,7 +389,7 @@ def c_lib(out):
             bad.append("shapes: " + e)
         f.enter_program(LIB_SHAPES)
         rows = f.run()
-        if rows[0] != "100" or rows[22] != "EXIT 31" or rows[23] != memory_row(f):
+        if rows[0] != "100" or rows[23] != "EXIT 31":
             bad.append("shapes run %r %r" % (rows[0], rows[22:24]))
         f.key(" ")
         wav = open(os.path.join(LIBS, "testlib.wav"), "rb").read()   # the WAV, as a direct recording
@@ -434,7 +413,7 @@ def c_lib(out):
                 f.cmd("release %d" % k)
         f.wait(f.at_key_wait, 60, "the report's key wait")
         rows = f.rows()
-        if rows[22:24] != ["BREAK", "LINE 1"]:
+        if rows[23] != "BREAK":
             bad.append("BREAK in the library %r" % rows[22:24])
         f.key(" ")
         e = lib_command(f, None)
@@ -442,7 +421,7 @@ def c_lib(out):
             bad.append(e)
         f.enter_program(["int main(void)", "{", "    return t_args(1, 2, 3);", "}"])
         rows = f.run()
-        if rows[22:24] != ["ERROR 70: UNDEFINED FUNCTION", "LINE 3  't_args'"]:
+        if rows[23] != "ERROR 70 UNDEFINED FUNCTION":
             bad.append("after LIB alone %r" % rows[22:24])
         f.key(" ")
         return not bad, "; ".join(bad), None
@@ -514,24 +493,24 @@ def check_corpus_case(f, path, lines, want, tapedir):
     bad = []
     if kind[0] == "exit":
         ex = kind[1] - 65536 if kind[1] & 0x8000 else kind[1]
-        exp = ["EXIT %d" % ex, memory_row(f)]
+        exp = "EXIT %d" % ex
         line = 0
     elif kind[0] == "error":
-        exp = error_rows(f, kind[1], kind[2], lines)
+        exp = gen_diag.report("E", kind[1], MSGS)
         line = kind[2]
     elif kind[0] == "nomain":                   # a declaration case: NO MAIN FUNCTION, or (with a main) it runs
-        if rows[22].startswith("EXIT"):
-            exp, line = [rows[22], memory_row(f)], 0
+        if rows[23].startswith("EXIT"):
+            exp, line = rows[23], 0
         else:
             line = len(lines)
-            exp = [gen_diag.report("E", 71, MSGS), "LINE %d" % line]
+            exp = gen_diag.report("E", 71, MSGS)
     else:
         line = want.get("rtline") or f.w16(f.S["RT_ERRLINE"])
-        exp = [gen_diag.report("RT", kind[1], MSGS), "LINE %d" % line if line else ""]
-    if rows[22:24] != exp:
-        bad.append("report %r, expected %r" % (rows[22:24], exp))
+        exp = gen_diag.report("RT", kind[1], MSGS)
+    if rows[23] != exp:                         # (1.0: one row; the line is checked by editor_back)
+        bad.append("report %r, expected %r" % (rows[23], exp))
     for r, txt in want["screen"].items():
-        if r < 22 and rows[r] != txt.rstrip():
+        if r < 23 and rows[r] != txt.rstrip():
             bad.append("screen row %d %r, expected %r" % (r, rows[r], txt))
     f.key(" ")
     bad += editor_back(f, lines, line)

@@ -19,11 +19,11 @@ Pixels are counted from the top left, as text is; this is not the Sinclair BASIC
 
 **Frames.** A *frame* is one display refresh: 1/60 second on a TS2068, 1/50 second on ZEsarUX. `frames()`, `pause()` and `beep()` count frames, so a program that waits 60 frames waits one second on a TS2068 and 1.2 seconds on ZEsarUX.
 
-**Arguments.** The compiler knows every function's parameters. A call with the wrong number of arguments is `ERROR 55: WRONG ARGUMENT COUNT`, and an integer where a pointer is wanted (or a pointer where an integer is wanted) is `ERROR 40: TYPE MISMATCH`. The one exception is `printf`, which takes any number of arguments. An integer parameter accepts any integer (a `char` or an `unsigned` too); a pointer parameter accepts a pointer to any object. A function that returns `void` gives no value: assigning its result is `ERROR 40: TYPE MISMATCH`, and using it in an expression (`f() + 1`) is `ERROR 51: BAD OPERAND TYPE`.
+**Arguments.** The compiler knows every function's parameters. A call with the wrong number of arguments is `ERROR 55 WRONG ARGUMENT COUNT`, and an integer where a pointer is wanted (or a pointer where an integer is wanted) is `ERROR 40 TYPE MISMATCH`. The one exception is `printf`, which takes any number of arguments. An integer parameter accepts any integer (a `char` or an `unsigned` too); a pointer parameter accepts a pointer to any object. A function that returns `void` gives no value: assigning its result is `ERROR 40 TYPE MISMATCH`, and using it in an expression (`f() + 1`) is `ERROR 51 BAD OPERAND TYPE`.
 
-**Checked arguments.** A few functions check an argument and stop the program if it is out of range: `beep`'s semitone, `sound`'s register, `mode`'s number, `itoa`'s base, the rectangle of `sprite_get` and `sprite_put`, and the name or length of `tape_save` and `tape_load`. The report is `RUNTIME ERROR 4: BAD ARGUMENT` and `LINE m`, where *m* is the line on which the function that made the call **starts**. See [Appendix C](08_appendices.md#appendix-c-runtime-errors). Everything else is unchecked: an array subscript, a pointer, the size of a buffer you pass to `strcpy`. That is C.
+**Checked arguments.** A few functions check an argument and stop the program if it is out of range: `beep`'s semitone, `sound`'s register, `mode`'s number, `itoa`'s base, the rectangle of `sprite_get` and `sprite_put`, and the name or length of `tape_save` and `tape_load`. The report is `RUNTIME ERROR 4 BAD ARGUMENT`, and a key puts the cursor on the line where the function that made the call **starts**. See [Appendix C](08_appendices.md#appendix-c-runtime-errors). Everything else is unchecked: an array subscript, a pointer, the size of a buffer you pass to `strcpy`. That is C.
 
-**Printing.** Text is printed at the *print position*. After a character the position moves one column right; after column 31 it goes to column 0 of the next row, and below row 23 the whole screen scrolls up one row. The character `'\n'` (10) moves to the start of the next row. A character that has no picture is shown as a space. Codes 128 to 143 are the block graphics (see `putchar`). A program starts with the screen as the editor left it, so **call `cls()` first** whenever it prints. At the start of every run the colours are ink 0 (black) and paper 7 (white), with bright and flash off.
+**Printing.** Text is printed at the *print position*. After a character the position moves one column right; after column 31 it goes to column 0 of the next row, and below row 23 the whole screen scrolls up one row; the new bottom row is cleared in the current colours. The character `'\n'` (10) moves to the start of the next row. A character that has no picture is shown as a space. Codes 128 to 143 are the block graphics (see `putchar`). `RUN` clears the screen before the program starts, and the print position starts at row 0, column 0. At the start of every run the colours are ink 0 (black) and paper 7 (white), with bright, flash, `inverse` and `over` off. `cls()` clears the screen again whenever the program needs it.
 
 ## How to read an entry
 
@@ -232,6 +232,7 @@ The cell at row 1, column 3 has bright (64), paper 6 (48) and ink 2: 114. The co
 
 * A cell outside the screen gives 0.
 * `attr` reads the cell, not the print attribute: use it to see what is on the screen, for instance after `plot` has changed a cell's colours.
+* In high-resolution mode `attr` still reads the normal attributes at `$5800`, not the colours that mode shows (see `mode`).
 
 **Errors.** None.
 
@@ -374,7 +375,8 @@ The whole screen is now blue on yellow: ink 1 (blue) and paper 6 (yellow) make t
 **Notes.**
 
 * `inverse` is not applied by `cls`: the screen is painted with the plain ink and paper.
-* A program starts with the screen as the editor left it. Call `cls()` before the first thing a program prints.
+* A program does not need `cls()` to begin: `RUN` clears the screen to paper 7 and ink 0 before it starts, with the print position at row 0, column 0. Use `cls()` to clear the screen while the program runs, or to clear it to colours of your own, as above.
+* In high-resolution mode (`mode(1)`) `cls()` clears the pixels but paints only the normal attributes, which that mode does not show; the colours that `plot` and `draw` gave stay (see `mode`).
 
 **Errors.** None.
 
@@ -524,7 +526,7 @@ The program returns 1 when `pause(10)` took 10 or 11 frames (a wait can begin pa
 
 `void free(void *p)` -- **function**
 
-Gives back to the heap the block that `malloc` returned as *p*, so that a later `malloc` can use it again. `free(0)` (the null pointer) does nothing.
+Gives back to the heap the block that `malloc` returned as *p*, so that a later `malloc` can use it again. `free(0)` (the null pointer, `NULL`) does nothing.
 
 ```c
 // expect: exit 1
@@ -562,7 +564,7 @@ The block that was freed is the first free block that fits, so the second `mallo
 
 `int getkey(void)` -- **function**
 
-Waits until a key is pressed and gives its code. Letters, digits and symbols give their ASCII codes (`'a'` is 97, `'A'` is 65, `'0'` is 48); the other keys give the editor's control codes: 1 to 4 for the cursor keys, 8 for DELETE and 13 for ENTER.
+Waits until a key is pressed and gives its code. Letters, digits and symbols give their ASCII codes (`'a'` is 97, `'A'` is 65, `'0'` is 48); the other keys give the editor's control codes: 1 to 4 for the cursor keys, 8 for DELETE, 11 for CAPS SHIFT + ENTER, 13 for ENTER and 15 for CAPS SHIFT + 1 (the table is in [Appendix D](08_appendices.md#what-getkey-returns)).
 
 ```c
 // keys: "y"
@@ -814,7 +816,7 @@ int main(void)
 
 `void *malloc(unsigned n)` -- **function**
 
-Takes a block of *n* bytes from the heap and returns a pointer to its first byte, or 0 (the null pointer) if no free block is large enough. The contents of the block are not cleared. Give the block back with `free` when you have finished with it.
+Takes a block of *n* bytes from the heap and returns a pointer to its first byte, or 0 (the null pointer, which a program may also write `NULL`) if no free block is large enough. The contents of the block are not cleared. Give the block back with `free` when you have finished with it.
 
 ```c
 // expect: exit 45
@@ -843,11 +845,11 @@ int main(void)
 
 **Notes.**
 
-* The heap is the memory above the compiled program. At the start of every run it is one large free block; its size is the `HEAP` figure in the report after `RUN`, up to about 18 KB for a small program and less as the source grows.
+* The heap is the part of the source region that the source does not use: from the end of the program text (made even) to `$BFFE`. At the start of every run it is one large free block; the largest block `malloc` can return is 4 or 5 bytes less than the `FREE` figure of the `FREE` command, up to about 18 KB for a small program and less as the source grows (see [Heap](05_concepts.md#heap)).
 * A request is served from the **first** free block that is large enough (first fit). Each block costs two bytes more than you ask for, and sizes are rounded up to an even number.
 * A request of 32 KB or more always gives 0. `malloc(0)` gives a block.
 * The returned pointer converts to any pointer type without a cast: `int *a = malloc(20);`.
-* **Always test for 0** when the size depends on the program: with no check, a pointer of 0 is written through and the program damages memory. Leap-C does not check pointers.
+* **Always test for 0** (`if (a == 0)`, or `if (a == NULL)`: `NULL` is predefined as `0`) when the size depends on the program: with no check, a pointer of 0 is written through and the program damages memory. Leap-C does not check pointers.
 
 **Errors.** None: a failed request gives 0, not an error.
 
@@ -994,7 +996,7 @@ int main(void)
 
 `void mode(int n)` -- **function**
 
-Chooses the display mode: `mode(0)` is the normal screen, `mode(1)` the TS2068's high-resolution colour mode (see the concept [High resolution](05_concepts.md#high-resolution)). The end of a program always puts the machine back in mode 0.
+Chooses the display mode: `mode(0)` is the normal screen, `mode(1)` the TS2068's high-resolution colour mode, in which the colours are given for every 8 by 1 pixels instead of every 8 by 8 (see the concept [High resolution](05_concepts.md#high-resolution)). The end of a program always puts the machine back in mode 0.
 
 ```c
 // expect: exit 1
@@ -1013,7 +1015,11 @@ int main(void)
 **Notes.**
 
 * High-resolution mode uses the memory at `$6000` to `$77FF`, which is also where the compiler puts the end of a very large program. **A program that uses `mode(1)` should say `#pragma hires`**, as above, which keeps the compiled program out of that memory.
-* `plot`, `draw` and `point` go on working in mode 1.
+* Mode 1 shows the same pixels as mode 0, but takes its colours from a second set of attributes, one byte for each 8 by 1 pixels, at `$6000-$77FF`. **Every `mode(1)` resets them all to paper 7 (white) and ink 0 (black)**, whatever `paper` and `ink` say and whatever `cls()` painted before.
+* Only `plot` and `draw` write those attributes: each pixel they set gives its 8 by 1 cell the print attribute (`ink`, `paper`, `bright`, `flash`, `inverse`). So lines one pixel row apart can have different inks, which mode 0 cannot show.
+* Text (`print`, `printf`, `putchar`, `puts`), `cls()`, `attr()`, `sprite_get` and `sprite_put` go on using the normal attributes at `$5800`, which mode 1 does not show. Text appears, but `ink` and `paper` have no visible effect on it, and `attr()` does not report the colours of mode 1. `cls()` clears the pixels but leaves the colours of mode 1 as they are.
+* `point` works in mode 1 as in mode 0.
+* `mode(0)` shows the normal attributes again, as they were: the pixels drawn in mode 1 stay, in the colours of the normal attributes.
 
 **Errors.**
 
@@ -1676,7 +1682,7 @@ int main(void)
 
 `char *strchr(const char *s, int c)` -- **function**
 
-Finds the first place in the string *s* where the character *c* occurs, and returns a pointer to it; or 0 if it does not occur. *c* may be 0, in which case the result points to the NUL that ends *s*.
+Finds the first place in the string *s* where the character *c* occurs, and returns a pointer to it; or 0 (`NULL`) if it does not occur. *c* may be 0, in which case the result points to the NUL that ends *s*.
 
 ```c
 // expect: exit 12

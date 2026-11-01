@@ -9,15 +9,15 @@ editor):
     store must hold exactly the typed lines;
   - the corpus: every executable program of the test corpus (tests/expr ... tests/mem) injected into
     the line store and RUN through the shell (exectest.check_case with shell=...: the case's own
-    expectations, the report, the cursor on the error's line, the banking invariants armed); the
+    expectations, the one-row report, the cursor on the error's line, the banking invariants armed); the
     declaration corpus too (a compile error, or NO MAIN FUNCTION, reported with the cursor on its
     line). The compile speed over the corpus is measured from the shell's compiles;
   - the diagnostics: every message of include/leapc_errors.inc produced by the EXROM's table
     (DG_APPEND), STRING TOO LONG through a line the editor cannot make, every compile error number
     seen through the shell;
-  - the reports: the exit status (negative, void main, exit() from depth), the image's size
-    (against the declarations' sizes), the free heap (malloc() of exactly that succeeds and one byte
-    more fails), FREE.
+  - the reports (1.0: one row, row 23, white on black; row 22 stays the program's): the exit status
+    (negative, void main, exit() from depth), the static data's size (the compiler's limits), the free
+    heap (malloc() of exactly that succeeds and one byte more fails), FREE.
 
 Usage: e2etest.py [--port N] [--shard K/N] [--group typed,report,corpus] [substring ...]
 """
@@ -50,8 +50,10 @@ def case(name, title, group):
 
 
 # ===================================================================== typed programs
-# (name, lines, screen rows {row: text} (the others blank), report row 22 (or rows 22 and 23, or (Phase 10) rows
-# 22 and 23 and the cursor's column in its line after the report), keys during the run, matrix)
+# (name, lines, screen rows {row: text} (rows 0-22, the others blank; None: a compile error, the editor's screen
+# stays), the report on row 23 (or (Phase 10) the report and the cursor's column in its line after it), keys
+# during the run, matrix). 1.0: the report is one row; its LINE m is gone (the cursor on the line checks it)
+# and so is the undeclared identifier's name (owner's decision): those cases check the message and the cursor
 TYPED = [
     ("hello", ["int main(void)", "{", '    puts("HELLO, WORLD");', "    return 0;", "}"],
      {0: "HELLO, WORLD"}, "EXIT 0", None, True),
@@ -121,50 +123,51 @@ TYPED = [
     ("printf-width", ["int main(void)", "{", '    printf("[%5d][%3s][%c]", 42, "ab", 65);', "    return 0;", "}"],
      {0: "[   42][ ab][A]"}, "EXIT 0", None, False),
     ("runtime-error", ["int main(void)", "{", '    puts("BEFORE");', "    beep(1, 99);", "    return 0;", "}"],
-     {0: "BEFORE"}, ("RUNTIME ERROR 4: BAD ARGUMENT", "LINE 1", 0), None, False),
+     {0: "BEFORE"}, ("RUNTIME ERROR 4 BAD ARGUMENT", 1, 0), None, False),
     ("compile-error", ["int main(void)", "{", "    int total = 0;", "    totl = 5;", "    return total;", "}"],
-     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'totl'", 9), None, False),
+     None, ("ERROR 23 UNDECLARED IDENTIFIER", 4, 9), None, False),
     # Phase 8: floating point (the '.' typed on the matrix), its runtime error, a missing ';' reported at its line
     ("float", ["float area(float r)", "{", "    return 3.14159 * r * r;", "}", "int main(void)", "{",
                '    printf("%.2f %f", area(2), 1.0 / 8);', "    return area(1) * 100;", "}"],
      {0: "12.57 0.125000"}, "EXIT 314", None, True),
     ("float-error", ["int main(void)", "{", "    float z = 0;", '    puts("DIVIDE");', "    return 1 / z;", "}"],
-     {0: "DIVIDE"}, "RUNTIME ERROR 6: NUMBER TOO BIG", None, False),
+     {0: "DIVIDE"}, ("RUNTIME ERROR 6 NUMBER TOO BIG", 1), None, False),
     ("missing-semi", ["int main(void)", "{", "    int x = 1", "    return x;", "}"],
-     None, ("ERROR 20: SYNTAX ERROR", "LINE 3", 13), None, False),
-    # Phase 9: the undeclared identifier's name on the status row: the owner's own mistake (the letter l
-    # typed for the digit 1), a name longer than the 15 characters shown, a name from a macro's body
+     None, ("ERROR 20 SYNTAX ERROR", 3, 13), None, False),
+    # Phase 9: an undeclared identifier: the owner's own mistake (the letter l typed for the digit 1), a long
+    # name, a name from a macro's body (1.0: the report no longer names it, owner's decision; the message and
+    # the cursor on the line are checked)
     ("undeclared-l", ["int main(void)", "{", "    float third = l.0 / 3;", '    printf("%f", third);',
                       "    return 0;", "}"],
-     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 3  'l'"), None, True),
+     None, ("ERROR 23 UNDECLARED IDENTIFIER", 3), None, True),
     ("undeclared-long", ["int main(void)", "{", "    int counter_of_items = 0;",
                          "    return counter_of_itmes + 1;", "}"],
-     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'counter_of_itme'"), None, False),
+     None, ("ERROR 23 UNDECLARED IDENTIFIER", 4), None, False),
     ("undeclared-macro", ["#define LIMIT maximum_value", "int main(void)", "{", "    return LIMIT;", "}"],
-     None, ("ERROR 23: UNDECLARED IDENTIFIER", "LINE 4  'maximum_value'"), None, False),
-    # Phase 10, Fix 2: five more errors name the identifier (a #define's ALREADY DEFINED has no name); UNDEFINED
-    # FUNCTION and UNDEFINED LABEL are reported at the end, when the compiler last named another identifier
+     None, ("ERROR 23 UNDECLARED IDENTIFIER", 4), None, False),
+    # Phase 10, Fix 2: five more errors about an identifier (1.0: not named in the report); UNDEFINED FUNCTION and
+    # UNDEFINED LABEL are reported at the end, the cursor on the line that used the name
     ("redeclared", ["typedef int T;", "typedef int T;", "int main(void)", "{", "    return 0;", "}"],
-     None, ("ERROR 21: REDECLARED", "LINE 2  'T'"), None, False),
+     None, ("ERROR 21 REDECLARED", 2), None, False),
     ("already-defined", ["int f(void) { return 1; }", "int f(void) { return 2; }", "int main(void)", "{",
                          "    return f();", "}"],
-     None, ("ERROR 22: ALREADY DEFINED", "LINE 2  'f'"), None, False),
+     None, ("ERROR 22 ALREADY DEFINED", 2), None, False),
     ("define-twice", ["#define N 3", "#define N 3", "int main(void)", "{", "    return N;", "}"],
-     None, ("ERROR 22: ALREADY DEFINED", "LINE 2"), None, False),
+     None, ("ERROR 22 ALREADY DEFINED", 2), None, False),
     ("no-member", ["struct point { int x, y; };", "struct point p;", "int main(void)", "{", "    return p.z;", "}"],
-     None, ("ERROR 52: NO SUCH MEMBER", "LINE 5  'z'"), None, False),
+     None, ("ERROR 52 NO SUCH MEMBER", 5), None, False),
     ("undefined-function", ["int main(void)", "{", "    prnt(1);", "    return 0;", "}", "int other(void)", "{",
                             "    return 2;", "}"],
-     None, ("ERROR 70: UNDEFINED FUNCTION", "LINE 3  'prnt'"), None, False),
+     None, ("ERROR 70 UNDEFINED FUNCTION", 3), None, False),
     ("undefined-label", ["int main(void)", "{", "    int x = 1;", "    goto nowhere;", "    return x;", "}"],
-     None, ("ERROR 76: UNDEFINED LABEL", "LINE 4  'nowhere'"), None, False),
+     None, ("ERROR 76 UNDEFINED LABEL", 4), None, False),
     # Phase 10, Fix 5: the cursor on the error's column: on the token where the compile stopped, at the line's end
     # for a missing token (missing-semi above), on a wrapped line's second row
     ("bad-character", ["int main(void)", "{", "    int a = 3 @ 4;", "    return a;", "}"],
-     None, ("ERROR 10: BAD CHARACTER", "LINE 3", 14), None, False),
+     None, ("ERROR 10 BAD CHARACTER", 3, 14), None, False),
     ("error-wrapped", ["int main(void)", "{", "    int alpha = 1, beta = 2, gamma = 3, delta = 4 @ 5;", "    return alpha;",
                        "}"],
-     None, ("ERROR 10: BAD CHARACTER", "LINE 3", 50), None, False),
+     None, ("ERROR 10 BAD CHARACTER", 3, 50), None, False),
 ]
 
 
@@ -181,14 +184,16 @@ def type_program(sh, lines, matrix):
 
 
 def typed_case(name, lines, screen, report, keys, matrix):
-    report, row23, col = (report + (None,))[:3] if isinstance(report, tuple) else (report, None, None)
+    report, line, col = (report + (None, None))[:3] if isinstance(report, tuple) else (report, None, None)
 
     def fn(sh):
         m, S = sh.m, sh.S
         sh.boot()
         type_program(sh, lines, matrix)
         stored = sh.store()
-        msg = sh.type("run")
+        sh.type("run", enter=False)
+        before = sh.rows()                      # the editor's screen, `run` on the append line
+        msg = sh.key(ENTER)
         for k in keys or []:                    # the program waits for a key: deliver it
             if msg is not None:
                 break
@@ -203,25 +208,21 @@ def typed_case(name, lines, screen, report, keys, matrix):
         bad = []
         if stored != lines:
             bad.append("stored %r" % stored)
-        if not isinstance(msg, tuple) or msg[0] != report:
+        if msg != (report,):                    # 1.0: one row, no LINE m / IMAGE i B  HEAP h B
             bad.append("report %r, expected %r" % (msg, report))
-        elif report.startswith("EXIT"):
-            want = "IMAGE %d B  HEAP %d B" % (m.w16(S("SH_IMAGE_SIZE")), exectest.heap_free(m.w16(S("PROG_END"))))
-            if msg[1] != want:
-                bad.append("memory report %r, expected %r" % (msg[1], want))
-        elif errline and row23 is None and msg[1] != "LINE %d" % errline:
-            bad.append("line report %r (line %d)" % (msg[1], errline))
-        if row23 is not None and isinstance(msg, tuple) and msg[1] != row23:
-            bad.append("row 23 %r, expected %r" % (msg[1], row23))
-        if rows[22:24] != list(msg or ("", "")):
-            bad.append("rows 22-23 %r" % rows[22:24])
-        if screen is not None:
-            want_rows = [screen.get(r, "") for r in range(22)]
-            if rows[:22] != want_rows:
-                bad.append("screen %r" % [r for r in rows[:22] if r])
+        if rows[23] != report:
+            bad.append("row 23 %r" % rows[23])
+        if line is not None and errline != line:
+            bad.append("error line %r, expected %d" % (errline, line))
+        if screen is not None:                  # the program's screen, row 22 included (not the report's any more)
+            want_rows = [screen.get(r, "") for r in range(23)]
+            if rows[:23] != want_rows:
+                bad.append("screen %r" % [(r, t) for r, t in enumerate(rows[:23]) if t])
+        elif rows[:23] != before[:23]:          # a compile error: the editor's screen stays above the report
+            bad.append("screen %r, before RUN %r" % (rows[:23], before[:23]))
         if not sh.in_editor():
             bad.append("not back in the editor")
-        if errline:
+        if errline:                             # the editor resumes on the error's line (1.0: the report shows no line)
             if sh.index() != errline - 1 or sh.edit_line() != lines[errline - 1]:
                 bad.append("cursor on line %d %r, expected %d" % (sh.index() + 1, sh.edit_line(), errline))
             offset = m.w16(S("EDIT_BUF_OFFSET"))
@@ -238,8 +239,9 @@ def typed_case(name, lines, screen, report, keys, matrix):
 for _i, (_n, _l, _s, _r, _k, _mx) in enumerate(TYPED):
     case("typed-%02d-%s" % (_i + 1, _n), "typed%s, RUN: %s" % (" on the keyboard matrix" if _mx else "",
                                                                _r if isinstance(_r, str) else " / ".join(
-                                                                   x if isinstance(x, str) else "column %d" % x
-                                                                   for x in _r if x is not None)),
+                                                                   x if isinstance(x, str) else "%s %d" % (w, x)
+                                                                   for w, x in zip(("", "line", "column"), _r)
+                                                                   if x is not None)),
          "typed")(typed_case(_n, _l, _s, _r, _k, _mx))
 
 
@@ -250,10 +252,11 @@ def diag_table(sh):
     m, S = sh.m, sh.S
     msgs = gen_diag.messages()
     bad = []
-    keys = [(n, n, "%d: %s" % (n, t)) for (k, n), t in msgs.items() if k == "E"]
-    keys += [(n, gen_diag.DG_RT + n, "%d: %s" % (n, t)) for (k, n), t in msgs.items() if k == "RT" and n != 5]
-    keys += [(n, n, "%d: " % n) for n in (0, 2, 18, 19, 30, 39, 43, 56, 69, 77, 93, 99, 102, 127)]
-    keys += [(5, gen_diag.DG_RT + 5, "5: "), (7, gen_diag.DG_RT + 7, "7: ")]
+    # 1.0: "n MESSAGE" (a space, no colon); a key without a message: "n "
+    keys = [(n, n, "%d %s" % (n, t)) for (k, n), t in msgs.items() if k == "E"]
+    keys += [(n, gen_diag.DG_RT + n, "%d %s" % (n, t)) for (k, n), t in msgs.items() if k == "RT" and n != 5]
+    keys += [(n, n, "%d " % n) for n in (0, 2, 18, 19, 30, 39, 43, 56, 69, 77, 93, 99, 102, 127)]
+    keys += [(5, gen_diag.DG_RT + 5, "5 "), (7, gen_diag.DG_RT + 7, "7 ")]
     buf = S("SH_REPORT_BUF")
     for shown, key, want in keys:
         sh.boot()
@@ -276,7 +279,7 @@ def diag_string_too_long(sh):
     sh.load(src, len(src))
     msg = sh.type("run")
     sh.key(ord(" "))
-    ok = msg == ("ERROR 17: STRING TOO LONG", "LINE 3") and sh.index() == 2 and sh.edit_line() == long_line[:127]
+    ok = msg == ("ERROR 17 STRING TOO LONG",) and sh.index() == 2 and sh.edit_line() == long_line[:127]
     return expect(ok, "msg=%r index=%d edit=%r" % (msg, sh.index(), sh.edit_line()[:30]))
 
 
@@ -303,76 +306,82 @@ def report_exit(sh):
     return expect(all(a == b for a, b in got), "%r" % got)
 
 
-@case("report-image-size", "IMAGE: the code below CG_PC and the static data the declarations need (globals, a string, "
-                           "the function -> line records, 6 B each)", "report")
+# 1.0 (owner's decision): the report is EXIT n alone; the IMAGE and HEAP figures are no longer shown. The size and
+# heap cases stay as checks of the compiler's limits and of the heap a program gets, and of the one-row report.
+@case("report-image-size", "the static data the declarations need (globals, a string, the function -> line records, "
+                           "6 B each) from the compiler's limits; the report EXIT 2 alone (1.0: no IMAGE row), row 22 "
+                           "left to the program", "report")
 def report_image(sh):
-    m, S = sh.m, sh.S
+    m = sh.m
     src = ["int a;", "char b[10];", "int c[3] = {1, 2, 3};", "int f(int x) { return x + a; }",
            'int main(void) { puts("HI"); return f(2); }']
-    msg = _run(sh, src)
+    sh.load(src, len(src))
+    msg = sh.type("run")
+    rows = sh.rows()
+    sh.key(ord(" "))
     data = 2 + 10 + 6 + len("HI") + 1 + 6 * 2
-    code = m.w16(S("CG_PC")) - 0xC000
-    want = "IMAGE %d B  HEAP %d B" % (code + data, exectest.heap_free(m.w16(S("PROG_END"))))
     lim = exectest.memguard.limits(m)
-    return expect(msg == ("EXIT 2", want) and lim[0][1] == 0xE000 - data,
-                  "msg=%r, expected %r (code %d, data %d; region 1 %r)" % (msg, want, code, data, lim[0]))
+    return expect(msg == ("EXIT 2",) and rows[0] == "HI" and not any(rows[1:23]) and rows[23] == "EXIT 2"
+                  and lim[0][1] == 0xE000 - data,
+                  "msg=%r rows %r (data %d; region 1 %r)" % (msg, rows[22:], data, lim[0]))
 
 
-@case("report-heap-real", "HEAP is the largest block malloc() gives: malloc(HEAP) succeeds, malloc(HEAP + 1) returns "
-                          "NULL, in a program of the same length", "report")
+@case("report-heap-real", "the heap a program gets (from the source's end to the heap's end, exectest.heap_free): "
+                          "malloc() of it succeeds, malloc() of one byte more returns NULL, in a program of the same "
+                          "length (1.0: the figure is no longer reported)", "report")
 def report_heap(sh):
     def prog(n):
         return ["int main(void)", "{", "    return malloc(%5d) != 0;" % n, "}"]
     msg = _run(sh, prog(0))
-    heap = int(msg[1].split("HEAP ")[1].split()[0])
+    heap = exectest.heap_free(sh.m.w16(sh.S("PROG_END")))
     m1 = _run(sh, prog(heap))
     m2 = _run(sh, prog(heap + 1))
-    return expect(m1[0] == "EXIT 1" and m2[0] == "EXIT 0" and 10000 <= heap < 99999,
-                  "heap %d: malloc(heap) %r, malloc(heap + 1) %r" % (heap, m1, m2))
+    return expect(msg == ("EXIT 1",) and m1 == ("EXIT 1",) and m2 == ("EXIT 0",) and 10000 <= heap < 99999,
+                  "heap %d: malloc(0) %r, malloc(heap) %r, malloc(heap + 1) %r" % (heap, msg, m1, m2))
 
 
-@case("report-image-hires", "#pragma hires at the top: region 4 reserved and not counted in IMAGE; mode(1) allowed",
-      "report")
+@case("report-image-hires", "#pragma hires at the top: region 4 reserved (its limits); mode(1) allowed; the report "
+                            "EXIT 5 alone (1.0: no IMAGE row)", "report")
 def report_hires(sh):
-    m, S = sh.m, sh.S
+    m = sh.m
     src = ["#pragma hires", "int g = 5;", "int main(void) { mode(1); return g; }"]
     msg = _run(sh, src)
     lim = exectest.memguard.limits(m)
-    code = lim[0][0] - 0xC000
-    data = 0xE000 - lim[0][1]
-    return expect(msg is not None and msg[0] == "EXIT 5" and lim[3] == (0x7800, 0x7800)
-                  and msg[1].startswith("IMAGE %d B" % (code + data)), "msg=%r limits=%r" % (msg, lim))
+    return expect(msg == ("EXIT 5",) and lim[3] == (0x7800, 0x7800), "msg=%r limits=%r" % (msg, lim))
 
 
-@case("cmd-free", "FREE (any case, trailing spaces) on an empty source, after typing, and after a RUN: SOURCE, FREE, "
-                  "IMAGE (the last compile's), HEAP; the editor is left as it was", "report")
+@case("cmd-free", "FREE (any case, trailing spaces) on an empty source, after typing, and after a RUN: one row, "
+                  "SOURCE s B  FREE f B (1.0: no IMAGE/HEAP), on row 23; row 22 the editor's; the editor is left "
+                  "as it was", "report")
 def cmd_free(sh):
-    m, S = sh.m, sh.S
+    reports = []
+
+    def free(cmd):
+        r = sh.type(cmd)
+        rows = sh.rows()
+        sh.key(ord(" "))                         # (the key that ends a report is not typed)
+        reports.append((r, rows[22], rows[23]))
+
     sh.boot()
-    r1 = sh.type("FREE")
-    sh.key(ord(" "))                             # (the key that ends a report is not typed)
+    free("FREE")
     lines = ["int main(void)", "{", "    return 7;", "}"]
     for l in lines:
         sh.type(l)
-    r2 = sh.type("free  ")
-    sh.key(ord(" "))
+    free("free  ")
     size = sum(len(l) + 3 for l in lines)
     sh.type("run")
     sh.key(ord(" "))
-    image = m.w16(S("SH_IMAGE_SIZE"))
-    r3 = sh.type("Free")
-    sh.key(ord(" "))
+    free("Free")
     after = (sh.store(), sh.index(), sh.in_editor())
-    want = [("SOURCE 0 B  FREE 18432 B", "IMAGE 0 B  HEAP 18428 B"),
-            ("SOURCE %d B  FREE %d B" % (size, 18432 - size), "IMAGE 0 B  HEAP %d B" % exectest.heap_free(0x7800 + size)),
-            ("SOURCE %d B  FREE %d B" % (size, 18432 - size),
-             "IMAGE %d B  HEAP %d B" % (image, exectest.heap_free(0x7800 + size)))]
-    ok = [r1, r2, r3] == want and image > 0 and after == (lines, 4, True) and sh.rows()[23] == "LINE 5/4"
-    return expect(ok, "got %r, expected %r; after %r" % ([r1, r2, r3], want, after))
+    t0, t1 = "SOURCE 0 B  FREE 18432 B", "SOURCE %d B  FREE %d B" % (size, 18432 - size)
+    want = [((t0,), "", t0), ((t1,), "", t1), ((t1,), "", t1)]
+    ok = reports == want and after == (lines, 4, True) and sh.rows()[23] == "LINE 5/4"
+    return expect(ok, "got %r, expected %r; after %r" % (reports, want, after))
 
 
-@case("report-over-program", "a report covers only rows 22-23: the program's rows 0-21 stay; the report's colours (white "
-                             "on black, the swatch); the next key redraws the editor", "report")
+@case("report-over-program", "a report covers only row 23: the program's rows 0-22 stay (their paper too); the report "
+                             "white on black across the whole row (1.0: no swatch); the next key redraws the editor",
+      "report")
 def report_over(sh):
     m = sh.m
     src = ["int main(void)", "{", "    int r;", "    paper(2); cls();", "    for (r = 0; r < 23; r++) {",
@@ -382,9 +391,8 @@ def report_over(sh):
     rows = sh.rows()
     attrs = m.read(0x5800 + 21 * 32, 96)
     sh.key(ord(" "))
-    ok = (all(rows[r] == "ROW%d" % r for r in range(22)) and rows[22:24] == list(msg)
-          and attrs[:32] == bytes([0x10] * 32) and attrs[32:64] == bytes([7] * 32)
-          and attrs[64:] == bytes([7] * 29 + [0x10, 0x20, 0x08]) and sh.rows()[0] == "int main(void)")
+    ok = (msg == ("EXIT 0",) and all(rows[r] == "ROW%d" % r for r in range(23)) and rows[23] == "EXIT 0"
+          and attrs[:64] == bytes([0x10] * 64) and attrs[64:] == bytes([7] * 32) and sh.rows()[0] == "int main(void)")
     return expect(ok, "rows %r msg %r attrs %s" % (rows[20:], msg, attrs.hex()))
 
 

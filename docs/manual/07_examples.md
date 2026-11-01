@@ -4,7 +4,7 @@ Complete programs, each of which does something useful or amusing. Type one in, 
 
 **Every program in this part is a test**, except the last, which needs a tape. The lines at the top that begin `// expect:`, `// screen:`, `// pixel:`, `// keys:` and `// library:` are the checked results (see [Appendix I](08_appendices.md#appendix-i-how-this-manual-was-checked)): the build compiles each program on the ROM, runs it, and fails if the exit status, the text on the screen or the pixels are not what those lines say. The output shown after each program is what its `// screen:` lines require. The lines are comments to the compiler, so you can type the programs with them or without them (typed without them, the line numbers in a compile error are smaller by the number of comment lines).
 
-For the programs that read the keyboard, the keys that were typed are the `// keys:` line. The programs print from the top of the screen, so each begins with `cls()`; the report that `RUN` leaves in rows 22 and 23 (`EXIT n`) is not shown.
+For the programs that read the keyboard, the keys that were typed are the `// keys:` line. `RUN` starts every program on a clear screen, with the print position at the top left; the programs begin with `cls()` all the same, so that they still start from the top if you build them into a larger program. The report that `RUN` leaves on row 23 (`EXIT n`) is not shown.
 
 ---
 
@@ -377,7 +377,7 @@ Ideas: use `draw` from each point to the next so that the curve has no gaps wher
 
 ## 11. Colour lines in high resolution
 
-The TS2068's high-resolution colour mode uses the second display file, the memory at `$6000-$77FF`. A program that uses `mode(1)` should say `#pragma hires` at its top: that keeps the compiled program out of that memory. Without the pragma, a large program could occupy the memory and `mode(1)` would stop with runtime error 3 (see [High resolution](05_concepts.md#high-resolution)). The program draws seven lines, each in a different ink, on a black screen, then returns to the normal mode.
+The TS2068's high-resolution colour mode uses the second display file, the memory at `$6000-$77FF`. A program that uses `mode(1)` should say `#pragma hires` at its top: that keeps the compiled program out of that memory. Without the pragma, a large program could occupy the memory and `mode(1)` would stop with runtime error 3 (see [High resolution](05_concepts.md#high-resolution)). In this mode the colours are given for every 8 by 1 pixels instead of every 8 by 8, so lines one pixel row apart can each have their own ink. The program draws seven such lines, then returns to the normal mode.
 
 ```c
 // expect: exit 0
@@ -402,9 +402,11 @@ int main(void)
 }
 ```
 
-Seven lines of 176 pixels are drawn, at 41 to 47 pixels from the top. The end of any program restores mode 0; calling `mode(0)` yourself, as here, puts the normal display back before the program ends.
+Seven lines of 176 pixels are drawn, at 41 to 47 pixels from the top, each in its own ink, **on a white screen**. `mode(1)` sets every high-resolution attribute to paper 7 (white) and ink 0 (black), and each pixel that `draw` sets gives its 8 by 1 cell the print attribute: ink 1 to 7, and paper 0, which does not show because every pixel of those cells is set.
 
-Ideas: wait for a key with `getkey()` between `draw` and `mode(0)` to look at the picture; use `plot` to draw a diagonal and see what colours it gets.
+The `paper(0)` and `cls()` at the start do not make the screen black in mode 1: `cls()` paints the normal attributes at `$5800`, which mode 1 does not show. They matter only after `mode(0)`, which shows the normal attributes again: then the whole screen is ink 0 on paper 0, black, and the lines, still there in ink 0, cannot be seen. The `ink(0)` and `paper(7)` at the end only reset the print colours, which the next `RUN` would do anyway. The end of any program restores mode 0; calling `mode(0)` yourself, as here, puts the normal display back before the program ends.
+
+Ideas: wait for a key with `getkey()` between `draw` and `mode(0)` to look at the picture; use `plot` to draw a diagonal and see what colours it gets; print some text in mode 1 and see that `ink` and `paper` do not change its colours (see [High resolution](05_concepts.md#high-resolution)).
 
 ## 12. Countdown
 
@@ -515,7 +517,7 @@ int main(void)
 25 16 9 4 1 = 55
 ```
 
-Each new node goes in front of the list, so the squares come out in the reverse of the order in which they were made. The last loop gives every block back; a program that ends without doing so leaves nothing behind either, because every run starts with a new, empty heap. How much heap there is, is the `HEAP h B` of the report (see [Memory](05_concepts.md#memory)).
+Each new node goes in front of the list, so the squares come out in the reverse of the order in which they were made. The last loop gives every block back; a program that ends without doing so leaves nothing behind either, because every run starts with a new, empty heap. How much heap there is depends on the length of the source: `FREE` shows the room left, and the heap is 4 or 5 bytes less (see [Heap](05_concepts.md#heap)).
 
 Ideas: add a function that puts a node at the *end* of the list; delete the node holding 9; build the list from keys typed with `getkey()`.
 
@@ -622,7 +624,7 @@ int main(void)
 SHAPES 1 12 255
 ```
 
-The three roots printed are those of 2, 144 and 65535, and the exit status, `EXIT 100`, is the root of 10000. Try removing the library (`LIB` on its own on the empty last line) and running again: `ERROR 70: UNDEFINED FUNCTION` names the first library function the program uses (see [Part 6](06_libraries.md#errors)).
+The three roots printed are those of 2, 144 and 65535, and the exit status, `EXIT 100`, is the root of 10000. Try removing the library (`LIB` on its own on the empty last line) and running again: `ERROR 70 UNDEFINED FUNCTION` names the first library function the program uses (see [Part 6](06_libraries.md#errors)).
 
 ## 18. A score on tape
 

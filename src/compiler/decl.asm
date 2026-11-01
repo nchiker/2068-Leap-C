@@ -46,6 +46,12 @@ CC_COMPILE:
 .open:
     ld   hl, (PROG_END)
     ld   (WS_LOC), hl
+    ld   bc, PM_SIZE                   ; 1.0: NULL is predefined (C89 7.1.6), the oldest macro record, in
+    call WS_GALLOC                     ; the global area so that #undef can clear it (directives.asm)
+    ld   (PP_MACROS), hl
+    ex   de, hl
+    ld   hl, CC_NULL
+    ldir
     call LEX_INIT
     rst  $30                          ; LEX_NEXT
 .decl:
@@ -64,6 +70,16 @@ IMG_TABLE:
     DW   LEAPC_SRC_TOP                 ; WS_GLO
     DW   IMG_LIM0, IMG_LIM0            ; CG_PC, CG_RLIM: the dummy region (CG_UNIT)
     ASSERT WS_GLO == IMG_LIM + IMG_REGIONS * 4 && IMG_LIM0 + 4 == IMG_LIM
+; the predefined macro NULL (spec.md 4.8): a record [link 0][4]["NULL"][replacement "0", CR]
+CC_NULL:
+    DW   0
+    DB   4
+    DW   .name, .text
+    ASSERT $ - CC_NULL == PM_SIZE
+.name:
+    DB   "NULL"
+.text:
+    DB   "0", $0D
     ASSERT CG_PC == WS_GLO + 2 && CG_RLIM == CG_PC + 2
 
 ; ============================================================================

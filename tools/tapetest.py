@@ -106,17 +106,12 @@ def state(sh):
 
 
 def neat(msg):
-    return (msg[0].rstrip(), msg[1]) if isinstance(msg, tuple) else msg
-
-
-def source_row(lines):
-    n = len(rec(lines))
-    return "SOURCE %d B  FREE %d B" % (n, ROOM - n)
+    return (msg[0].rstrip(),) if isinstance(msg, tuple) else msg
 
 
 def command(sh, text, maxi=400_000_000, invariants=True):
-    """`text` typed on the append line and ENTER: the report (row 22 without its padding, row 23) and the
-    rows shown; then a key, back to the editor."""
+    """`text` typed on the append line and ENTER: the report (1.0: one row, row 23, the command's result alone:
+    no SOURCE/FREE row) and the rows shown; then a key, back to the editor."""
     memguard.arm(sh.m, invariants)
     try:
         for ch in text:
@@ -226,7 +221,7 @@ def roundtrip(sh):
     bl = blocks_of(edges)
     want = tapes.file_blocks(tapes.PROGRAM, "hello", rec(PROG))
     bad = []
-    if msg != ("SAVED hello", source_row(PROG)) or rows[22:24] != list(msg):
+    if msg != ("SAVED hello",) or rows[23] != msg[0] or rows[22]:   # (1.0: one row; row 22 the editor's)
         bad.append("save report %r rows %r" % (msg, rows[22:24]))
     if status != "SAVING hello":
         bad.append("status during SAVE %r" % status)
@@ -244,7 +239,7 @@ def roundtrip(sh):
     loading = sh.rows()[23]
     msg, rows = finish(sh)
     st = state(sh)
-    if msg != ("LOADED hello", source_row(PROG)) or loading != "LOADING hello":
+    if msg != ("LOADED hello",) or loading != "LOADING hello":
         bad.append("load report %r status %r" % (msg, loading))
     if st["store"] != PROG or st["index"] != len(PROG) or st["pos"] != 0xFFFF or sh.rows()[:5] != PROG \
             or sh.rows()[23] != "LINE 6/5" or not st["editor"] or st["depth"] != 1 or st["dest"] or st["hook"]:
@@ -254,7 +249,7 @@ def roundtrip(sh):
     command_to(sh, 'VERIFY "hello"', [S("TAPE_BLOCK")], n=2)
     verifying = sh.rows()[23]
     msg, rows = finish(sh)
-    if msg != ("VERIFIED hello", source_row(PROG)) or verifying != "VERIFYING hello" or sh.store() != PROG \
+    if msg != ("VERIFIED hello",) or verifying != "VERIFYING hello" or sh.store() != PROG \
             or state(sh)["verify"]:
         bad.append("verify %r status %r" % (msg, verifying))
     sh.extra = dict(widths=spans(bl), pilots=[b["pilot"] for b in bl],
@@ -270,13 +265,13 @@ def roundtrip_large(sh):
     msg, rows, status, edges = capture(sh, 'SAVE "large"')
     bl = blocks_of(edges)
     want = tapes.file_blocks(tapes.PROGRAM, "large", rec(lines))
-    ok1 = msg == ("SAVED large", source_row(lines)) and [b["data"] for b in bl] == want and widths_ok(bl)
+    ok1 = msg == ("SAVED large",) and [b["data"] for b in bl] == want and widths_ok(bl)
     play(sh, tapes.Tape.from_edges(edges))
     sh.boot()
     msg2, rows2 = command(sh, 'LOAD ""')
     seconds = round((edges[-1][0] - edges[0][0]) / tapes.CPU_HZ, 1)
     sh.extra = dict(bytes=len(rec(lines)), seconds=seconds, widths=spans(bl))
-    return expect(ok1 and msg2 == ("LOADED large", source_row(lines)) and sh.store() == lines,
+    return expect(ok1 and msg2 == ("LOADED large",) and sh.store() == lines,
                   "save %r (%d blocks, widths %r) load %r" % (msg, len(bl), spans(bl), msg2))
 
 
@@ -290,7 +285,7 @@ def verify_fails(sh):
         sh.load(src, len(src))
         st0 = state(sh)
         msg, rows = command(sh, 'VERIFY "hello"')
-        if msg != ("VERIFY FAILED", source_row(src)) or state(sh) != st0:
+        if msg != ("VERIFY FAILED",) or state(sh) != st0:
             bad.append("%d lines: %r %r" % (len(src), msg, state(sh)))
     return expect(not bad, "; ".join(bad))
 
@@ -305,7 +300,7 @@ def load_named(sh):
         sh.load(PROG, len(PROG))
         msg, rows = command(sh, cmd)
         st = state(sh)
-        if msg != ("LOADED " + name, source_row(want)) or st["store"] != want or st["index"] != len(want):
+        if msg != ("LOADED " + name,) or st["store"] != want or st["index"] != len(want):
             bad.append("%s: %r %r" % (cmd, msg, st))
     return expect(not bad, "; ".join(bad))
 
@@ -319,7 +314,7 @@ def load_staged_ok(sh):
     command_to(sh, 'LOAD "b"', [S("TAPE_BLOCK")], n=2)
     ix_dest = m.w16(S("TAPE_DEST"))
     msg, rows = finish(sh)
-    ok1 = msg == ("LOADED b", source_row(SRC_B)) and sh.store() == SRC_B and ix_dest == 0x7800 + len(rec(SRC_A))
+    ok1 = msg == ("LOADED b",) and sh.store() == SRC_B and ix_dest == 0x7800 + len(rec(SRC_A))
     msg2, rows2 = command(sh, "run")
     return expect(ok1 and msg2[0] == "EXIT 9" and rows2[0] == "LOADED",
                   "load %r staged at %04X; run %r %r" % (msg, ix_dest, msg2, rows2[0]))
@@ -342,7 +337,7 @@ def load_fail_keeps(sh):
         sh.load(SRC_A, len(SRC_A))
         st0 = state(sh)
         msg, rows = command(sh, 'LOAD "b"')
-        if msg != (want, source_row(SRC_A)) or state(sh) != st0:
+        if msg != (want,) or state(sh) != st0:
             bad.append("%s: %r %r" % (what, msg, state(sh)))
     play(sh, ptape("b", SRC_B))                 # BREAK once 20 bytes of the data block have arrived
     sh.load(SRC_A, len(SRC_A))
@@ -355,7 +350,7 @@ def load_fail_keeps(sh):
         msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
     finally:
         hold_break(m, False)
-    if not got or msg != ("BREAK", source_row(SRC_A)) or state(sh) != st0:
+    if not got or msg != ("BREAK",) or state(sh) != st0:
         bad.append("break in data (reached %s): %r %r" % (got, msg, state(sh)))
     return expect(not bad, "; ".join(bad))
 
@@ -369,13 +364,13 @@ def load_fail_direct(sh):
     play(sh, ptape("b", newp))
     sh.load(big, len(big))
     msg, rows = command(sh, 'LOAD "b"')
-    if msg != ("LOADED b", source_row(newp)) or sh.store() != newp:
+    if msg != ("LOADED b",) or sh.store() != newp:
         bad.append("direct load %r" % (msg,))
     play(sh, ptape("b", newp, bad_checksum=True))
     sh.load(big, len(big))
     msg, rows = command(sh, 'LOAD "b"')
     st = state(sh)
-    if msg != ("LOAD FAILED", source_row([])) or st["store"] != [] or st["index"] != 0 or sh.rows()[23] != "LINE 1/0":
+    if msg != ("LOAD FAILED",) or st["store"] != [] or st["index"] != 0 or sh.rows()[23] != "LINE 1/0":
         bad.append("direct fail %r %r" % (msg, st))
     return expect(not bad, "; ".join(bad))
 
@@ -397,7 +392,7 @@ def load_break_direct(sh):
     finally:
         hold_break(m, False)
     st = state(sh)
-    ok = got and dest == 0 and msg == ("BREAK", source_row([])) and st["store"] == [] and st["index"] == 0 \
+    ok = got and dest == 0 and msg == ("BREAK",) and st["store"] == [] and st["index"] == 0 \
         and sh.rows()[23] == "LINE 1/0"
     return expect(ok, "reached %s dest %04X: %r %r" % (got, dest, msg, st))
 
@@ -415,7 +410,7 @@ def load_refused(sh):
         sh.load(SRC_A, len(SRC_A))
         st0 = state(sh)
         msg, rows = command(sh, cmd)
-        if msg != (want, source_row(SRC_A)) or state(sh) != st0:
+        if msg != (want,) or state(sh) != st0:
             bad.append("%s: %r %r" % (what if isinstance(what, str) else "$%04X" % what, msg, state(sh)))
     return expect(not bad, "; ".join(bad))
 
@@ -432,7 +427,7 @@ def load_break_search(sh):
         msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
     finally:
         hold_break(m, False)
-    return expect(msg == ("BREAK", source_row(SRC_A)) and state(sh) == st0, "%r %r" % (msg, state(sh)))
+    return expect(msg == ("BREAK",) and state(sh) == st0, "%r %r" % (msg, state(sh)))
 
 
 @case("load-not-found", "LOAD \"hello\" with only a data tape of that name (another type, skipped) on it: the search "
@@ -445,7 +440,7 @@ def load_not_found(sh):
     msg, rows = command(sh, 'LOAD "hello"', maxi=600_000_000, invariants=False)   # (armed, they triple the
                                                                                   # 2 minutes of searching)
     sh.extra = dict(wall=round(time.time() - t0, 1))
-    return expect(msg == ("LOAD FAILED", source_row(SRC_A)) and state(sh) == st0, "%r %r" % (msg, state(sh)))
+    return expect(msg == ("LOAD FAILED",) and state(sh) == st0, "%r %r" % (msg, state(sh)))
 
 
 # ===================================================================== the shell: SAVE's edges
@@ -466,7 +461,7 @@ def save_break(sh):
     finally:
         vals = m.tape_capture(False)
     bl = blocks_of(tapes.edges_from_capture(vals))
-    ok = msg == ("BREAK", source_row(SRC_A)) and state(sh) == st0 and len(bl) == 1 and len(bl[0]["data"]) <= 2
+    ok = msg == ("BREAK",) and state(sh) == st0 and len(bl) == 1 and len(bl[0]["data"]) <= 2
     return expect(ok, "%r %r blocks %r" % (msg, state(sh), [b["data"].hex() for b in bl]))
 
 
@@ -480,11 +475,11 @@ def save_commands(sh):
     for cmd in ('SAVE ""', 'SAVE "abcdefghijk"', 'SAVE "abc', 'SAVE "abc" x', 'LOAD "abcdefghijk"', 'VERIFY "a" 1',
                 'load "x', 'verify "abcdefghijk"'):
         msg, rows = command(sh, cmd, invariants=False)
-        if msg != ("BAD NAME", source_row(SRC_A)) or state(sh) != st0:
+        if msg != ("BAD NAME",) or state(sh) != st0:
             bad.append("%s: %r %r" % (cmd, msg, state(sh)))
     sh.boot()
     msg, rows = command(sh, 'save "x"', invariants=False)
-    if msg != ("NO PROGRAM", source_row([])):
+    if msg != ("NO PROGRAM",):
         bad.append("empty: %r" % (msg,))
     sh.boot()
     lines = ["SAVE", "load(x);", "verify = 1;", "Save x;"]
@@ -513,7 +508,7 @@ def save_typed(sh):
     finally:
         vals = m.tape_capture(False)
     bl = blocks_of(tapes.edges_from_capture(vals))
-    ok = msg == ("SAVED k", source_row(PROG)) and [b["data"] for b in bl] == tapes.file_blocks(0, "k", rec(PROG))
+    ok = msg == ("SAVED k",) and [b["data"] for b in bl] == tapes.file_blocks(0, "k", rec(PROG))
     return expect(ok, "%r %r" % (msg, [b["data"][:16].hex() for b in bl]))
 
 
@@ -534,7 +529,7 @@ def host_tape(sh):
         play(sh, path)
         sh.boot()
         msg, rows = command(sh, 'LOAD ""')
-        if msg != ("LOADED host", source_row(lines)) or sh.store() != lines:
+        if msg != ("LOADED host",) or sh.store() != lines:
             bad.append("%s: %r %r" % (ext, msg, sh.store()[:2]))
             continue
         msg, rows = command(sh, "run")
@@ -639,7 +634,7 @@ def cross_version(sh):
     sh.load(SRC_A, len(SRC_A))
     st0 = state(sh)
     msg, rows = command(sh, 'LOAD ""')
-    if msg != ("BAD TAPE VERSION", source_row(SRC_A)) or state(sh) != st0:
+    if msg != ("BAD TAPE VERSION",) or state(sh) != st0:
         bad.append("Leap-C LOAD of a V2 tape: %r %r" % (msg, state(sh)))
     return expect(not bad, "; ".join(bad))
 
@@ -771,7 +766,7 @@ def lib_break(sh):
     finally:
         hold_break(m, False)
     st = state(sh)
-    return expect(got and msg == ("BREAK", "LINE 2") and st["store"] == lines and st["depth"] == 1,
+    return expect(got and msg == ("BREAK",) and st["store"] == lines and st["depth"] == 1,
                   "reached %s %r %r" % (got, msg, st))
 
 
@@ -823,8 +818,8 @@ def lib_state(sh):
     return dict(loaded=m.read(S("LIB_LOADED"), 1)[0], region3=m.read(0xF400, 0x400))
 
 
-def lib_report(name, n, lines):
-    return ("LIBRARY %s: %d FUNCTIONS" % (name, n), source_row(lines))
+def lib_report(name, n):                    # (1.0: the result alone, no SOURCE/FREE row)
+    return ("LIBRARY %s: %d FUNCTIONS" % (name, n),)
 
 
 def type_lines(sh, lines):
@@ -851,7 +846,7 @@ def lib_load(sh):
     img = lib_image("testlib")
     ls = lib_state(sh)
     bad = []
-    if msg != lib_report("testlib", 24, SRC_A) or state(sh) != st0:
+    if msg != lib_report("testlib", 24) or state(sh) != st0:
         bad.append("LIB %r %r" % (msg, state(sh)))
     if ls["loaded"] != 0xF4 or ls["region3"][:len(img)] != img or dest != 0x7800 + len(rec(SRC_A)):
         bad.append("loaded %02X, image %s, staged at %04X" % (ls["loaded"], ls["region3"][:len(img)] == img, dest))
@@ -874,13 +869,13 @@ def lib_direct(sh):
     sh.load(big, len(big))
     msg, rows = command(sh, 'LIB "testlib"')
     ls = lib_state(sh)
-    if msg != lib_report("testlib", 24, big) or ls["loaded"] != 0xF4 or ls["region3"][:len(img)] != img:
+    if msg != lib_report("testlib", 24) or ls["loaded"] != 0xF4 or ls["region3"][:len(img)] != img:
         bad.append("direct %r loaded %02X" % (msg, ls["loaded"]))
     play(sh, ltape("testlib", bad_checksum=True))
     sh.load(big, len(big))
     m.lib_load("tiny")
     msg, rows = command(sh, 'LIB "testlib"')
-    if msg != ("LOAD FAILED", source_row(big)) or lib_state(sh)["loaded"] != 0:
+    if msg != ("LOAD FAILED",) or lib_state(sh)["loaded"] != 0:
         bad.append("checksum %r loaded %02X" % (msg, lib_state(sh)["loaded"]))
     play(sh, ltape("testlib"))
     sh.load(big, len(big))
@@ -892,7 +887,7 @@ def lib_direct(sh):
         msg, rows = finish(sh, on_message=lambda: hold_break(m, False))
     finally:
         hold_break(m, False)
-    if not got or msg != ("BREAK", source_row(big)) or lib_state(sh)["loaded"] != 0:
+    if not got or msg != ("BREAK",) or lib_state(sh)["loaded"] != 0:
         bad.append("break (reached %s) %r loaded %02X" % (got, msg, lib_state(sh)["loaded"]))
     return expect(not bad, "; ".join(bad))
 
@@ -909,7 +904,7 @@ def lib_fail_keeps(sh):
         st0 = state(sh)
         msg, rows = command(sh, 'LIB "testlib"')
         ls = lib_state(sh)
-        if msg != ("LOAD FAILED", source_row(SRC_A)) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny \
+        if msg != ("LOAD FAILED",) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny \
                 or state(sh) != st0:
             bad.append("%s %r loaded %02X" % (what, msg, ls["loaded"]))
     play(sh, ltape("testlib"))
@@ -924,7 +919,7 @@ def lib_fail_keeps(sh):
     finally:
         hold_break(m, False)
     ls = lib_state(sh)
-    if not got or msg != ("BREAK", source_row(SRC_A)) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny:
+    if not got or msg != ("BREAK",) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny:
         bad.append("break in data (reached %s) %r loaded %02X" % (got, msg, ls["loaded"]))
     sh.load(SRC_A, len(SRC_A))                      # no tape: BREAK while it searches
     m.lib_load("tiny")
@@ -936,7 +931,7 @@ def lib_fail_keeps(sh):
     finally:
         hold_break(m, False)
     ls = lib_state(sh)
-    if msg != ("BREAK", source_row(SRC_A)) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny:
+    if msg != ("BREAK",) or ls["loaded"] != 0xF4 or ls["region3"][:len(tiny)] != tiny:
         bad.append("break in search %r loaded %02X" % (msg, ls["loaded"]))
     return expect(not bad, "; ".join(bad))
 
@@ -956,7 +951,7 @@ def lib_refused(sh):
         st0 = state(sh)
         msg, rows = command(sh, 'LIB "testlib"')
         ls = lib_state(sh)
-        if msg != (want, source_row(SRC_A)) or state(sh) != st0 or ls["loaded"] != 0xF4 or \
+        if msg != (want,) or state(sh) != st0 or ls["loaded"] != 0xF4 or \
                 ls["region3"][:len(tiny)] != tiny or ls["region3"][len(tiny):len(tiny) + 8] != bytes(8):
             bad.append("%s: %r %r loaded %02X" % (what if isinstance(what, str) else "$%04X" % what, msg, state(sh),
                                                  ls["loaded"]))
@@ -973,13 +968,13 @@ def lib_keep_unload(sh):
     play(sh, tape)
     sh.load(SRC_A, len(SRC_A))
     msg, rows = command(sh, 'LIB "testlib"')
-    if msg != lib_report("testlib", 24, SRC_A):
+    if msg != lib_report("testlib", 24):
         bad.append("LIB %r" % (msg,))
     sh.type("NEW")
     if lib_state(sh)["loaded"] != 0xF4 or sh.store() != []:
         bad.append("after NEW: loaded %02X store %r" % (lib_state(sh)["loaded"], sh.store()))
     msg, rows = command(sh, 'LOAD "b"')
-    if msg != ("LOADED b", source_row(LIB_PROG)) or lib_state(sh)["loaded"] != 0xF4:
+    if msg != ("LOADED b",) or lib_state(sh)["loaded"] != 0xF4:
         bad.append("LOAD %r loaded %02X" % (msg, lib_state(sh)["loaded"]))
     msg, rows = command(sh, "run")
     if msg[0] != "EXIT 123":
@@ -989,7 +984,7 @@ def lib_keep_unload(sh):
     if shown != "NO LIBRARY " or lib_state(sh)["loaded"] != 0 or sh.store() != LIB_PROG:
         bad.append("LIB alone %r loaded %02X" % (shown, lib_state(sh)["loaded"]))
     msg, rows = command(sh, "run")
-    if msg != ("ERROR 70: UNDEFINED FUNCTION", "LINE 3  't_args'"):
+    if msg != ("ERROR 70 UNDEFINED FUNCTION",) or sh.index() != 2:   # (1.0: no 't_args'; the cursor on line 3)
         bad.append("run unloaded %r" % (msg,))
     m.lib_load("testlib")                            # a reset: the cold start clears it, the region keeps its bytes
     m.setreg("PC", 0)
@@ -1011,14 +1006,14 @@ def lib_any_replace(sh):
     sh.load(SRC_A, len(SRC_A))
     st0 = state(sh)
     msg, rows = command(sh, 'LIB ""')
-    if msg != lib_report("tiny", 1, SRC_A) or state(sh) != st0:
+    if msg != lib_report("tiny", 1) or state(sh) != st0:
         bad.append("LIB \"\" %r" % (msg,))
     msg, rows = command(sh, 'LIB "testlib"')
-    if msg != lib_report("testlib", 24, SRC_A):
+    if msg != lib_report("testlib", 24):
         bad.append("LIB testlib %r" % (msg,))
     type_lines(sh, ["int main(void)", "{", "    return t_args(0, 4, 2) + tiny();", "}"])
     msg, rows = command(sh, "run")
-    if msg != ("ERROR 70: UNDEFINED FUNCTION", "LINE 3  'tiny'"):
+    if msg != ("ERROR 70 UNDEFINED FUNCTION",) or sh.index() != 2:   # (1.0: no 'tiny'; the cursor on line 3)
         bad.append("run %r" % (msg,))
     return expect(not bad, "; ".join(bad))
 
@@ -1033,7 +1028,7 @@ def lib_commands(sh):
         tiny = m.lib_load("tiny")
         st0 = state(sh)
         msg, rows = command(sh, text)
-        if msg != ("BAD NAME", source_row(SRC_A)) or state(sh) != st0 or lib_state(sh)["loaded"] != 0xF4:
+        if msg != ("BAD NAME",) or state(sh) != st0 or lib_state(sh)["loaded"] != 0xF4:
             bad.append("%s: %r" % (text, msg))
     for text in ("Lib", "LIB   "):
         sh.load(SRC_A, len(SRC_A))
@@ -1080,7 +1075,7 @@ def lib_cross_version(sh):
     st0 = state(sh)
     msg, rows = command(sh, 'LIB "SHAPES"')
     ls = lib_state(sh)
-    if msg != ("BAD TAPE VERSION", source_row(SRC_A)) or state(sh) != st0 or ls["loaded"] != 0xF4 or \
+    if msg != ("BAD TAPE VERSION",) or state(sh) != st0 or ls["loaded"] != 0xF4 or \
             ls["region3"][:len(tiny)] != tiny:
         bad.append("Leap-C LIB of V2's SHAPES: %r loaded %02X" % (msg, ls["loaded"]))
     return expect(not bad, "; ".join(bad))

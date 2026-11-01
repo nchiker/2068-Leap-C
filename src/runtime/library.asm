@@ -98,6 +98,12 @@ LIB_NEWLINE:
     dec  b
     push bc
     call GFX_SCROLL_OUTPUT_UP
+    ld   a, (LIB_ATTR)                 ; 1.0: the new row in the print colours (the platform's scroll
+    ld   hl, ATTR_ADDR + 23 * 32       ; clears it in ATTR_DEFAULT, which the shell's own rows keep;
+    ld   de, ATTR_ADDR + 23 * 32 + 1   ; 2068-Forth 3a32fb3 found the same)
+    ld   bc, 31
+    ld   (hl), a
+    ldir
     pop  bc
 .row:
     ld   (LIB_COL), bc

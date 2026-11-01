@@ -123,7 +123,7 @@ SH_LOAD_V:                             ; A = STORAGE_VERIFY_MODE
 ; SH_TAPE_DONE -- the end of a tape command: the progress hook off, then its report
 ; In:  A = 0 (done: HL = the text, the tape's name is appended), or TR_* (HL = the command's failure text, for
 ;      TR_FAILED and TR_TOUCHED)
-; SH_TAPE_REPORT -- the report HL / SOURCE s B  FREE f B
+; SH_TAPE_REPORT -- the report HL (one row)
 ; Out: carry clear. Destroys: AF, BC, DE, HL
 ; SH_TAPE_NAMED -- the progress hook off; SH_REPORT_BUF = the text at HL and the tape's name. Out: DE -> the NUL
 ; SH_TAPE_OFF -- the progress hook off, interrupts on (the tape routines disable them). Destroys: DE
@@ -143,9 +143,7 @@ SH_TAPE_DONE:
 SH_TAPE_REPORT:
     ld   de, SH_REPORT_BUF
     call SH_APPEND
-SH_TAPE_SOURCE:
-    ld   de, SH_STATUS_BUF
-    call SH_SOURCE
+SH_TAPE_SOURCE:                        ; (1.0: the report is one row, the result only)
     jp   SH_REPORT
 SH_BAD_NAME:
     ld   hl, SH_MSG_BADNAME

@@ -43,49 +43,6 @@ PP_HIRES:                              ; #pragma hires (spec.md 3.2): image regi
     ld   hl, (IMG_LIM + 4 * 3 + 2)     ; is full from here on: its [low] = its [high]. What is already
     ld   (IMG_LIM + 4 * 3), hl         ; there stays (mode(1) then refuses: LIB_MODE)
     jr   PP_LINE_END
-PP_UNDEF:                              ; #undef NAME (not defined: nothing to do)
-    call PP_NAME
-    call PP_FIND
-    jr   nz, PP_LINE_END
-    inc  hl
-    inc  hl
-    ld   (hl), 0                       ; its name's length: never found again
-PP_LINE_END:                           ; the line must end here
-    rst  $30                          ; LEX_NEXT
-    cp   TK_EOL
-    ret  z
-    ld   a, E_SYNTAX
-    jp   CC_ERROR
-PP_DEFINE:                             ; #define NAME replacement
-    call PP_NAME
-    ld   hl, (LEX_PTR)
-    ld   a, (hl)
-    cp   '('
-    jr   z, PP_E_NOTSUP                ; a function-like macro
-    call PP_FIND
-    jr   nz, .new
-    xor  a                             ; (Phase 10: a macro's ALREADY DEFINED names nothing; NM held the last
-    ld   (NM_LEN), a                   ; identifier looked up, which the report would show)
-    ld   a, E_REDEF
-    jp   CC_ERROR
-.new:
-    ld   bc, PM_SIZE
-    call WS_GALLOC                     ; HL = the record
-    ld   de, (PP_MACROS)
-    ld   (PP_MACROS), hl
-    call SW_PUT                        ; [link]
-    ld   a, (TOK_LEN)
-    ld   (hl), a                       ; [name length]
-    inc  hl
-    ld   de, (TOK_PTR)
-    call SW_PUT                        ; [name]
-    ld   de, (LEX_PTR)
-    call SW_PUT                        ; [replacement]: the rest of the line
-.text:
-    rst  $30                          ; LEX_NEXT
-    cp   TK_EOL
-    jr   nz, .text
-    ret
 PP_INCLUDE:                            ; #include <leap.h> or "leap.h"
     ld   hl, (LEX_PTR)
 .blank:
@@ -116,6 +73,57 @@ PP_INCLUDE:                            ; #include <leap.h> or "leap.h"
     ld   (LEX_PTR), hl
     jr   PP_LINE_END
 
+PP_UNDEF:                              ; #undef NAME (not defined: nothing to do)
+    call PP_NAME
+    call PP_FIND
+    jr   nz, PP_LINE_END
+    inc  hl
+    inc  hl
+    ld   (hl), 0                       ; its name's length: never found again
+PP_LINE_END:                           ; the line must end here
+    rst  $30                          ; LEX_NEXT
+    cp   TK_EOL
+    ret  z
+    ld   a, E_SYNTAX
+    jp   CC_ERROR
+PP_DEFINE:                             ; #define NAME replacement
+    call PP_NAME
+    ld   hl, (LEX_PTR)
+    ld   a, (hl)
+    cp   '('
+    jr   z, PP_E_NOTSUP                ; a function-like macro
+    call PP_FIND
+    jr   nz, .new
+    ld   a, (hl)                       ; 1.0: link 0 is the oldest record, the predefined NULL: it may be
+    inc  hl                            ; defined again (as a header's NULL would be): cleared, then defined
+    or   (hl)
+    jr   nz, .redef
+    inc  hl
+    ld   (hl), a                       ; its name's length: 0 (A = 0)
+    jr   .new
+.redef:
+    xor  a                             ; (Phase 10: a macro's ALREADY DEFINED names nothing; NM held the last
+    ld   (NM_LEN), a                   ; identifier looked up, which the report would show)
+    ld   a, E_REDEF
+    jp   CC_ERROR
+.new:
+    ld   bc, PM_SIZE
+    call WS_GALLOC                     ; HL = the record
+    ld   de, (PP_MACROS)
+    ld   (PP_MACROS), hl
+    call SW_PUT                        ; [link]
+    ld   a, (TOK_LEN)
+    ld   (hl), a                       ; [name length]
+    inc  hl
+    ld   de, (TOK_PTR)
+    call SW_PUT                        ; [name]
+    ld   de, (LEX_PTR)
+    call SW_PUT                        ; [replacement]: the rest of the line
+.text:
+    rst  $30                          ; LEX_NEXT
+    cp   TK_EOL
+    jr   nz, .text
+    ret
 ; PP_NAME -- the next token: an identifier (TOK_BUF). Errors: E_SYNTAX. Destroys: AF, BC, DE, HL
 PP_NAME:
     rst  $30                          ; LEX_NEXT

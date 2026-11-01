@@ -20,7 +20,7 @@ Every program in this guide with `// expect:` lines is a test: the build runs it
 
 ## 1. The first program
 
-After the start chord the screen is white with the status row `LINE 1/0` at the bottom ([EMULATORS.md](EMULATORS.md) §5). Type this, pressing ENTER at the end of each line (SYMBOL SHIFT + P is `"`, SYMBOL SHIFT + O is `;`, SYMBOL SHIFT + F and G are `{` and `}`, SYMBOL SHIFT + D is `\`; the full table is in §2):
+After the start chord the screen is white with the status row at the bottom: it shows the version, `2068 LEAP-C 1.0`, until the first key, then `LINE 1/0` ([EMULATORS.md](EMULATORS.md) §5). Type this, pressing ENTER at the end of each line (SYMBOL SHIFT + P is `"`, SYMBOL SHIFT + O is `;`, SYMBOL SHIFT + F and G are `{` and `}`, SYMBOL SHIFT + D is `\`; the full table is in §2):
 
 ```c
 // expect: exit 0
@@ -33,17 +33,16 @@ int main(void)
 }
 ```
 
-Then type `RUN` on the empty line after the last and press ENTER. The status row shows `COMPILING` for a moment, the program runs, and two report rows appear at the bottom:
+Then type `RUN` on the empty line after the last and press ENTER. The status row shows `COMPILING` for a moment, the program runs, and a report appears on the bottom row:
 
 ```
 Hello, TS2068!
 
 ...
 EXIT 0
-IMAGE 39 B  HEAP 18340 B
 ```
 
-`EXIT 0` is what `main` returned; `IMAGE` is the size of the compiled program, `HEAP` the memory `malloc()` could have used. Press a key to go back to the editor, with your program as it was.
+`EXIT 0` is what `main` returned. Press a key to go back to the editor, with your program as it was.
 
 Things to know from the start:
 
@@ -80,25 +79,25 @@ SYMBOL SHIFT characters (the first eight are Leap-C's own; the rest are the TS20
 
 A command is typed **alone on the empty line after the last line** of the program, in upper or lower case. Anything else you type there becomes a new program line.
 
-| Command | Does | Reports (rows 22-23, until you press a key) |
+| Command | Does | Reports (row 23, until you press a key) |
 |---|---|---|
-| `RUN` | compile, then run | `EXIT n` and `IMAGE i B  HEAP h B`; or a compile error, a runtime error or `BREAK` (§10) |
+| `RUN` | compile, then run | `EXIT n`; or a compile error, a runtime error or `BREAK` (§10) |
 | `LIST` | show the program a page at a time | a key shows the next page; BREAK ends it |
-| `FREE` | show the memory | `SOURCE s B  FREE f B` (the program's size and the room left for it) and `IMAGE i B  HEAP h B` (the last compiled program) |
+| `FREE` | show the memory | `SOURCE s B  FREE f B` (the program's size and the room left for it) |
 | `NEW` | clear the program | (a loaded library stays) |
 | `SAVE "name"` | save the program to tape (name: 1-10 characters) | `SAVED name`; `BREAK`; `BAD NAME`; `NO PROGRAM` (nothing to save) |
 | `LOAD "name"`, `LOAD ""` | load a program from tape (`""`: the next one) | `LOADED name`; `LOAD FAILED`; `BAD TAPE VERSION` (not a Leap-C tape); `BREAK`; `BAD NAME` |
 | `VERIFY "name"`, `VERIFY ""` | check a tape against the program | `VERIFIED name`; `VERIFY FAILED`; `BAD TAPE VERSION`; `BREAK`; `BAD NAME` |
 | `LIB "name"`, `LIB ""` | load a library from tape (§9) | `LIBRARY name: n FUNCTIONS`; `BAD TAPE VERSION`; `LOAD FAILED`; `BREAK`; `BAD NAME` |
-| `LIB` | unload the library | `NO LIBRARY` |
+| `LIB` | unload the library | `NO LIBRARY` (on the status row) |
 
-The tape commands' second report row is `SOURCE s B  FREE f B`. While a tape moves, the status row shows `SAVING name`; `LOADING` (or `VERIFYING`) while it searches, then `LOADING name` (`VERIFYING name`) once the tape's header is found. A failed `LOAD` keeps your program (except when part of a longer program had already replaced it: then the program is empty, as after `NEW`).
+A report is one row, white on black; the rows above keep what was there. While a tape moves, the status row shows `SAVING name`; `LOADING` (or `VERIFYING`) while it searches, then `LOADING name` (`VERIFYING name`) once the tape's header is found. A failed `LOAD` keeps your program (except when part of a longer program had already replaced it: then the program is empty, as after `NEW`).
 
 **After a report, press a key once every key is up**: Leap-C ignores a key still held from the command, so a report cannot vanish before you read it.
 
 ## 4. The C you can use
 
-Leap-C compiles a **subset of C89** (ANSI C), roughly Small-C plus `unsigned`, `struct`, `enum`, `typedef`, function pointers, multi-dimensional arrays and `float`. Anything outside it is a compile error, `ERROR 1: NOT SUPPORTED`, never a silent miscompilation.
+Leap-C compiles a **subset of C89** (ANSI C), roughly Small-C plus `unsigned`, `struct`, `enum`, `typedef`, function pointers, multi-dimensional arrays and `float`. Anything outside it is a compile error, `ERROR 1 NOT SUPPORTED`, never a silent miscompilation.
 
 **Supported:**
 
@@ -235,7 +234,7 @@ int main(void)
 }
 ```
 
-It returns the key's code (`'q'` is 113). **BREAK** (CAPS SHIFT + SPACE) stops any program: the report is `BREAK` and `LINE m`.
+It returns the key's code (`'q'` is 113). **BREAK** (CAPS SHIFT + SPACE) stops any program: the report is `BREAK`, and a key puts the cursor on the line where the running function starts.
 
 **High resolution.** `mode(1)` switches the TS2068 to its high-resolution colour mode, which uses the memory at `$6000-$77FF`. The compiler fills that memory last, so only a large program reaches it; `#pragma hires` keeps the compiled program out of it, and a program that uses `mode(1)` should say so. If the program is there, `mode(1)` stops with runtime error 3. The end of a program restores mode 0.
 
@@ -274,11 +273,11 @@ int main(void)
 }
 ```
 
-One library is loaded at a time; `LIB "other"` replaces it. It stays through `NEW`, `LOAD` and `RUN`; `LIB` alone unloads it, and a reset clears it. While a library is loaded it occupies image region 3 (1 KB), so the largest program is 1 KB smaller. Without the library, a call to `circle` is `ERROR 70: UNDEFINED FUNCTION`. You can write your own libraries in assembly: `include/leapc_lib.inc` and `tools/lib2tape.py` in the repository.
+One library is loaded at a time; `LIB "other"` replaces it. It stays through `NEW`, `LOAD` and `RUN`; `LIB` alone unloads it, and a reset clears it. While a library is loaded it occupies image region 3 (1 KB), so the largest program is 1 KB smaller. Without the library, a call to `circle` is `ERROR 70 UNDEFINED FUNCTION`. You can write your own libraries in assembly: `include/leapc_lib.inc` and `tools/lib2tape.py` in the repository.
 
 ## 10. Error reports
 
-**Compile errors.** The compile stops at the first error. The report is `ERROR n: MESSAGE` and `LINE m`; for an undeclared, undefined or duplicated name, the name too (`LINE 5  'cont'`). Press a key: the editor shows line m with the cursor **at the place where the compiler stopped** (for a missing `;`, at the end of the line that lacks it). For example, this program:
+**Compile errors.** The compile stops at the first error. The report is `ERROR n MESSAGE`, with no line number. Press a key: the editor shows the line with the cursor **at the place where the compiler stopped** (for a missing `;`, at the end of the line that lacks it), and the status row's `LINE n/m` gives the line's number. For example, this program:
 
 ```c
 // expect: error E_UNDECL 5
@@ -289,7 +288,7 @@ int main(void)
 }
 ```
 
-reports `ERROR 23: UNDECLARED IDENTIFIER`, `LINE 5  'cont'`, with the cursor just after `cont`. Line numbers count from 1, the program's first line (here the `// expect` comment; typed without it, the same error is on line 4).
+reports `ERROR 23 UNDECLARED IDENTIFIER`; after the key the cursor is just after `cont` and the status row shows `LINE 5/6`. Line numbers count from 1, the program's first line (here the `// expect` comment; typed without it, the same error is on line 4).
 
 | Group | Numbers and messages |
 |---|---|
@@ -302,7 +301,7 @@ reports `ERROR 23: UNDECLARED IDENTIFIER`, `LINE 5  'cont'`, with the cursor jus
 | limits | 90 NESTING TOO DEEP, 91 FRAME TOO LARGE, 92 TOO MANY PARAMETERS |
 | memory | 100 OUT OF MEMORY, 101 PROGRAM TOO BIG |
 
-**Runtime errors.** The program stops with `RUNTIME ERROR n: MESSAGE` and `LINE m`, the line where the function that failed **starts** (its definition's first line). A key returns to the editor with the cursor there.
+**Runtime errors.** The program stops with `RUNTIME ERROR n MESSAGE`. A key returns to the editor with the cursor at the start of the line where the function that failed **starts** (its definition's first line); the status row gives its number. When that line is unknown the cursor stays where it was.
 
 | Number | Message | Cause |
 |---|---|---|
@@ -327,4 +326,4 @@ reports `ERROR 23: UNDECLARED IDENTIFIER`, `LINE 5  'cont'`, with the cursor jus
 | a library | 1 KB (image region 3) |
 | compile speed | about 13 ms per line |
 
-`FREE` reports the space left. `ERROR 100: OUT OF MEMORY` means the source and the compiler's tables no longer fit together: shorten the program. `ERROR 101: PROGRAM TOO BIG` means the compiled code and data do not fit.
+`FREE` reports the space left. `ERROR 100 OUT OF MEMORY` means the source and the compiler's tables no longer fit together: shorten the program. `ERROR 101 PROGRAM TOO BIG` means the compiled code and data do not fit.

@@ -1108,3 +1108,96 @@ component = "platform"
 delta = -12
 reason = """Platform delta D21: GFX_CHAR_TO_FONT_OFFSET's block-graphics glyph rewritten clean-room (36 B; V2's, which held the
 stock ROM's PO-GR-2 sequence twice, was 48 B). The 12 B return to the HOME reserve (470 -> 482 B)."""
+
+[[ledger]]
+id = "L78"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "home"
+component = "decl"
+delta = 28
+reason = """Owner decision (1.0): NULL is predefined as 0 (C89 7.1.6), so `p == NULL` compiles without a #define (the manual
+audit found programs stopping with UNDECLARED IDENTIFIER 'NULL'). CC_COMPILE puts a macro record in the global area
+before the first token (15 B) from a ROM template with the name and the replacement (13 B); in the global area,
+#undef NULL can clear it. 2,927 B; from the HOME reserve (482 -> 454 B)."""
+
+[[ledger]]
+id = "L79"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "exrom"
+component = "xcomp"
+delta = 9
+reason = """With L78: PP_DEFINE lets a program define NULL itself once (the oldest record, link 0, is cleared and the
+new definition made), as a program written with its own header's NULL does; a second definition is ALREADY DEFINED
+as before. PP_INCLUDE moved above PP_UNDEF so its jumps stay short. 1,491 B; from the EXROM reserve (186 -> 177 B)."""
+
+[[ledger]]
+id = "L80"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "home"
+component = "platform"
+delta = -42
+reason = """Platform delta D22: plot and draw in hi-res colour mode wrote a pixel's colour byte at $6000 + y*32 + col, but the
+TS2068 reads it at the bitmap byte's address + $2000 (the same interleaved layout). GFX_WRITE_PIXEL.ext_attr now does
+`set 5,h` and stores it (6 B); V2's GFX_SET_ATTR_EXT (30 B) and the y reconstruction (18 B) go. 3,068 B; the 42 B
+return to the HOME reserve (454 -> 496 B)."""
+
+[[ledger]]
+id = "L81"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "exrom"
+component = "xshell"
+delta = -212
+reason = """Owner decision (1.0): a report is one row (row 23, all 32 columns, no swatch), so a program's row 22 stays
+visible. RUN shows "ERROR n MESSAGE", "RUNTIME ERROR n MESSAGE", "BREAK" or "EXIT n"; the line is shown by the cursor
+(the editor resumes on it), the name of an undeclared identifier and "IMAGE i B  HEAP h B" are dropped (SH_IMAGE,
+SH_MEMORY, the name's table go). FREE shows "SOURCE s B  FREE f B"; SAVE, LOAD, VERIFY and LIB their result only.
+2,690 B; the 212 B return to the EXROM reserve."""
+
+[[ledger]]
+id = "L82"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "exrom"
+component = "xdiag"
+delta = -4
+reason = """With L81: DG_APPEND writes "n MESSAGE" (no colon) so the longest report, "ERROR 13 BAD CHARACTER CONSTANT",
+fits the row (31 characters). 641 B; the 4 B return to the EXROM reserve (177 -> 393 B with L81)."""
+
+[[ledger]]
+id = "L83"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "home"
+component = "library"
+delta = 15
+reason = """Owner decision (1.0): output that scrolls paints the new row 23 in the print colours (LIB_ATTR). The platform's
+GFX_SCROLL_OUTPUT_UP clears it in ATTR_DEFAULT, so a program with its own paper got white bands as it scrolled
+(2068-Forth 3a32fb3 found the same in its EMIT). tests/lib/print/scroll_colours.c. 1,296 B; from the HOME reserve
+(496 -> 481 B)."""
+
+[[ledger]]
+id = "L84"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "exrom"
+component = "xshell"
+delta = 54
+reason = """Owner decision (1.0): the version ("2068 LEAP-C 1.0", include/leapc_version.inc) on the status row from power-on,
+through the chime, to the first key's redraw, as Leap V2.1's VER: SHELL_COLD draws it and sets SH_VER_FLAG (the
+unused SH_ERR_LINE cell's low byte), SH_DRAW_STATUS shows it while the flag is set, SH_REDRAW counts it down and
+makes the redraw that takes it off a full one; SH_LIST's jump to SH_WAIT_KEY becomes a jp. 2,744 B."""
+
+[[ledger]]
+id = "L85"
+date = "2026-11-01"
+milestone = "1.0"
+bank = "exrom"
+component = "xplatform"
+delta = 6
+reason = """Owner decision (1.0), platform delta D23: STORAGE_SAVE waits 50 frames between the header and the data block,
+as the stock ROM's SAVE, so tools that end a block at a long pulse see two blocks (2068-Forth c39f674). 1,378 B;
+from the EXROM reserve (393 -> 333 B with L84)."""

@@ -18,15 +18,12 @@ DG_APPEND:
     ld   l, a
     ld   h, 0
     call SH_APPEND_NUM
-    ld   a, ':'
-    ld   (de), a
-    inc  de
     ld   a, ' '
     ld   (de), a
     inc  de
     pop  bc
     xor  a
-    ld   (de), a                       ; (an unknown key: "n: ")
+    ld   (de), a                       ; (an unknown key: "n ")
     ld   b, a                          ; B = the key before the first message's
     ld   hl, DG_MSGS
 .find:                                 ; HL -> a message

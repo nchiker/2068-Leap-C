@@ -22,10 +22,9 @@ and start the tape. The status row shows `LOADING`, then `LOADING shapes` when t
 
 ```
 LIBRARY shapes: 3 FUNCTIONS
-SOURCE 120 B  FREE 18292 B
 ```
 
-(the second row, as for the tape commands, is the size of your program and the room left for it; the numbers here are only an example). Press a key to go back to the editor. The three functions can be used from then on.
+on the bottom row. Press a key to go back to the editor. The three functions can be used from then on.
 
 `LIB ""` loads the next library tape on the cassette whatever its name, as `LOAD ""` does for programs. The name of a library is 1 to 10 characters; the report shows the name that the tape carries.
 
@@ -37,9 +36,9 @@ The rules:
 * **The library stays.** `NEW`, `LOAD` and `RUN` do not unload it: it belongs to the machine's session, not to the program in the editor, so a program that you `LOAD` from tape can use it at once. (Leap V2's `NEW` unloaded its package; Leap-C's does not.)
 * **`LIB` alone unloads it.** Type `LIB` on the empty last line; the status row shows `NO LIBRARY` until a key is pressed.
 * **A reset clears it.** After a reset or switching on, no library is loaded.
-* **It costs program space.** While a library is loaded its 1 KB is region 3 of the compiled program's memory (see [Memory](05_concepts.md#memory)), so the program is compiled into the other regions and the largest program you can run is 1 KB smaller. The `IMAGE` size in the `RUN` report does not count the library.
+* **It costs program space.** While a library is loaded its 1 KB is region 3 of the compiled program's memory (see [Memory](05_concepts.md#memory)), so the program is compiled into the other regions and the largest program you can run is 1 KB smaller.
 * **Calling it needs no declaration.** A name that your program does not declare is looked up in the ROM's own library, and then in the loaded library. If you declare a function of the same name yourself, your declaration wins. A name that both the ROM and the library have is the ROM's function; the library's is never called.
-* **Calls are checked.** A library function has a prototype, so a call with the wrong number of arguments is `ERROR 55: WRONG ARGUMENT COUNT`, and a pointer given for an `int` parameter is `ERROR 40: TYPE MISMATCH`.
+* **Calls are checked.** A library function has a prototype, so a call with the wrong number of arguments is `ERROR 55 WRONG ARGUMENT COUNT`, and a pointer given for an `int` parameter is `ERROR 40 TYPE MISMATCH`.
 * **Library tapes are their own kind.** `LOAD`, `VERIFY` and `tape_load()` skip library tapes, and `LIB` skips program tapes and data tapes (see [Tapes](05_concepts.md#tapes)).
 * **BREAK** or SPACE stops a `LIB` that is waiting for a tape (report `BREAK`). Left alone, `LIB` gives up after about two minutes without a tape (`LOAD FAILED`).
 
@@ -58,7 +57,7 @@ A failure that had already begun writing into region 3 (a damaged block, or BREA
 
 ## Errors
 
-A library function that is not loaded is simply an undefined function: the compile stops with `ERROR 70: UNDEFINED FUNCTION`, and the second report row names the function (`LINE 4  'circle'`).
+A library function that is not loaded is simply an undefined function: the compile stops with `ERROR 70 UNDEFINED FUNCTION`, and a key puts the cursor on the line of its first use (here line 4).
 
 ```c
 // expect: error E_UNDEFFN 4
@@ -239,7 +238,7 @@ int main(void)
 
 ## Writing your own library
 
-A library is written in **Z80 assembly** and built on a PC; it cannot be written on the TS2068 itself in this release. What is described here is the interface. It is defined, exactly, by `include/leapc_lib.inc` in the repository; the tool that builds the tape is `tools/lib2tape.py`; the example to copy is `libs/shapes.asm`; `spec.md` section 2.4 (the services), 7.2 (the library) and 8.4 (the tape) have the details.
+A library is written in **Z80 assembly** and built on a PC; it cannot be written on the TS2068 itself in this release. What is described here is the whole interface. It is defined, exactly, by `include/leapc_lib.inc`; the tool that builds the tape is `tools/lib2tape.py`; the example to copy is `libs/shapes.asm`. All three are in the project's repository, https://github.com/nchiker/2068-Leap-C, at those paths (they are not in the release's emulator pack).
 
 ### The image
 
@@ -294,25 +293,42 @@ An integer parameter is an `int`; a pointer parameter is `void *`, to which any 
 * It must **call `LX_ARGS` first**. That returns the first three arguments in HL, DE and BC (a fourth and later ones are on the stack, at SP + 8, + 10 and so on) and records the place in the program where the function was called, so that a runtime error, or BREAK, in the function (or in a service it uses) is reported at the right line of the program.
 * It reaches the ROM **only through a table of jumps**, 16 slots of 3 bytes at `$3FD0-$3FFF`, the last bytes of the HOME ROM. The table never moves, so a library built against it runs on every ROM that keeps it. ABI 1 has these services:
 
-| Slot | Name | Service | In | Out |
-|---:|---|---|---|---|
-| 0 | `LX_ARGS` | the arguments (call it first) | the return address and arguments on the stack | HL, DE, BC = the first three arguments |
-| 1 | `LX_PUTC` | print a character at the print position | A | |
-| 2 | `LX_PUTS` | print a string at the print position | HL = the NUL-terminated text | |
-| 3 | `LX_MALLOC` | a heap block, as `malloc` | HL = the size | HL = the block, or 0 |
-| 4 | `LX_FREE` | free a heap block, as `free` | HL = the block (0: nothing) | |
-| 5 | `LX_MUL` | 16-bit multiply | DE, HL | HL = DE x HL |
-| 6 | `LX_DIVS` | signed divide, toward zero (0 for a divisor of 0) | DE, HL | HL = DE / HL |
-| 7 | `LX_DIVU` | unsigned divide | DE, HL | HL = DE / HL, DE = DE % HL |
-| 8 | `LX_FOP` | an operation of the float core on `F_ACC` | A = the operation `FOP_*` | `F_ACC` (see below) |
-| 9 | `LX_ERROR` | end the program with a runtime error | A = the error | does not return |
-| 10 | `LX_KEY` | wait for a key (BREAK ends the program) | | A = its code |
-| 11 | `LX_INKEY` | the key latched since the last read | | A = its code, or 0 |
-| 12 | `LX_FRAMES` | the frame counter | | HL |
-| 13 | `LX_PLOT` | a pixel in the print attribute and `over` mode; off the screen, nothing | HL = x, DE = y | |
-| 14, 15 | | reserved: a call is runtime error 4 | | |
+| Slot | Name | Service | In | Out | Destroys |
+|---:|---|---|---|---|---|
+| 0 | `LX_ARGS` | the arguments (call it first) | the return address and arguments on the stack | HL, DE, BC = the first three arguments | AF |
+| 1 | `LX_PUTC` | print a character at the print position (print attribute, `inverse`, `over`; `'\n'` a new line; wraps and scrolls) | A | | AF, BC, DE, HL |
+| 2 | `LX_PUTS` | print a string at the print position, the same way | HL = the NUL-terminated text | | AF, BC, DE, HL |
+| 3 | `LX_MALLOC` | a heap block, as `malloc` | HL = the size | HL = the block, or 0 | AF, BC, DE |
+| 4 | `LX_FREE` | free a heap block, as `free` | HL = the block (0: nothing) | | AF, HL |
+| 5 | `LX_MUL` | 16-bit multiply | DE, HL | HL = DE x HL; **DE is kept** | AF, BC |
+| 6 | `LX_DIVS` | signed divide, toward zero (0 for a divisor of 0) | DE, HL | HL = DE / HL | AF, BC, DE |
+| 7 | `LX_DIVU` | unsigned divide | DE, HL | HL = DE / HL, DE = DE % HL | AF, BC |
+| 8 | `LX_FOP` | an operation of the float core on `F_ACC` | A = the operation `FOP_*`; HL = its argument (see below) | `F_ACC`; HL (`FOP_TOI`, `FOP_FTOA`); the flags (`FOP_CMP`) | AF, BC, DE, HL |
+| 9 | `LX_ERROR` | end the program with a runtime error | A = the error | does not return | |
+| 10 | `LX_KEY` | wait for a key (BREAK ends the program) | | A = its code | AF |
+| 11 | `LX_INKEY` | the key latched since the last read | | A = its code, or 0 | AF |
+| 12 | `LX_FRAMES` | the frame counter | | HL | none |
+| 13 | `LX_PLOT` | a pixel in the print attribute and `over` mode; off the screen, nothing | HL = x, DE = y | | AF, BC, DE, HL |
+| 14, 15 | | reserved: a call is runtime error 4 | | | |
 
-What each slot destroys is in `spec.md` section 2.4. The float operations are `FOP_FRI` 0 (`F_ACC` = the integer in HL), `FOP_FRU` 1 (HL as `unsigned`), `FOP_TOI` 2 (HL = `F_ACC` truncated), `FOP_NEG` 3, `FOP_FTOA` 8 (HL = the text of the float at HL with C decimals), and the binary operations `FOP_ADD` `$80`, `FOP_SUB` `$82`, `FOP_SUBR` `$83`, `FOP_MUL` `$84`, `FOP_DIV` `$86`, `FOP_DIVR` `$87`, `FOP_CMP` `$88`: they compute `(HL) op F_ACC` (the reversed ones `F_ACC op (HL)`), HL being the address of the left operand's 5 bytes. A float overflow raises runtime error 6 at the program's call.
+A register not in the Destroys column is kept by the service.
+
+The float operations of `LX_FOP` (A = the operation):
+
+| Operation | Code | In | Out |
+|---|---:|---|---|
+| `FOP_FRI` | 0 | HL = an `int` | `F_ACC` = HL as a float |
+| `FOP_FRU` | 1 | HL = an `unsigned` | `F_ACC` = HL as a float |
+| `FOP_TOI` | 2 | `F_ACC` | HL = `F_ACC` truncated toward zero |
+| `FOP_NEG` | 3 | `F_ACC` | `F_ACC` = -`F_ACC` |
+| `FOP_FTOA` | 8 | HL = the address of a float's 5 bytes; C = the number of decimals, 0 to 9 | HL = its text, NUL-terminated, as `printf`'s `%.Nf` prints it |
+| `FOP_ADD`, `FOP_SUB`, `FOP_MUL`, `FOP_DIV` | `$80`, `$82`, `$84`, `$86` | HL = the address of the left operand's 5 bytes; `F_ACC` = the right operand | `F_ACC` = `(HL) op F_ACC` |
+| `FOP_SUBR`, `FOP_DIVR` | `$83`, `$87` | the same | `F_ACC` = `F_ACC op (HL)` (reversed) |
+| `FOP_CMP` | `$88` | the same | the flags: carry set if `(HL)` < `F_ACC`; Z set if they are equal; neither if `(HL)` is greater |
+
+A float overflow, or a division by zero, raises runtime error 6 at the program's call.
+
+A float is 5 bytes in the Sinclair format: the exponent byte first, then the sign and the mantissa, most significant byte first (see [Floating point](05_concepts.md#floating-point)). A float **argument**, which only a function with parameter list 0 (no prototype) can receive, takes a 3-word slot on the stack: its 5 bytes, from the lowest address up, then one byte of padding. So when a function's first argument is a float, `LX_ARGS` gives its bytes 0-1 in HL, 2-3 in DE and 4 (with the padding) in BC, and the 5 bytes themselves are at SP + 2 in the function (on entry, and again after `LX_ARGS`), the address to give `LX_FOP` as a left operand; the next argument starts 6 bytes further on.
 
 * A library can use these **pinned names**: `F_ACC` (`$5ED6`, the float accumulator, 5 bytes), `LIB_COL` and `LIB_ROW` (`$5EC2`, `$5EC3`: the print position), `LIB_ATTR` (`$5EC8`: the print attribute), and the runtime errors `RTE_HEAP` 2, `RTE_ARG` 4 and `RTE_FLOAT` 6. It can name nothing else of the ROM.
 * A function's **own cells** are in its image, after its code. They keep their values between calls **and between runs**: region 3 is not cleared.

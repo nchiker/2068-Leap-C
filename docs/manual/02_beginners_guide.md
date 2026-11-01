@@ -12,12 +12,12 @@ Switch on the machine. A short chord plays (C, E and G, one after another, just 
 
 ```
 ...
-LINE 1/0
+2068 LEAP-C 1.0
 ```
 
 ![The screen after switching on](../images/editor_start.png)
 
-You are in the **editor**. It is where you write programs. The bottom row is the **status row**. It says `LINE 1/0`, meaning "the cursor is on line 1, and the program has 0 lines so far". The three little coloured squares at its right (red, green and blue) are decoration. The black block is the **cursor**: it shows where the next character you type will go. Everything above the status row, rows 0 to 22, is for your program and for what it prints.
+You are in the **editor**. It is where you write programs. The bottom row is the **status row**. Just after switching on it shows the version, `2068 LEAP-C 1.0`; as soon as you press a key it says `LINE 1/0`, meaning "the cursor is on line 1, and the program has 0 lines so far". The three little coloured squares at its right (red, green and blue) are decoration. The black block is the **cursor**: it shows where the next character you type will go. Everything above the status row, rows 0 to 22, is for your program and for what it prints.
 
 There is no "OK" prompt and no copyright message. If you see something else (a blank screen, or the TS2068's own BASIC screen) the ROMs were not set up properly; the [emulator guide](../EMULATORS.md) says what to do.
 
@@ -66,10 +66,9 @@ Hello, TS2068!
 
 ...
 EXIT 0
-IMAGE 39 B  HEAP 18340 B
 ```
 
-The greeting is the program's output. The two rows at the bottom are the **report**. `EXIT 0` is the number `main` returned. `IMAGE` is the size of the compiled program in bytes, and `HEAP` is the memory the program could take with `malloc()`. Let go of all keys, then press one: you are back in the editor with your program as you left it. (A key still held down from the command is ignored, so that a report cannot vanish before you read it.)
+The greeting is the program's output. The row at the bottom is the **report**: `EXIT 0` is the number `main` returned. Let go of all keys, then press one: you are back in the editor with your program as you left it. (A key still held down from the command is ignored, so that a report cannot vanish before you read it.)
 
 ### What the program says
 
@@ -89,7 +88,7 @@ and the `}` at the end are **braces**. They enclose the **body** of the function
     cls();
 ```
 
-A **statement** is one instruction, and it ends with a **semicolon**. `cls()` is a call to a **library function** that clears the screen. Here the function has nothing to be told, so its brackets are empty. A program starts with the screen as the editor left it, so a program that prints should call `cls()` first.
+A **statement** is one instruction, and it ends with a **semicolon**. `cls()` is a call to a **library function** that clears the screen. Here the function has nothing to be told, so its brackets are empty. `RUN` already starts every program on a clear screen, so this `cls()` is not strictly needed here; it does no harm, and it is how a program clears the screen again later on.
 
 ```c
     printf("Hello, TS2068!\n");
@@ -172,15 +171,14 @@ int main(void)
 }
 ```
 
-Type that (leave out the `//` line if you like; then the missing semicolon is on line 4) and `RUN` it. You get two report rows:
+Type that (leave out the `//` line if you like; then the missing semicolon is on line 4) and `RUN` it. You get a report on the bottom row:
 
 ```
 ...
-ERROR 20: SYNTAX ERROR
-LINE 5
+ERROR 20 SYNTAX ERROR
 ```
 
-The number says which mistake it was ([Appendix B](08_appendices.md) lists them all); the line is the line of the program, counted from 1. Press a key. The editor shows the program with the cursor **at the place where the compiler stopped**: here, at the end of the line that lacks the semicolon. Type `;`, and press ENTER. Then move down with CAPS SHIFT and 6 until you reach the empty last line (the status row shows `LINE 8/7`: the first number is one more than the second), and `RUN` again.
+The number says which mistake it was ([Appendix B](08_appendices.md) lists them all). Press a key. The editor shows the program with the cursor **at the place where the compiler stopped**: here, at the end of the line that lacks the semicolon. The status row shows `LINE 5/7`: the mistake is on line 5, counted from 1. Type `;`, and press ENTER. Then move down with CAPS SHIFT and 6 until you reach the empty last line (the status row shows `LINE 8/7`: the first number is one more than the second), and `RUN` again.
 
 You cannot do damage by making a mistake. The worst that happens is a message. Compile errors are explained in Chapter 18, and in the concept [Errors](05_concepts.md#errors).
 
@@ -644,7 +642,7 @@ int main(void)
 }
 ```
 
-`*(p + 1)` and `p[1]` mean the same. A string in double quotes is also a pointer to its first character, which is why a function such as `puts` accepts one. A pointer to nothing is the number 0, called NULL: `malloc` returns it when no memory is left, and it is not checked for you if you use it. See the concept [Pointers](05_concepts.md#pointers), [malloc](04_library.md#malloc) and [free](04_library.md#free).
+`*(p + 1)` and `p[1]` mean the same. A string in double quotes is also a pointer to its first character, which is why a function such as `puts` accepts one. A pointer to nothing is the number 0, called NULL (Leap-C knows the name: `p == NULL` is the same as `p == 0`): `malloc` returns it when no memory is left, and it is not checked for you if you use it. See the concept [Pointers](05_concepts.md#pointers), [malloc](04_library.md#malloc) and [free](04_library.md#free).
 
 ## Chapter 11 -- Structures
 
@@ -798,7 +796,7 @@ int main(void)
 }
 ```
 
-Without the library the same program is `ERROR 70: UNDEFINED FUNCTION`. [Part 6](06_libraries.md) describes libraries and how to write one. The TS2068's high-resolution colour mode, `mode(1)`, is the concept [High resolution](05_concepts.md#high-resolution). See [plot](04_library.md#plot), [draw](04_library.md#draw) and [point](04_library.md#point).
+Without the library the same program is `ERROR 70 UNDEFINED FUNCTION`. [Part 6](06_libraries.md) describes libraries and how to write one. The TS2068's high-resolution colour mode, `mode(1)`, is the concept [High resolution](05_concepts.md#high-resolution). See [plot](04_library.md#plot), [draw](04_library.md#draw) and [point](04_library.md#point).
 
 ## Chapter 14 -- Sound
 
@@ -980,18 +978,18 @@ Program tapes and data tapes are different kinds: `LOAD` skips data tapes, and `
 
 Things go wrong in three ways.
 
-**The compiler refuses the program.** You get `ERROR n: MESSAGE` and `LINE m` and nothing runs (Chapter 3). The commonest causes:
+**The compiler refuses the program.** You get `ERROR n MESSAGE` and nothing runs; a key puts the cursor on the mistake (Chapter 3). The commonest causes:
 
 | You wrote | You get |
 |---|---|
 | a missing `;`, `)` or `}` | `20 SYNTAX ERROR` |
-| a name that was never declared (or misspelt) | `23 UNDECLARED IDENTIFIER`, with the name |
+| a name that was never declared (or misspelt) | `23 UNDECLARED IDENTIFIER` |
 | a call to a function that does not exist | `70 UNDEFINED FUNCTION` |
 | a number where a pointer is wanted, or the like | `40 TYPE MISMATCH` or `51 BAD OPERAND TYPE` |
 | something Leap-C does not have (`long`, `union`) | `1 NOT SUPPORTED` |
 | no `main` | `71 NO MAIN FUNCTION` |
 
-For a name that is wrong, the report shows it too, and the cursor stops just after it:
+For a name that is wrong, the cursor stops just after it:
 
 ```c
 // expect: error E_UNDECL 5
@@ -1002,9 +1000,9 @@ int main(void)
 }
 ```
 
-reports `ERROR 23: UNDECLARED IDENTIFIER` and `LINE 5  'cont'`. (Without the `//` line it is line 4.)
+reports `ERROR 23 UNDECLARED IDENTIFIER`; after the key the cursor is just after `cont`, and the status row shows `LINE 5/6`. (Without the `//` line it is line 4.)
 
-**The program stops with a runtime error.** The report is `RUNTIME ERROR n: MESSAGE` and `LINE m`, where m is the line on which the function that failed **starts**; a key returns you to the editor with the cursor there. The ones you are most likely to meet:
+**The program stops with a runtime error.** The report is `RUNTIME ERROR n MESSAGE`. A key returns you to the editor with the cursor on the line where the function that failed **starts**; the status row gives its number. The ones you are most likely to meet:
 
 ```c
 // expect: rterror 4
@@ -1015,7 +1013,7 @@ int main(void)
 }
 ```
 
-is `RUNTIME ERROR 4: BAD ARGUMENT`, a library function given a value out of range (the semitone of a note goes only to 69). A function that calls itself without end ends with `1 STACK OVERFLOW`; a float divided by zero gives `6 NUMBER TOO BIG`:
+is `RUNTIME ERROR 4 BAD ARGUMENT`, a library function given a value out of range (the semitone of a note goes only to 69). A function that calls itself without end ends with `1 STACK OVERFLOW`; a float divided by zero gives `6 NUMBER TOO BIG`:
 
 ```c
 // expect: rterror 6
@@ -1037,7 +1035,7 @@ int main(void)
 }
 ```
 
-Press **BREAK** (CAPS SHIFT and SPACE) to stop a program that does not finish; the report is `BREAK` and the line. When a program is too big, `FREE` shows the space left, and `ERROR 100: OUT OF MEMORY` or `ERROR 101: PROGRAM TOO BIG` means shorten it. Every message and number is in the appendices ([A](08_appendices.md), [B](08_appendices.md), [C](08_appendices.md)) and the concept [Errors](05_concepts.md#errors).
+Press **BREAK** (CAPS SHIFT and SPACE) to stop a program that does not finish; the report is `BREAK`, and a key puts the cursor on the line where the running function starts. When a program is too big, `FREE` shows the space left, and `ERROR 100 OUT OF MEMORY` or `ERROR 101 PROGRAM TOO BIG` means shorten it. Every message and number is in the appendices ([A](08_appendices.md), [B](08_appendices.md), [C](08_appendices.md)) and the concept [Errors](05_concepts.md#errors).
 
 ## Where next
 

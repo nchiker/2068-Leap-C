@@ -33,11 +33,11 @@ def messages(path=SRC):
 
 
 def report(kind, n, msgs=None):
-    """The text the shell shows on the report row for error n."""
+    """The text the shell shows on the report row for error n (1.0: "ERROR n MESSAGE", no colon)."""
     msgs = msgs or messages()
     if kind == "RT" and n == 5:
         return "BREAK"
-    return ("ERROR %d: %s" if kind == "E" else "RUNTIME ERROR %d: %s") % (n, msgs[(kind, n)])
+    return ("ERROR %d %s" if kind == "E" else "RUNTIME ERROR %d %s") % (n, msgs[(kind, n)])
 
 
 def build(msgs):

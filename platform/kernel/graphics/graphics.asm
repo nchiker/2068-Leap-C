@@ -988,64 +988,6 @@ GFX_SET_ATTR:
     ret
 
 ; ============================================================================
-; GFX_SET_ATTR_EXT
-; High Resolution Graphics mode's attribute setter — same row*32+col
-; formula GFX_SET_ATTR already uses, just with SECOND_DISPLAY_ADDR as
-; the base instead of ATTR_ADDR, and B holding a real scanline row
-; (0-191, one attribute byte per scanline) instead of a character row
-; (0-23, one attribute byte per 8 scanlines). Deliberately its own
-; small routine rather than a parameterized version of GFX_SET_ATTR —
-; that routine is already tested and hardware-confirmed with a fixed
-; base address; changing its calling contract to accept a base
-; address risks every existing call site for a small amount of
-; arithmetic duplication, which is the worse trade (same reasoning
-; kernel/math's MATH_NEGATE16 comment already gives for a near-
-; identical situation). Addressing formula verified in Python against
-; the manual's own 6144-byte/8x1-resolution figures before any Z80 was
-; written — all 6144 (y,col) pairs land on unique addresses inside
-; $6000-$77FF, zero collisions, zero out-of-range.
-; In:  B = y (0-191, a real scanline row, NOT a character row), C =
-;      col (0-31), A = attribute byte
-; Out: none
-; Destroys: AF, DE, HL
-; ============================================================================
-GFX_SET_ATTR_EXT:
-    ld   d, a                    ; stash the attribute byte before
-                                 ; using A as bounds-check scratch —
-                                 ; same fix, same reasoning, as GFX_
-                                 ; SET_ATTR just above (that routine's
-                                 ; own header has the full story: this
-                                 ; project's real, reproducible bug,
-                                 ; not a hypothetical one)
-    ld   a, b
-    cp   192                     ; B here is a real scanline row
-                                 ; (0-191), not a character row —
-                                 ; different bound than GFX_SET_ATTR's
-                                 ; own row check
-    ret  nc
-    ld   a, c
-    cp   32
-    ret  nc
-    ld   a, d                    ; restore the attribute byte
-
-    push af
-    ld   h, 0
-    ld   l, b
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl                  ; y*32
-    ld   de, SECOND_DISPLAY_ADDR
-    add  hl, de
-    ld   d, 0
-    ld   e, c
-    add  hl, de                   ; HL = SECOND_DISPLAY_ADDR + y*32 + col
-    pop  af
-    ld   (hl), a
-    ret
-
-; ============================================================================
 ; GFX_SET_MODE
 ; Switches between Normal and High Resolution Graphics video modes —
 ; MODE's mechanism. Real port $FF write, done safely: $FF is a shared,
@@ -1317,24 +1259,11 @@ GFX_WRITE_PIXEL:
     ld   a, (GFX_PIXEL_ATTR)
     jp GFX_SET_ATTR
 
-.ext_attr:
-    ld   a, (GFX_PIXEL_ROW)
-    add  a, a
-    add  a, a
-    add  a, a                      ; row*8 (fits easily — row maxes at
-                                   ; 23, so row*8 maxes at 184)
-    ld   b, a
-    ld   a, (GFX_PIXEL_SCANLINE)
-    add  a, b
-    ld   b, a                      ; B = real y (row*8 + scanline —
-                                   ; exactly reconstructs the original
-                                   ; y by construction, verified in
-                                   ; Python for all 192 values before
-                                   ; this was written)
-    ld   a, (GFX_PIXEL_COL)
-    ld   c, a
-    ld   a, (GFX_PIXEL_ATTR)
-    jp GFX_SET_ATTR_EXT
+.ext_attr:                         ; Leap-C delta D22: the TS2068's extended-colour mode reads the
+    set  5, h                      ; colour byte of 8 pixels at the same offset in the second display
+    ld   a, (GFX_PIXEL_ATTR)       ; file as their bitmap byte (interleaved like the bitmap), so it is
+    ld   (hl), a                   ; HL + $2000 ($4000-$57FF -> $6000-$77FF). V2's GFX_SET_ATTR_EXT
+    ret                            ; wrote $6000 + y*32 + col: the wrong row for every y but 0
 
 ; ============================================================================
 ; GFX_READ_PIXEL
@@ -1722,8 +1651,8 @@ FONT_TABLE:
     DB   $00, $00, $70, $88, $F8, $80, $70, $00
     ; 'f'
     DB   $30, $40, $F0, $40, $40, $40, $40, $00
-    ; 'g'
-    DB   $00, $78, $88, $88, $78, $08, $70, $00
+    ; 'g'  Leap-C delta D24: the bowl on the x-height (rows 2-5), the descender in rows 6-7
+    DB   $00, $00, $78, $88, $88, $78, $08, $70
     ; 'h'
     DB   $80, $80, $B0, $C8, $88, $88, $88, $00
     ; 'i'
@@ -1740,10 +1669,10 @@ FONT_TABLE:
     DB   $00, $00, $B0, $C8, $88, $88, $88, $00
     ; 'o'
     DB   $00, $00, $70, $88, $88, $88, $70, $00
-    ; 'p'
-    DB   $00, $F0, $88, $88, $F0, $80, $80, $80
-    ; 'q'
-    DB   $00, $78, $88, $88, $78, $08, $08, $08
+    ; 'p'  Leap-C delta D24: the bowl on the x-height (rows 2-5), the descender in rows 6-7
+    DB   $00, $00, $F0, $88, $88, $F0, $80, $80
+    ; 'q'  Leap-C delta D24: the bowl on the x-height (rows 2-5), the descender in rows 6-7
+    DB   $00, $00, $78, $88, $88, $78, $08, $08
     ; 'r'
     DB   $00, $00, $B0, $C8, $80, $80, $80, $00
     ; 's'
