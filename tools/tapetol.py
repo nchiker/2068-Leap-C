@@ -161,7 +161,7 @@ def worker(build, k, todo, q):
                         q.put((name, False, "tape_open: %s" % r))
                         break
                     f.command('load ""', timeout=600)
-                    msg = f.rows()[22]
+                    msg = f.rows()[23 if "SH_VER_FLAG" in f.S else 22]   # (1.0: a one-row report; beta1: row 22)
                     f.key(" ")
                     q.put((name, msg == "LOADED %s" % NAME and f.store() == PROG, msg))
                     break

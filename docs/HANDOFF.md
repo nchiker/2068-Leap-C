@@ -21,26 +21,23 @@ kill another project's emulators (the long-lived one on port 10330 is unrelated)
 - Passing: `make check`, the fast suite, all 33 tape cases, and **`make repro`: reproducible OK** on `34420c2`
   (HOME `d2b18eaa…`, EXROM `02790ebe…`, `leapc_zesarux.bin` `c0f7f76fbc3b89626a09db9a6ec8cc268525103a5fbb70c6ad527d805df39b7b`,
   `leapc_exrom.dck` `936ce1aa…`).
-- **`make qualify`** was started on `e1aed5d` with `QUALIFY_PORT=12760 make qualify` (about 70-120 min).
-  `QUALIFY_PORT` moves every ZEsarUX step off the default ports, so it runs alongside 2068-Forth's emulators;
-  Fuse needs no port, and the end-of-run clean-up now kills only this repository's Fuse. Read
-  `build/qualify_summary.log` and each failing step's `build/<step>.log`; if it is missing or incomplete, rerun the
-  same way on a haiku agent. The Fuse suite (`make fuse`) was updated for the one-row report but had never run: a
-  failure there is most likely a leftover two-row expectation in `tools/fusetest.py`, not a ROM defect. Check
-  which before changing anything.
-- **Interim result (12:30):** `final_test` failed 1 of its cases, everything else passed (exec, lexer, shell 44/44,
-  e2e 47/47 + corpus 1164/1164 through RUN, float 5451/5451, poweron 949/949, tape 30/30). The one failure is the
-  canary run of `tests/rt/break_malloc.c`: `ZRCPTransportError("timed out waiting for ZRCP reply")`, a harness
-  timeout while 2068-Forth's suite was loading the machine; the same case passed in the corpus and e2e runs. Rerun
-  that case alone on the canary path (quiet machine) before the release; if it passes, record it as a harness
-  timeout in the qualification report.
-- **Fuse step (16:15): did not run.** `tools/fusedrive.py build_shim` calls `sdl2-config` to compile the LD_PRELOAD
-  shim, and `libsdl2-dev` is no longer installed on this machine (no `/usr/include/SDL2`), so every Fuse case
-  failed with `FileNotFoundError: 'sdl2-config'`; then `tools/fusetest.py` hung (its worker processes died,
-  the parent waited on a pipe for 4.5 h) until it was killed. Not a ROM defect. Needs: the owner runs
-  `sudo apt install libsdl2-dev`; fix `fusetest.py` so a failing worker cannot hang the run (and fail fast with a
-  clear message when `sdl2-config` is missing); then `make fuse` alone. The other qualify steps continued after
-  the kill.
+- **`make qualify` is done (2026-11-01, `e1aed5d` + test-tool fixes `484f09a` and the next commit): every step
+  passes; no ROM defect.** `build/qualify_summary.log` still says `FAIL`, because steps were killed and rerun by hand;
+  record per step in the qualification report:
+  - `final_test`: all pass but one canary case, `tests/rt/break_malloc.c`, a `ZRCPTransportError` (no reply within
+    the harness's 50 s) while 2068-Forth's suite loaded the machine. `ram_random7` had the same timeout in e2e (load
+    average about 7). Rerun alone: canary pass, and e2e+canary with `--ram random:7` 3/3 pass. A harness timeout
+    under load, not the ROM. Exec, lexer 113/113, decl 215/215, shell 44/44, e2e 47/47 + corpus 1164/1164 through
+    RUN, float 5451/5451, poweron 949/949, tape 30/30.
+  - `fuse`: `libsdl2-dev` was missing, so the shim could not build and `fusetest.py` hung 4.5 h (killed). Owner
+    installed it; rerun: **PASS**, boot, keyboard, typed 39/39, break, frames, save, wav, lib, corpus 1015/1015
+    LOADed from tape and RUN (7 sessions, 824,529 frames). The `frames` check now allows one frame of sampling
+    jitter (two shim commands; it read +1 and -1).
+  - `timing`: `timingcmp.py` read the two-row report (row 22); fixed to row 23; **PASS** (Fuse/ZEsarUX run 1.006-1.074).
+  - `ram_warm` PASS, `capacity` PASS, `check` PASS.
+  - `kit_verify` (`hwkit.py`, 30-min soak) and `tapetol` read row 22 too; fixed (tapetol reads row 22 only for
+    beta1's two-row ROM, by `SH_VER_FLAG` in its symbols); reruns: **hwkit PASS** H1-H11 on both emulators;
+    **tapetol PASS**, 67 of 71 cases accepted (beta1 54), as beta.2.
 - **Harden the worker pools as 2068-Forth did** (`~/2068-forth/tools/fharness.py` `run_pool`, around line 800-850,
   and `check_port`). Leap-C already refuses a port in use (`lcharness.py` `start`) and stops only its own emulator
   (`stop`; qualify's Fuse clean-up filters by working directory). Missing: (1) `fusetest.py corpus_worker` calls

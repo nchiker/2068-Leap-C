@@ -227,7 +227,7 @@ def zesarux_verify(soak_frames):
                     rep = sh._wait(200_000_000)
                 rows = m.screen_rows()
                 r["report"] = list(rep) if isinstance(rep, tuple) else rep
-                r["screen"] = [x for x in rows[:22] if x]
+                r["screen"] = [x for x in rows[:23] if x]
                 sh.key(ord(" "))
             out[cid] = r
     finally:
@@ -252,14 +252,14 @@ def fuse_verify(soak_frames):
                                                                                 "rb").read())))
                 assert f.cmd("tape_open %s" % ltzx) == "0"
                 f.command('lib "shapes"')
-                r["lib"] = f.rows()[22:24]
+                r["lib"] = f.rows()[23:24]
                 f.key(" ")
             tzx = os.path.join(wdir, stem + ".tzx")
             open(tzx, "wb").write(tapes.tzx_from_wav(*tapes.read_wav(open(os.path.join(KIT, "tapes", stem + ".wav"),
                                                                             "rb").read())))
             assert f.cmd("tape_open %s" % tzx) == "0"
             f.command('load ""')
-            r["load"] = f.rows()[22:24]
+            r["load"] = f.rows()[23:24]
             f.key(" ")
             r["source"] = f.store() == lines
             f.to_append_line()
@@ -290,8 +290,8 @@ def fuse_verify(soak_frames):
                 f.cmd("tape_open %s" % rec)
                 f.key("\n", timeout=900)        # tape_load, to the report
             rows = f.rows()
-            r["report"] = rows[22:24]
-            r["screen"] = [x for x in rows[:22] if x]
+            r["report"] = rows[23:24]
+            r["screen"] = [x for x in rows[:23] if x]
             f.key(" ")
             out[cid] = r
     finally:
