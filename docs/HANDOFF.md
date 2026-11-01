@@ -41,6 +41,14 @@ kill another project's emulators (the long-lived one on port 10330 is unrelated)
   `sudo apt install libsdl2-dev`; fix `fusetest.py` so a failing worker cannot hang the run (and fail fast with a
   clear message when `sdl2-config` is missing); then `make fuse` alone. The other qualify steps continued after
   the kill.
+- **Harden the worker pools as 2068-Forth did** (`~/2068-forth/tools/fharness.py` `run_pool`, around line 800-850,
+  and `check_port`). Leap-C already refuses a port in use (`lcharness.py` `start`) and stops only its own emulator
+  (`stop`; qualify's Fuse clean-up filters by working directory). Missing: (1) `fusetest.py corpus_worker` calls
+  `new_fuse` outside its `try`, so a worker that fails at start never `q.put`s and `run_corpus`'s `q.get()` waits
+  forever (today's 4.5 h hang); `run_tests.py`'s `rq.get()` loop has the same weakness if a worker dies hard. Use a
+  timeout on `get` and check `is_alive()`, recording a dead worker's cases as "worker on port N died". (2) Workers
+  report their emulator's pid to the parent, which kills those pids (and only those) in its `finally`, so a
+  worker killed hard leaves no emulator behind. Test-only change; run the fast suite and `make fuse` after.
 
 ## 1. Confirm today's issues are fixed in Leap-C
 
