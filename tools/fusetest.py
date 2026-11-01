@@ -271,7 +271,10 @@ def c_frames(out):
             f.wait_frames(6000, timeout=300)
             e1, f1 = f.ping()[0], f.w16(f.S["FRAMES"])
             info[name] = dict(frames=e1 - e0, counted=(f1 - f0) & 0xFFFF)
-            if info[name]["counted"] != info[name]["frames"]:
+            # ping and peek are two shim commands: under load Fuse can run a frame between them, so each end of
+            # the span may be read one frame apart (seen 2026-11-01: +1 in one loop, -1 in the other); a lost
+            # interrupt would show as a steady shortfall, many frames over 6,000
+            if abs(info[name]["counted"] - info[name]["frames"]) > 1:
                 fails.append("%s: FRAMES counted %d of %d frames" % (name, info[name]["counted"], info[name]["frames"]))
             for _ in range(20):
                 f.hold(BREAK, 5)

@@ -7,7 +7,7 @@ ZEsarUX 13.0 and on Fuse 1.9.1, measured in T-states over the same HOME spans:
 
 ZEsarUX measures with its T-state counter (lcharness: run to each address). Fuse prints its frame count
 and the T-states in the frame at debugger breakpoints there (tools/fusedrive.py), the T-states being
-frames x 58,688 + those. Each program's report (rows 22-23) must be the same on both.
+frames x 58,688 + those. Each program's report (row 23) must be the same on both.
 
 Why the two can differ: ZEsarUX runs its TS2068 with the 48K Spectrum's frame (69,888 T: 50 Hz) and the
 48K's contention timing; Fuse with the TS2068's (58,688 T: 60 Hz, 192 of 262 lines contended). So the ISR
@@ -46,7 +46,7 @@ def fixtures():
 
 
 def zesarux_measure(m, sh, lines):
-    """compile T, run T, FRAMES over the run, rows 22-23 (the report) on ZEsarUX."""
+    """compile T, run T, FRAMES over the run, row 23 (the report) on ZEsarUX."""
     S = m.sym
     sh.load(lines, len(lines))
     for ch in "run":
@@ -61,7 +61,7 @@ def zesarux_measure(m, sh, lines):
     if m.read(S("CC_ERRNUM"), 1)[0]:                # a compile error (an example that shows one): no run
         sh._wait(60_000_000)
         rows = m.screen_rows()
-        return dict(compile_t=compile_t, run_t=None, frames=None, report=rows[22:24], row0=rows[0])
+        return dict(compile_t=compile_t, run_t=None, frames=None, report=rows[23:24], row0=rows[0])
     assert m.run_to([S("RT_RUN")], 60_000_000) == S("RT_RUN"), "the program did not start"
     f0 = m.w16(S("FRAMES"))
     m.tstates_reset()
@@ -69,7 +69,7 @@ def zesarux_measure(m, sh, lines):
     run_t, f1 = m.tstates(), m.w16(S("FRAMES"))
     msg = sh._wait(60_000_000)
     rows = m.screen_rows()
-    return dict(compile_t=compile_t, run_t=run_t, frames=(f1 - f0) & 0xFFFF, report=rows[22:24], row0=rows[0])
+    return dict(compile_t=compile_t, run_t=run_t, frames=(f1 - f0) & 0xFFFF, report=rows[23:24], row0=rows[0])
 
 
 MARK = 0xB1000
@@ -92,11 +92,11 @@ def fuse_measure(f, lines, tapedir):
     f.key(" ")
     seen = {k: len(f.prints(MARK + k)) for k in range(4)}
     rows = f.run(timeout=900)
-    if rows[22].startswith("ERROR"):
+    if rows[23].startswith("ERROR"):
         got = f.prints(MARK + 1)
         f.key(" ")
         return dict(compile_t=(got[-1][0] - f.prints(MARK)[-1][0]) * TPF + got[-1][1] - f.prints(MARK)[-1][1],
-                    run_t=None, frames=None, report=rows[22:24], row0=rows[0])
+                    run_t=None, frames=None, report=rows[23:24], row0=rows[0])
     pts = {}
     for k in range(4):
         got = f.prints(MARK + k)
@@ -107,7 +107,7 @@ def fuse_measure(f, lines, tapedir):
         return (pts[b][0] - pts[a][0]) * TPF + pts[b][1] - pts[a][1]
     frames = (pts[3][2] - pts[2][2]) & 0xFFFF
     f.key(" ")
-    return dict(compile_t=span(0, 1), run_t=span(2, 3), frames=frames, report=rows[22:24], row0=rows[0])
+    return dict(compile_t=span(0, 1), run_t=span(2, 3), frames=frames, report=rows[23:24], row0=rows[0])
 
 
 def main():
