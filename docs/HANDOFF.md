@@ -1,127 +1,50 @@
-# Handoff: finish Leap-C 1.0.0, then the runtime cartridge
+# Handoff: 1.0.0 ready to publish; the runtime cartridge's plan awaits approval
 
-Written 2026-11-01 at the end of the 1.0 session. Read this, then `CHANGELOG.md`, `spec.md` (v0.14 changes line at
-the top), and the auto-memory (`release-1-0-decisions`, `delegate-test-runs`, `leapc-test-harness`, `fuse-harness`).
+Written 2026-11-01, end of the release session. Read this, then `docs/milestones/M11-release.md` (the
+qualification report), `docs/milestones/M12-cart.md` (the cartridge plan) and the auto-memory
+(`release-1-0-decisions`, `delegate-test-runs`, `leapc-test-harness`, `fuse-harness`).
 
-**Owner decisions in force:** the 1.0 work is **accepted by the owner** (2026-11-01). Release 1.0 is qualified on
-emulators only. **Use lower-cost subagents for routine work and testing, always**: every Agent call passes `model` explicitly,
-`"haiku"` for test runs, `make` targets, searches and mechanical edits, `"sonnet"` where judgement is needed (doc
-writing, test updates); results come back to the main session, which keeps design, analysis and debugging. Never
-omit `model` (it then inherits the expensive main model). The owner has had to repeat this rule several times. 2068-Forth's tests use the same ZEsarUX ports
-(10760-10766): check `pgrep -af "zesarux|/fuse"` first and run Leap-C suites with `--port 11760` when needed; never
-kill another project's emulators (the long-lived one on port 10330 is unrelated).
+**Owner rules in force:** lower-cost subagents for routine work, always: every Agent call passes `model`
+explicitly (`"haiku"` for test runs, `make` targets, searches and mechanical edits; `"sonnet"` for doc writing and
+test updates); design, analysis and debugging stay in the main session. **Ask the owner before publishing
+anything** (pushes, tags, releases, PRs, TSRun's Pages). 2068-Forth's tests use ports 10760-10766: check
+`pgrep -af "zesarux|/fuse"` first and use `--port 11760` when needed; never kill another project's emulators.
 
-## State at handoff
+## Done this session (local; nothing pushed)
 
-- `main` = `289576d` (pushed). The ROM work is `34420c2`: HOME `d2b18eaa…`, EXROM `02790ebe…`
-  (`build/leapc_zesarux.bin` hash: see `build/SHA256SUMS` after `make build`).
-- 1.0 contents: `NULL` predefined; one-row reports (row 23); the version banner `2068 LEAP-C 1.0`; platform deltas
-  D22 (hi-res colour address), D23 (50-frame gap between tape blocks), D24 (`p`/`q`/`g` glyphs); scroll colours;
-  the manual audited, corrected and with new screenshots; version strings 1.0.0; `CHANGELOG.md`.
-- Passing: `make check`, the fast suite, all 33 tape cases, and **`make repro`: reproducible OK** on `34420c2`
-  (HOME `d2b18eaa…`, EXROM `02790ebe…`, `leapc_zesarux.bin` `c0f7f76fbc3b89626a09db9a6ec8cc268525103a5fbb70c6ad527d805df39b7b`,
-  `leapc_exrom.dck` `936ce1aa…`).
-- **`make qualify` is done (2026-11-01, `e1aed5d` + test-tool fixes `484f09a` and the next commit): every step
-  passes; no ROM defect.** `build/qualify_summary.log` still says `FAIL`, because steps were killed and rerun by hand;
-  record per step in the qualification report:
-  - `final_test`: all pass but one canary case, `tests/rt/break_malloc.c`, a `ZRCPTransportError` (no reply within
-    the harness's 50 s) while 2068-Forth's suite loaded the machine. `ram_random7` had the same timeout in e2e (load
-    average about 7). Rerun alone: canary pass, and e2e+canary with `--ram random:7` 3/3 pass. A harness timeout
-    under load, not the ROM. Exec, lexer 113/113, decl 215/215, shell 44/44, e2e 47/47 + corpus 1164/1164 through
-    RUN, float 5451/5451, poweron 949/949, tape 30/30.
-  - `fuse`: `libsdl2-dev` was missing, so the shim could not build and `fusetest.py` hung 4.5 h (killed). Owner
-    installed it; rerun: **PASS**, boot, keyboard, typed 39/39, break, frames, save, wav, lib, corpus 1015/1015
-    LOADed from tape and RUN (7 sessions, 824,529 frames). The `frames` check now allows one frame of sampling
-    jitter (two shim commands; it read +1 and -1).
-  - `timing`: `timingcmp.py` read the two-row report (row 22); fixed to row 23; **PASS** (Fuse/ZEsarUX run 1.006-1.074).
-  - `ram_warm` PASS, `capacity` PASS, `check` PASS.
-  - `kit_verify` (`hwkit.py`, 30-min soak) and `tapetol` read row 22 too; fixed (tapetol reads row 22 only for
-    beta1's two-row ROM, by `SH_VER_FLAG` in its symbols); reruns: **hwkit PASS** H1-H11 on both emulators;
-    **tapetol PASS**, 67 of 71 cases accepted (beta1 54), as beta.2.
-- **Harden the worker pools as 2068-Forth did** (`~/2068-forth/tools/fharness.py` `run_pool`, around line 800-850,
-  and `check_port`). Leap-C already refuses a port in use (`lcharness.py` `start`) and stops only its own emulator
-  (`stop`; qualify's Fuse clean-up filters by working directory). Missing: (1) `fusetest.py corpus_worker` calls
-  `new_fuse` outside its `try`, so a worker that fails at start never `q.put`s and `run_corpus`'s `q.get()` waits
-  forever (today's 4.5 h hang); `run_tests.py`'s `rq.get()` loop has the same weakness if a worker dies hard. Use a
-  timeout on `get` and check `is_alive()`, recording a dead worker's cases as "worker on port N died". (2) Workers
-  report their emulator's pid to the parent, which kills those pids (and only those) in its `finally`, so a
-  worker killed hard leaves no emulator behind. Test-only change; run the fast suite and `make fuse` after.
+- **The qualification checked:** `build/qualify_summary.log` says FAIL only because steps were killed and
+  rerun by hand; every step passes (record per step: M11-release §3.2).
+- **Today's issues confirmed fixed in Leap-C** (2068-Leap and 2068-Forth untouched): D22 (`set 5,h` at
+  `GFX_WRITE_PIXEL.ext_attr`) and D24 (the p/q/g glyphs) are in the built HOME. New tests:
+  `tests/lib/text/glyph_pqg.c` (D24) and `tests/lib/gfx/plot_below_screen.c` (`plot(10,200)`,
+  `draw(0,180,10,250)` leave `$5800-$5ABF` and `$7800-$7FFF` unchanged in both modes; Leap-C is safe from
+  2068-Forth `734a966`'s second fix).
+- **Worker pools hardened** (`run_tests.py`, `fusetest.py`, `lcharness.py`): queue timeouts, dead workers'
+  tasks fail as "worker on port N died", the parent stops only its own emulators (pid, then a port /
+  working-directory fallback). Verified with a simulated worker death (`os._exit` in a task): the run ends, the
+  task fails, no emulator left.
+- After these: fast suite PASS, `make fuse` PASS (corpus 1017/1017), `make repro` OK on `12bbc34` (the same four
+  hashes), `make release` built `build/release/` (emulator pack with `symbols/`, hardware kit, two Word manuals,
+  `SHA256SUMS`).
+- **Release documents:** `docs/releases/v1.0.0.md`, `docs/milestones/M11-release.md`, `project_plan.md` §13.
+- **Tag `v1.0.0`** (annotated, naming the hashes) on the release commit, **local only**.
+- **TSRun:** branch `leapc-1.0.0` (`9f9bbc5`, from `origin/main` `11731e1`) with `roms/leapc-0.rom` /
+  `leapc-1.rom` = the release's `leapc_home.bin` / `leapc_exrom.bin`, `roms/README.md` and `README.md`. Local only.
+- **Leap IDE:** `docs/requests/LEAP_C_ANSWERS.md` updated for 1.0 (one-row report; committed by someone in the
+  IDE repo as `9d0a9f5`); a later edit to Q5.5 (the cartridge's report) is left uncommitted there.
 
-## 1. Confirm today's issues are fixed in Leap-C
+## Waiting for the owner
 
-| Issue (filed for the other projects) | Leap-C's fix | Test |
-|---|---|---|
-| [nchiker/2068-Leap#5](https://github.com/nchiker/2068-Leap/issues/5): hi-res colour on the wrong pixel rows | platform delta D22 (`GFX_WRITE_PIXEL.ext_attr`: `set 5,h`) | `tests/lib/gfx/hires_colour_rows.c` |
-| [nchiker/2068-Leap#6](https://github.com/nchiker/2068-Leap/issues/6), [nchiker/2068-Leap-Forth#18](https://github.com/nchiker/2068-Leap-Forth/issues/18): `p`, `q`, `g` one row high | platform delta D24 (font data) | none yet: add one |
+1. **Push** `main` and the tag `v1.0.0` to origin.
+2. **Create the GitHub release** `v1.0.0` as a **draft** (not a pre-release), notes `docs/releases/v1.0.0.md`,
+   assets: everything in `build/release/`. Then the owner publishes it (and marks it latest).
+3. **TSRun:** push `leapc-1.0.0`, fast-forward `main` (publishes the Pages site), check `?rom=leapc` boots to
+   `2068 LEAP-C 1.0`, then the upstream PR to josef-jelinek/TSRun (beta.2's was #6).
+4. **Approve (or change) the cartridge plan** `docs/milestones/M12-cart.md`; its §9 lists four decisions. Build
+   nothing before that.
 
-**Do not change 2068-Leap or 2068-Forth:** the owner will have each project fix its own bugs. In Leap-C only:
-confirm D22 and D24 are in the built ROM; add a glyph test for D24 (e.g. print `pqg` and compare the screen bytes
-with the glyph table's rows 0-7 for those codes, or check rows 0-1 of each glyph are empty); and confirm Leap-C is
-safe from 2068-Forth's second fix in `734a966` (`GFX_WRITE_PIXEL` writing RAM for y >= 192): `plot` goes through
-`GFX_PLOT_CLIPPED` (returns for y >= 192), `draw` clamps its ends (`LIB_CLAMPY`), a loaded library's `LX_PLOT` is
-`LIB_PLOT_HL`; add a test that `plot(10, 200)` and `draw(0, 180, 10, 250)` leave RAM below the screen unchanged.
-Any new test is a test-only change (no new ROM hashes).
+## Loose ends
 
-Also reply in the Leap IDE repo if useful: `~/Projects/Leap-IDE/docs/requests/LEAP_C_ANSWERS.md` was written
-before the one-row report; its Q2 says the report is detected at `SH_WAIT_KEY.key_ret` (still true) and quotes
-the two-row report's figures in Q2.4/Q2.5 context. Update that file for 1.0 (one-row report, no `LINE m`,
-`SH_ERR_LINE`/`SH_IMAGE_SIZE` unused) and point to `CHANGELOG.md`'s stable-name list.
-
-## 2. Release v1.0.0
-
-Only after `make qualify` passes and `make repro` matches.
-
-1. **Release notes** `docs/releases/v1.0.0.md`, in the shape of `docs/releases/v1.0.0-beta.2.md` (links pinned to
-   the `v1.0.0` tag): what changed since beta.2 (from `CHANGELOG.md`), the assets, the ROM hashes, how it was
-   qualified (figures from the qualify logs: corpus counts, Fuse cases, coverage from `build/romcov.md`, tapetol
-   result), known limitations (not on a physical TS2068; ZEsarUX needs the EXROM patch and cannot write `SAVE`;
-   TSRun cannot load tapes; the language's limits; `draw` clamps off-screen ends to the edge, which changes a
-   diagonal's slope).
-2. **Qualification report** `docs/milestones/M11-release.md` in the style of `docs/milestones/M11-tape.md`: scope
-   (the owner decisions of 2026-11-01), every change with its ledger entry, the test results per suite, hashes,
-   deviations (emulator-only), and "accepted by the owner 2026-11-01". Update `project_plan.md` §13 (after the beta:
-   done) and its 1.0 completion criteria.
-3. `make release` (builds `build/release/`: the emulator pack with `symbols/`, the hardware kit, the Word manual,
-   `SHA256SUMS`). Check the emulator zip lists `symbols/leapc_home.sym` and `symbols/leapc_exrom.sym`.
-4. Commit, push, then **tag** `v1.0.0` (annotated, message naming the hashes) and push the tag. Create the GitHub
-   release `v1.0.0` (not a pre-release) with the notes and the assets from `build/release/`, marked latest. The
-   owner reserves publishing: create it as a **draft** and tell the owner it is ready, unless the owner says to
-   publish.
-
-## 3. Update TSRun's copy of the ROMs
-
-`~/TSRun` (fork `nchiker/TSRun`, GitHub Pages serves `main`; upstream `josef-jelinek/TSRun`). The beta.2 update was
-branch `leapc-beta2`, commit `d203645`: `roms/leapc-0.rom` = `leapc_home.bin`, `roms/leapc-1.rom` =
-`leapc_exrom.bin`, copied unchanged from the release's emulator zip; `roms/README.md` (the version, the release
-link, the two SHA-256s) and the top `README.md` line. Do the same on a branch `leapc-1.0.0` from `main`, then ask
-the owner before fast-forwarding `main` (that publishes the Pages site) and before opening the upstream PR (beta.2's
-was josef-jelinek/TSRun#6). Check `?rom=leapc` boots to the `2068 LEAP-C 1.0` banner in the served page if a browser
-tool is available.
-
-## 4. The runtime cartridge (`make cart`)
-
-Promised to the Leap IDE (`~/Projects/Leap-IDE/docs/requests/LEAP_C_ANSWERS.md` Q5; the IDE's design for V2:
-`~/Projects/Leap-IDE/docs/LEAP_CARTRIDGE_BUILD.md`, `cartridge-build/Docs/CARTRIDGE_STATUS.md`). 2068-Forth built
-its own in `82af031` ("make cart runs Forth and a SAVE-LIB program from the DOCK of a stock TS2068"): read it first,
-it is the nearest model. Start with a written plan for owner approval (a milestone file), then build. Requirements
-already agreed:
-
-- A build flag and `make cart` in this repository; the release ROM images do not change.
-- A compiled program runs on a **stock** TS2068 (stock HOME and EXROM installed) from a DOCK cartridge: Leap-C's
-  HOME in DOCK chunks 0-1, its EXROM in DOCK chunk 6, an LROS header at DOCK `$0000` (bytes 0-4: type `$01`,
-  entry, chunk spec), the program image in DOCK chunks 4-5 (16 KB; chunk 2 too if an image is larger), copied to
-  RAM (image regions in chunks 3, 6, 7) and run by `RT_RUN`.
-- **Hard constraint:** compiled code calls absolute HOME addresses, and the IDE compiles with the release ROM. The
-  cartridge HOME must keep every routine at the release address: same-size patches only, and the build compares
-  the two `.sym` files. Known patches: `BANK_PAGE_EXROM_IN` (`$FF` bit 7 left 0, `$F4 = $43`), `BANK_PAGE_EXROM_OUT`
-  (`$F4 = $03` at depth 0; today a 1-byte `xor a`: needs a same-size rearrangement), `IO_KEY_SCAN_ROW` moved out of
-  `$0004` (the LROS header overlaps it; only the keyboard scan calls it). The entry stub starts with `di`.
-- The EXROM is needed at run time (float core, `beep`/`sound`, `tape_save`/`tape_load`); the shell is not. After
-  the program: a one-row report as the shell's (`EXIT n`, `RUNTIME ERROR n MESSAGE`, `BREAK`), then a key restarts.
-- The image format (IDE proposal): a header (signature, format, ROM identity, entry) then `[address, length,
-  bytes]` blocks per used region (code from the low end, static data from the high end) and a loaded library's
-  region 3. Identity: a CRC-16 over HOME + EXROM computed at build time (0 ROM bytes), published with the release.
-- Tests: boot the cartridge on Fuse with stock ROMs (see `fuse-harness` memory; 2068-Forth's `cartdiff`/Fuse tools
-  for the DOCK) and on ZEsarUX; run a corpus slice; compare screens with the same programs under the full ROM.
-- When done: tell the Leap IDE (a note in `~/Projects/Leap-IDE/docs/requests/`) with the image format and the
-  `make cart` usage.
+- Two orphaned Fuse processes of this repository (from the tapetol rerun's beta1 images, parent pid 1, full CPU)
+  were still running at the end of the session; the session was not allowed to kill them. Check
+  `pgrep -af "2068-Leap-C/build/beta1"` and stop them.

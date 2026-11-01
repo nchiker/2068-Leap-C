@@ -44,7 +44,7 @@ ROM change: `make repro` first, then `make qualify` (2026-11-01, on `e1aed5d` wi
 
 | Suite | Result |
 |---|---|
-| `make repro` | **reproducible OK** on `34420c2`: HOME `d2b18eaa…`, EXROM `02790ebe…`, `leapc_zesarux.bin` `c0f7f76f…`, `leapc_exrom.dck` `936ce1aa…` |
+| `make repro` | **reproducible OK** on `34420c2` and again on `12bbc34` (the tests and documents above; later commits change documents only): HOME `d2b18eaa…`, EXROM `02790ebe…`, `leapc_zesarux.bin` `c0f7f76f…`, `leapc_exrom.dck` `936ce1aa…` |
 | Lexer | 113/113 |
 | Declarations | 215/215 |
 | Shell | 44/44 |
@@ -89,7 +89,7 @@ No ROM change, so no new hashes.
 - **The worker pools hardened**, as 2068-Forth did (`tools/run_tests.py`, `tools/fusetest.py`, with `tools/lcharness.py`): a timeout on the result queue; a dead worker's task fails as "worker on port N died" instead of waiting forever (the cause of the 4.5-hour hang); the parent stops only its own workers' emulators, by pid, with a port and working-directory fallback. Verified by a simulated worker death.
 - **Test tools reading row 23:** `timingcmp.py` (`484f09a`); `hwkit.py` and `tapetol.py` (`eb496a0`); the `frames` check's one-frame tolerance (`484f09a`).
 
-After these changes (2026-11-01): the fast suite (`run_tests.py --fast`) **PASS**, 0 failures (exec lib 110/110 with the two new tests, decl 215/215, lexer 113/113, shell 42/42, e2e 47/47, float 1,876/1,876, power-on 144/144 boot checks and 479/479 corpus slices, canary 583 cases); `make fuse` **PASS**, 0 failures (typed 39/39, corpus 1,017/1,017 LOADed from tape and RUN, 7 sessions, 829,946 frames); no emulator left behind by either run. `make repro` on the release commit: see §3.1.
+After these changes (2026-11-01): the fast suite (`run_tests.py --fast`) **PASS**, 0 failures (exec lib 110/110 with the two new tests, decl 215/215, lexer 113/113, shell 42/42, e2e 47/47, float 1,876/1,876, power-on 144/144 boot checks and 479/479 corpus slices, canary 583 cases); `make fuse` **PASS**, 0 failures (typed 39/39, corpus 1,017/1,017 LOADed from tape and RUN, 7 sessions, 829,946 frames); no emulator left behind by either run. `make repro` on `12bbc34`: reproducible OK, the same four hashes. `make release` on `12bbc34`: the emulator pack (110 files, with `symbols/leapc_home.sym` and `symbols/leapc_exrom.sym`), the hardware kit (127 files), the two Word manuals, `SHA256SUMS`.
 
 ## 5. Deviations
 
