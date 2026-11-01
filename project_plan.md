@@ -447,18 +447,23 @@ Approved by the owner after Phase 10 (2026-10-22). Phase 11 opens the project to
 
 The owner's option C (M11-beta §2, A8): `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK` (V2's port of the stock ROM's SA-BYTES/LD-BYTES) and the block-graphics glyph (the stock PO-GR-2 sequence) replaced by Leap-C's own code, written by authors who saw only a specification (`docs/TAPE_SIGNAL_SPEC.md`, `docs/TAPE_CLEANROOM.md`): `TAPE_SEND_BLOCK` / `TAPE_RECV_BLOCK` (`src/runtime/tapeblock.asm`, 318 B against 331 B), platform deltas D20 and D21; the tolerance envelope (`tools/tapetol.py`) and the provenance check (`tools/provenance.py`); `NOTICE` loses its exception. Report: `docs/milestones/M11-tape.md`.
 
-### After the beta (not started)
+### M11-release — Release 1.0.0 (done, 2026-11-01)
 
-- **Feedback:** the beta's reports triaged; defects fixed (each a ROM change: new hashes, `make repro`, `make qualify`).
-- **The manuals:** a user manual (editor, workflow, tape, examples), a language reference (the Release 1 subset, the deviations from C89, the limits, the errors), a library reference, a technical reference (ABI, memory map, ROM map, banking rules), the release notes.
+The final qualification on the owner's decisions of 2026-11-01 (emulator-only; `NULL` predefined; banner `2068 LEAP-C 1.0`; screenshots retaken; the cartridge after 1.0): one-row reports, hi-res colour fix (D22), 50-frame gap between tape blocks (D23), `p`/`q`/`g` glyphs (D24), scroll colours, the manual audited and corrected; ledger L78-L85; `make repro` reproducible, `make qualify` passing step by step. ROMs HOME `d2b18eaa…`, EXROM `02790ebe…`. Report: `docs/milestones/M11-release.md`. The tag v1.0.0 and the GitHub release are the owner's.
+
+### After 1.0 (not started)
+
 - **Physical hardware:** the checklist (`docs/HARDWARE_CHECKLIST.md`) run by testers with a TS2068, where available.
-- **The final release qualification** (`make qualify`, `make repro`, the qualification report), accepted by the owner, then the tag v1.0.0.
+- **The runtime cartridge** (`make cart`), a compiled program run from a DOCK cartridge on a stock TS2068.
+- **Feedback:** reports triaged; defects fixed (each a ROM change: new hashes, `make repro`, `make qualify`).
 
 **Completion criteria (release 1.0):**
 
-- [ ] Documentation examples pass as tests.
-- [ ] Reproducible release hashes.
-- [ ] Qualification report accepted by the owner, then tagged.
+- [x] Documentation examples pass as tests.
+- [x] Reproducible release hashes (`make repro`, 2026-11-01).
+- [x] Qualification report accepted by the owner (`docs/milestones/M11-release.md`, emulator-only per the owner's decision of 2026-11-01).
+- [ ] Tagged v1.0.0 (the owner's step).
+- Not part of 1.0 by the owner's decision: a run on a physical TS2068; the cartridge.
 
 ---
 

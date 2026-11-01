@@ -34,6 +34,7 @@ import glob
 import json
 import multiprocessing as mp
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -521,11 +522,12 @@ def check_corpus_case(f, path, lines, want, tapedir):
 
 
 def corpus_worker(k, n, only, q):
-    f = new_fuse("corpus%d" % k)
-    tapedir = os.path.join(WORK, "corpus%d-tapes" % k)
-    os.makedirs(tapedir, exist_ok=True)
-    rows, frames, sessions = [], 0, 1
-    try:
+    rows, frames, sessions, f = [], 0, 1, None
+    try:                                            # (a Fuse that fails to start still reports, below)
+        f = new_fuse("corpus%d" % k)
+        q.put(("pid", k, f.proc.pid))               # (stopped by the parent if this worker dies)
+        tapedir = os.path.join(WORK, "corpus%d-tapes" % k)
+        os.makedirs(tapedir, exist_ok=True)
         for path in corpus_cases(only)[k::n]:
             rel = os.path.relpath(path, ROOT)
             lines, want = expectations(path)
@@ -538,13 +540,23 @@ def corpus_worker(k, n, only, q):
                 ok, msg = False, "harness: %s: %s" % (type(e).__name__, e)
                 frames += f.ping()[0] if f.proc.poll() is None else 0
                 f.stop()
+                f = None
                 f = new_fuse("corpus%d" % k)
+                q.put(("pid", k, f.proc.pid))
                 sessions += 1
             rows.append(dict(case=rel, ok=ok, msg=msg))
         rows.append(dict(case="#session", ok=True, msg="", frames=frames + f.ping()[0], sessions=sessions))
+    except Exception as e:                          # noqa: BLE001 -- e.g. Fuse would not start: the rest fail
+        done = {r["case"] for r in rows}
+        for path in corpus_cases(only)[k::n]:
+            rel = os.path.relpath(path, ROOT)
+            if rel not in done:
+                rows.append(dict(case=rel, ok=False, msg="harness: worker corpus%d: %s: %s" % (k, type(e).__name__, e)))
+        rows.append(dict(case="#session", ok=True, msg="", frames=frames, sessions=sessions))
     finally:
-        f.stop()
-        q.put(rows)
+        if f is not None:
+            f.stop()
+        q.put(("rows", k, rows))
 
 
 def run_corpus(workers, only, out):
@@ -552,16 +564,36 @@ def run_corpus(workers, only, out):
     ps = [mp.Process(target=corpus_worker, args=(k, workers, only, q), daemon=True) for k in range(workers)]
     for p in ps:
         p.start()
-    rows = []
+    rows, pids, live = [], {}, set(range(workers))
     try:
-        for _ in ps:
-            rows += q.get()
+        while live:
+            try:
+                what, k, v = q.get(timeout=1)
+            except queue.Empty:
+                for k in list(live):                # a worker that died hard: its slice failed
+                    if not ps[k].is_alive():
+                        live.discard(k)
+                        rows += [dict(case=os.path.relpath(p, ROOT), ok=False, msg="worker corpus%d died" % k)
+                                 for p in corpus_cases(only)[k::workers]]
+                continue
+            if what == "pid":
+                pids[k] = v
+            else:                                   # "rows": the worker's last message
+                rows += v
+                live.discard(k)
         for p in ps:
             p.join()
-    finally:
+    finally:                                        # never leave workers (and their Fuses) behind
         for p in ps:
             if p.is_alive():
                 p.terminate()
+        for p in ps:
+            p.join(10)
+        for k, pid in pids.items():                 # (a worker killed hard could not stop its own)
+            lcharness.kill_own_emulator(pid, cwd=os.path.join(WORK, "corpus%d" % k))
+        for k in range(workers):                    # (nor report a Fuse it had just started)
+            for pid in lcharness.own_fuses_in(os.path.join(WORK, "corpus%d" % k)):
+                lcharness.kill_own_emulator(pid, cwd=os.path.join(WORK, "corpus%d" % k))
     sessions = [r for r in rows if r["case"] == "#session"]
     rows = sorted((r for r in rows if r["case"] != "#session"), key=lambda r: r["case"])
     ran = [r for r in rows if r["ok"] is not None]

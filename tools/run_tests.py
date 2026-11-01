@@ -65,6 +65,7 @@ import glob
 import json
 import multiprocessing as mp
 import os
+import queue
 import sys
 import time
 
@@ -817,6 +818,7 @@ def worker(port, tasks, results, only, suites, ram=None, coverage=False):
             if item is None:
                 break
             idx, (kind, image, arg) = item
+            results.put(("take", port, idx))       # (the parent fails this task if the worker dies)
             t0 = time.time()
             try:
                 if m is None or m.build != os.path.abspath(os.path.join(ROOT, image)):
@@ -828,6 +830,7 @@ def worker(port, tasks, results, only, suites, ram=None, coverage=False):
                     if coverage:                    # Phase 9: the ROM addresses the suites execute
                         m.coverage = set()
                     m.start()
+                    results.put(("pid", port, lcharness.emulator_pid(m)))   # (stopped by the parent if we die)
                 r = TASKS[kind](m, arg, only, suites)
             except Exception as e:                  # noqa: BLE001 -- a task that crashes fails; new emulator
                 r = dict(rows={}, failed=1, out=["%s: TASK FAILED %r: %s: %s" % (kind, arg, type(e).__name__, e)])
@@ -845,7 +848,7 @@ def worker(port, tasks, results, only, suites, ram=None, coverage=False):
     finally:
         if m is not None:
             m.stop()
-        results.put(None)
+        results.put(("exit", port, None))
 
 
 def main():
@@ -881,14 +884,39 @@ def main():
     for p in ps:
         p.start()
     print("run_tests: %d tasks on %d emulators" % (len(tasks), nw), flush=True)
-    done, got = 0, []
+    got, procs, pids, running = [], {a.port + w: p for w, p in enumerate(ps)}, {}, {}
+    live, dead = set(procs), set()
+
+    def lost(idx, why):                             # a task that never reported: it failed
+        kind, _image, arg = tasks[idx]
+        got.append(dict(rows={}, failed=1, kind=kind, wall=0.0, idx=idx,
+                        out=["%s: TASK FAILED %r: %s" % (kind, arg, why)]))
+        print(got[-1]["out"][0], flush=True)
     try:
-        while done < nw:
-            r = rq.get()
-            if r is None:
-                done += 1
+        while live:
+            try:
+                r = rq.get(timeout=1)
+            except queue.Empty:
+                for port in list(live):             # a worker that died: its task failed, it takes no more
+                    if not procs[port].is_alive():
+                        live.discard(port)
+                        if port in running:
+                            lost(running.pop(port), "worker on port %d died" % port)
+                        dead.add(port)
+                continue
+            if isinstance(r, tuple):
+                what, port, v = r
+                if what == "take":
+                    running[port] = v
+                elif what == "pid":
+                    pids[port] = v
+                else:                               # "exit"
+                    live.discard(port)
                 continue
             got.append(r)
+            for port, idx in list(running.items()):
+                if idx == r["idx"]:
+                    del running[port]
             for l in r["out"]:
                 if "FAIL" in l:
                     print(l, flush=True)
@@ -898,6 +926,18 @@ def main():
         for p in ps:
             if p.is_alive():
                 p.terminate()
+        for p in ps:
+            p.join(10)
+        for port, pid in pids.items():              # (a worker killed hard could not stop its own)
+            if pid:
+                lcharness.kill_own_emulator(pid, port=port)
+        for port in dead:                           # (its pid message may have died with it)
+            for pid in lcharness.own_emulators_on(port):
+                lcharness.kill_own_emulator(pid, port=port)
+    ran = {r["idx"] for r in got}
+    for idx in range(len(tasks)):
+        if idx not in ran:
+            lost(idx, "never ran (no worker left)")
     got.sort(key=lambda r: r["idx"])
     results = dict(boot={}, lexer=[], bench=[], decl=[], exec=[], shell=[], e2e=[], e2e_corpus=[], tape=[], float=[],
                    poweron=[], ram=a.ram)

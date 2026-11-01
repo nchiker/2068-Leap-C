@@ -114,6 +114,66 @@ class InExrom(int):
     image region 1, where a plain PC breakpoint would fire while the program runs (Phase 6)."""
 
 
+def emulator_pid(m):
+    """The pid of a started Machine's ZEsarUX (stdbuf execs it, so the same pid), or a Fuse's; None."""
+    p = getattr(m, "proc", None)
+    p = getattr(p, "_proc", p)
+    return getattr(p, "pid", None)
+
+
+def kill_own_emulator(pid, port=None, cwd=None, grace_s=3.0):
+    """A pool's clean-up after a worker killed hard: stop the emulator `pid` only if it is still ours, a ZEsarUX on
+    `port` (its command line) or a Fuse in `cwd` (its working directory), never another project's (the pid may
+    have been reused). SIGTERM, then SIGKILL after grace_s (a halted Fuse ignores SIGTERM)."""
+    import signal
+    try:
+        args = open("/proc/%d/cmdline" % pid, "rb").read().split(b"\0")
+        if port is not None and str(port).encode() not in args:
+            return
+        if cwd is not None and os.readlink("/proc/%d/cwd" % pid) != os.path.abspath(cwd):
+            return
+        os.kill(pid, signal.SIGTERM)
+        t0 = time.time()
+        while time.time() - t0 < grace_s:
+            if not os.path.exists("/proc/%d" % pid) or open("/proc/%d/stat" % pid).read().split()[2] == "Z":
+                return
+            time.sleep(0.1)
+        os.kill(pid, signal.SIGKILL)
+    except (OSError, IndexError):
+        pass                                    # (already gone)
+
+
+def own_emulators_on(port):
+    """The pids of this repository's ZEsarUX on `port`: its command line names the port and a ROM under this
+    repository. For a worker that died before its pid message left the queue (os._exit / SIGKILL)."""
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..")).encode() + b"/"
+    out = []
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            args = open("/proc/%s/cmdline" % d, "rb").read().split(b"\0")
+        except OSError:
+            continue
+        if (b"--remoteprotocol-port" in args and str(port).encode() in args
+                and any(a.startswith(root) for a in args) and any(a.endswith(b"zesarux") for a in args)):
+            out.append(int(d))
+    return out
+
+
+def own_fuses_in(cwd):
+    """The pids of the Fuse processes whose working directory is `cwd` (fusetest's per-worker directory)."""
+    cwd, out = os.path.abspath(cwd), []
+    for d in os.listdir("/proc"):
+        try:
+            if d.isdigit() and os.readlink("/proc/%s/cwd" % d) == cwd and \
+                    open("/proc/%s/cmdline" % d, "rb").read().split(b"\0")[0].endswith(b"fuse"):
+                out.append(int(d))
+        except OSError:
+            continue
+    return out
+
+
 def load_syms(*paths):
     out = {}
     for p in paths:
