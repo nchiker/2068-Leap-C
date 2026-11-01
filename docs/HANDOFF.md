@@ -4,8 +4,10 @@ Written 2026-11-01 at the end of the 1.0 session. Read this, then `CHANGELOG.md`
 the top), and the auto-memory (`release-1-0-decisions`, `delegate-test-runs`, `leapc-test-harness`, `fuse-harness`).
 
 **Owner decisions in force:** the 1.0 work is **accepted by the owner** (2026-11-01). Release 1.0 is qualified on
-emulators only. Use lower-cost subagents (pass `model: "haiku"` for runs and mechanical work, `"sonnet"` where
-judgement is needed) for routine work, with results reported back. 2068-Forth's tests use the same ZEsarUX ports
+emulators only. **Use lower-cost subagents for routine work and testing, always**: every Agent call passes `model` explicitly,
+`"haiku"` for test runs, `make` targets, searches and mechanical edits, `"sonnet"` where judgement is needed (doc
+writing, test updates); results come back to the main session, which keeps design, analysis and debugging. Never
+omit `model` (it then inherits the expensive main model). The owner has had to repeat this rule several times. 2068-Forth's tests use the same ZEsarUX ports
 (10760-10766): check `pgrep -af "zesarux|/fuse"` first and run Leap-C suites with `--port 11760` when needed; never
 kill another project's emulators (the long-lived one on port 10330 is unrelated).
 
@@ -23,23 +25,20 @@ kill another project's emulators (the long-lived one on port 10330 is unrelated)
   failure there is most likely a leftover two-row expectation in `tools/fusetest.py`, not a ROM defect. Check
   which before changing anything.
 
-## 1. Resolve the issues reported today
+## 1. Confirm today's issues are fixed in Leap-C
 
-| Issue | What | Fix |
+| Issue (filed for the other projects) | Leap-C's fix | Test |
 |---|---|---|
-| [nchiker/2068-Leap#5](https://github.com/nchiker/2068-Leap/issues/5) | V2: `MODE 1` colours on the wrong pixel rows (`GFX_SET_ATTR_EXT`) | as Leap-C D22: `.ext_attr` does `set 5,h` and stores the attribute; remove `GFX_SET_ATTR_EXT` |
-| [nchiker/2068-Leap#6](https://github.com/nchiker/2068-Leap/issues/6) | V2: `p`, `q`, `g` glyphs one row high | as Leap-C D24 (bytes in the issue) |
-| [nchiker/2068-Leap-Forth#18](https://github.com/nchiker/2068-Leap-Forth/issues/18) | Forth: the same glyphs, `kernel/graphics/font.asm` | the same bytes |
+| [nchiker/2068-Leap#5](https://github.com/nchiker/2068-Leap/issues/5): hi-res colour on the wrong pixel rows | platform delta D22 (`GFX_WRITE_PIXEL.ext_attr`: `set 5,h`) | `tests/lib/gfx/hires_colour_rows.c` |
+| [nchiker/2068-Leap#6](https://github.com/nchiker/2068-Leap/issues/6), [nchiker/2068-Leap-Forth#18](https://github.com/nchiker/2068-Leap-Forth/issues/18): `p`, `q`, `g` one row high | platform delta D24 (font data) | none yet: add one |
 
-The owner asked for these to be resolved. Do each **in its own repository** (`~/2068-Leap`, `~/2068-forth`),
-following that project's own rules (read its CLAUDE.md / HANDOFF / CONTRIBUTING first: V2 is a released product
-with its own budget ledger, tests and release process; Forth has its own milestone and CHANGELOG conventions). Add a
-test that fails before the fix (V2: a `MODE 1` PLOT on rows 1 and 8 with different inks, as Leap-C's
-`tests/lib/gfx/hires_colour_rows.c`; glyphs: a screen/glyph check). Run that project's suite, commit with
-`Fixes #n`, push, and confirm the issue closed. Leap-C itself is not changed by this step (its copy of V2's
-platform is frozen at `v2.0.1-emu.1`; it already has D22 and D24). Also check whether V2 has 2068-Forth's second
-fix from `734a966` (`GFX_WRITE_PIXEL` writing RAM for y ≥ 192): V2's `PLOT` clamps x; verify y, `DRAW` and the
-shapes module before claiming either way, and mention the result in the #5 fix.
+**Do not change 2068-Leap or 2068-Forth:** the owner will have each project fix its own bugs. In Leap-C only:
+confirm D22 and D24 are in the built ROM; add a glyph test for D24 (e.g. print `pqg` and compare the screen bytes
+with the glyph table's rows 0-7 for those codes, or check rows 0-1 of each glyph are empty); and confirm Leap-C is
+safe from 2068-Forth's second fix in `734a966` (`GFX_WRITE_PIXEL` writing RAM for y >= 192): `plot` goes through
+`GFX_PLOT_CLIPPED` (returns for y >= 192), `draw` clamps its ends (`LIB_CLAMPY`), a loaded library's `LX_PLOT` is
+`LIB_PLOT_HL`; add a test that `plot(10, 200)` and `draw(0, 180, 10, 250)` leave RAM below the screen unchanged.
+Any new test is a test-only change (no new ROM hashes).
 
 Also reply in the Leap IDE repo if useful: `~/Projects/Leap-IDE/docs/requests/LEAP_C_ANSWERS.md` was written
 before the one-row report; its Q2 says the report is detected at `SH_WAIT_KEY.key_ret` (still true) and quotes
