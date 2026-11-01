@@ -21,14 +21,13 @@ kill another project's emulators (the long-lived one on port 10330 is unrelated)
 - Passing: `make check`, the fast suite, all 33 tape cases, and **`make repro`: reproducible OK** on `34420c2`
   (HOME `d2b18eaa…`, EXROM `02790ebe…`, `leapc_zesarux.bin` `c0f7f76fbc3b89626a09db9a6ec8cc268525103a5fbb70c6ad527d805df39b7b`,
   `leapc_exrom.dck` `936ce1aa…`).
-- **`make qualify` has NOT run yet** (about 70-120 min). It uses the default ports (`tools/qualify.sh`: run_tests
-  10760+, other tools nearby) and its last step kills every Fuse, so start it only when no other project's
-  emulators are running (`pgrep -af "zesarux|/fuse"`, ignoring the long-lived one on port 10330); 2068-Forth's
-  sessions were running emulators on 10770-10775 and 10920-10930 when it was last tried. If they keep running, ask
-  the owner for a quiet window rather than waiting indefinitely. Give the run to a haiku agent; read
-  `build/qualify_summary.log` and each failing step's `build/<step>.log`. The Fuse suite (`make fuse`) was updated
-  for the one-row report but has never run: a failure there is most likely a leftover two-row expectation in
-  `tools/fusetest.py`, not a ROM defect. Check which before changing anything.
+- **`make qualify`** was started on `e1aed5d` with `QUALIFY_PORT=12760 make qualify` (about 70-120 min).
+  `QUALIFY_PORT` moves every ZEsarUX step off the default ports, so it runs alongside 2068-Forth's emulators;
+  Fuse needs no port, and the end-of-run clean-up now kills only this repository's Fuse. Read
+  `build/qualify_summary.log` and each failing step's `build/<step>.log`; if it is missing or incomplete, rerun the
+  same way on a haiku agent. The Fuse suite (`make fuse`) was updated for the one-row report but had never run: a
+  failure there is most likely a leftover two-row expectation in `tools/fusetest.py`, not a ROM defect. Check
+  which before changing anything.
 
 ## 1. Confirm today's issues are fixed in Leap-C
 
