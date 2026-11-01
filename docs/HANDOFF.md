@@ -33,7 +33,14 @@ kill another project's emulators (the long-lived one on port 10330 is unrelated)
   canary run of `tests/rt/break_malloc.c`: `ZRCPTransportError("timed out waiting for ZRCP reply")`, a harness
   timeout while 2068-Forth's suite was loading the machine; the same case passed in the corpus and e2e runs. Rerun
   that case alone on the canary path (quiet machine) before the release; if it passes, record it as a harness
-  timeout in the qualification report. The Fuse step was still running at handoff.
+  timeout in the qualification report.
+- **Fuse step (16:15): did not run.** `tools/fusedrive.py build_shim` calls `sdl2-config` to compile the LD_PRELOAD
+  shim, and `libsdl2-dev` is no longer installed on this machine (no `/usr/include/SDL2`), so every Fuse case
+  failed with `FileNotFoundError: 'sdl2-config'`; then `tools/fusetest.py` hung (its worker processes died,
+  the parent waited on a pipe for 4.5 h) until it was killed. Not a ROM defect. Needs: the owner runs
+  `sudo apt install libsdl2-dev`; fix `fusetest.py` so a failing worker cannot hang the run (and fail fast with a
+  clear message when `sdl2-config` is missing); then `make fuse` alone. The other qualify steps continued after
+  the kill.
 
 ## 1. Confirm today's issues are fixed in Leap-C
 
