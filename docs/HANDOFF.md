@@ -28,6 +28,12 @@ kill another project's emulators (the long-lived one on port 10330 is unrelated)
   same way on a haiku agent. The Fuse suite (`make fuse`) was updated for the one-row report but had never run: a
   failure there is most likely a leftover two-row expectation in `tools/fusetest.py`, not a ROM defect. Check
   which before changing anything.
+- **Interim result (12:30):** `final_test` failed 1 of its cases, everything else passed (exec, lexer, shell 44/44,
+  e2e 47/47 + corpus 1164/1164 through RUN, float 5451/5451, poweron 949/949, tape 30/30). The one failure is the
+  canary run of `tests/rt/break_malloc.c`: `ZRCPTransportError("timed out waiting for ZRCP reply")`, a harness
+  timeout while 2068-Forth's suite was loading the machine; the same case passed in the corpus and e2e runs. Rerun
+  that case alone on the canary path (quiet machine) before the release; if it passes, record it as a harness
+  timeout in the qualification report. The Fuse step was still running at handoff.
 
 ## 1. Confirm today's issues are fixed in Leap-C
 
