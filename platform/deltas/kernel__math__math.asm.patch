@@ -1,6 +1,6 @@
 --- a/kernel/math/math.asm
 +++ b/kernel/math/math.asm
-@@ -47,199 +47,10 @@
+@@ -47,247 +47,12 @@
  
      INCLUDE "include/sysvars.inc"
  
@@ -195,16 +195,65 @@
 -    call MATH_UDIV16                     ; HL = abs(dividend)/abs(divisor)
 -                                        ; (dividend, abs(HL), was already
 -                                        ; in HL from the steps above)
--
--    jr   MATH_APPLY_SIGN
 +; LEAP-C DELTA D3: MATH_UMUL16, MATH_UDIV16, MATH_MULTIPLY16, MATH_SIGN_PREP,
 +; MATH_APPLY_SIGN and MATH_DIVIDE16 removed. Compiled C multiplies and divides with the
 +; register-only routines of the helper core (src/runtime/helpers.asm: RT_UMUL, RT_UDIV,
 +; RT_DIVS, RT_MODS); see platform/UPSTREAM.md.
  
+-    jr   MATH_APPLY_SIGN
+-
+-; ============================================================================
+-; MATH_COMPARE16
+-; Signed 16-bit comparison, built specifically to support basic/'s new
+-; IF/ELSEIF relational operators (=, <>, <, >, <=, >=) but kept as
+-; general-purpose as MATH_MULTIPLY16/DIVIDE16 — no BASIC-specific
+-; assumptions here either.
+-;
+-; Z80 has no signed-comparison instruction, only SBC HL,DE (an
+-; unsigned-magnitude subtract that still sets the P/V flag as a
+-; signed-overflow indicator). The standard technique: after "OR A" /
+-; "SBC HL,DE", the result's sign flag tells you HL-DE's true sign
+-; UNLESS a signed overflow occurred (P/V set), in which case the sign
+-; flag is backwards and must be inverted. Overflow only happens when
+-; HL and DE have different signs and the subtraction result's sign
+-; matches HL's own original sign the "wrong" way — verified via a
+-; Python simulation of this exact flag logic (sign-of-HL, sign-of-DE,
+-; sign-of-result, overflow-if-signs-differ-and-result-doesn't-match)
+-; against all pairs from a set of edge values (0, ±1, ±5, ±32767,
+-; ±32768) plus 200,000 random signed pairs, zero failures, before any
+-; Z80 was written — same discipline as this file's multiply/divide.
+-; In:  HL = left operand (signed), DE = right operand (signed)
+-; Out: A = 0 if HL = DE, 1 if HL > DE, $FF if HL < DE
+-; Destroys: AF, HL (DE is only read, never written, by SBC HL,DE)
+-; ============================================================================
+-MATH_COMPARE16:
+-    or   a
+-    sbc  hl, de
+-    jr   z, .equal
+-    jp   po, .no_overflow           ; P/V clear (parity odd) = no signed
+-                                    ; overflow — the sign flag already
+-                                    ; tells the truth
+-    jp   m, .greater                 ; overflow occurred: sign flag is
+-                                     ; backwards, so a "negative" result
+-                                     ; here actually means HL > DE
+-    jr   .less
+-.no_overflow:
+-    jp   m, .less
+-    jr   .greater
+-.equal:
+-    xor  a
+-    ret
+-.less:
+-    ld   a, $FF
+-    ret
+-.greater:
+-    ld   a, 1
+-    ret
++; LEAP-C DELTA D25: MATH_COMPARE16 removed: its only caller was V2's GFX_LINE (graphics.asm).
+ 
  ; ============================================================================
- ; MATH_COMPARE16
-@@ -375,369 +186,10 @@
+ ; MATH_ADD16 / MATH_SUB16 / MATH_NEGATE16 / MATH_ABS16 / MATH_SGN16
+@@ -375,369 +140,10 @@
      jr   MATH_NEGATE16       ; tail-call: negate and return directly
                              ; from there
  
@@ -229,7 +278,8 @@
 -.zero:
 -    ld   hl, 0
 -    ret
--
++; LEAP-C DELTA D3: MATH_SGN16 removed (no caller; C has no sgn).
+ 
 -; ============================================================================
 -; MATH_MOD16
 -; Signed 16-bit remainder, matching MATH_DIVIDE16's own truncating-
@@ -286,7 +336,8 @@
 -                                        ; (or leaves it positive if
 -                                        ; divisor was 0, remainder 0
 -                                        ; either way)
-+; LEAP-C DELTA D3: MATH_SGN16 removed (no caller; C has no sgn).
++; LEAP-C DELTA D3: MATH_MOD16 (helper core RT_MODS), MATH_SQRT16 (no Release 1 caller),
++; MATH_RND16 and MATH_RND_SEED (C rand()/srand(): src/runtime/library.asm) removed.
  
 -; ============================================================================
 -; MATH_SQRT16
@@ -397,9 +448,7 @@
 -    dec  a
 -    ld   (SQRT_COUNTER), a
 -    jr   nz, .loop
-+; LEAP-C DELTA D3: MATH_MOD16 (helper core RT_MODS), MATH_SQRT16 (no Release 1 caller),
-+; MATH_RND16 and MATH_RND_SEED (C rand()/srand(): src/runtime/library.asm) removed.
- 
+-
 -    ld   hl, (SQRT_RES)
 -    ret
 -

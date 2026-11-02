@@ -52,53 +52,7 @@
 ; register-only routines of the helper core (src/runtime/helpers.asm: RT_UMUL, RT_UDIV,
 ; RT_DIVS, RT_MODS); see platform/UPSTREAM.md.
 
-; ============================================================================
-; MATH_COMPARE16
-; Signed 16-bit comparison, built specifically to support basic/'s new
-; IF/ELSEIF relational operators (=, <>, <, >, <=, >=) but kept as
-; general-purpose as MATH_MULTIPLY16/DIVIDE16 — no BASIC-specific
-; assumptions here either.
-;
-; Z80 has no signed-comparison instruction, only SBC HL,DE (an
-; unsigned-magnitude subtract that still sets the P/V flag as a
-; signed-overflow indicator). The standard technique: after "OR A" /
-; "SBC HL,DE", the result's sign flag tells you HL-DE's true sign
-; UNLESS a signed overflow occurred (P/V set), in which case the sign
-; flag is backwards and must be inverted. Overflow only happens when
-; HL and DE have different signs and the subtraction result's sign
-; matches HL's own original sign the "wrong" way — verified via a
-; Python simulation of this exact flag logic (sign-of-HL, sign-of-DE,
-; sign-of-result, overflow-if-signs-differ-and-result-doesn't-match)
-; against all pairs from a set of edge values (0, ±1, ±5, ±32767,
-; ±32768) plus 200,000 random signed pairs, zero failures, before any
-; Z80 was written — same discipline as this file's multiply/divide.
-; In:  HL = left operand (signed), DE = right operand (signed)
-; Out: A = 0 if HL = DE, 1 if HL > DE, $FF if HL < DE
-; Destroys: AF, HL (DE is only read, never written, by SBC HL,DE)
-; ============================================================================
-MATH_COMPARE16:
-    or   a
-    sbc  hl, de
-    jr   z, .equal
-    jp   po, .no_overflow           ; P/V clear (parity odd) = no signed
-                                    ; overflow — the sign flag already
-                                    ; tells the truth
-    jp   m, .greater                 ; overflow occurred: sign flag is
-                                     ; backwards, so a "negative" result
-                                     ; here actually means HL > DE
-    jr   .less
-.no_overflow:
-    jp   m, .less
-    jr   .greater
-.equal:
-    xor  a
-    ret
-.less:
-    ld   a, $FF
-    ret
-.greater:
-    ld   a, 1
-    ret
+; LEAP-C DELTA D25: MATH_COMPARE16 removed: its only caller was V2's GFX_LINE (graphics.asm).
 
 ; ============================================================================
 ; MATH_ADD16 / MATH_SUB16 / MATH_NEGATE16 / MATH_ABS16 / MATH_SGN16

@@ -1201,3 +1201,17 @@ delta = 6
 reason = """Owner decision (1.0), platform delta D23: STORAGE_SAVE waits 50 frames between the header and the data block,
 as the stock ROM's SAVE, so tools that end a block at a long pulse see two blocks (2068-Forth c39f674). 1,378 B;
 from the EXROM reserve (393 -> 333 B with L84)."""
+
+[[ledger]]
+id = "L86"
+date = "2026-11-01"
+milestone = "1.2"
+bank = "home"
+component = "platform"
+delta = -95
+reason = """Owner decision (1.2, option A), platform delta D25: pixels and lines ported from 2068-Forth v2.0's GFX_LINE
+(Display speed): GFX_PIXEL_AT, GFX_LINE on byte ends (draw() still moves the ends to the edge), LINE_XSTEP/YSTEP,
+LINE_ATTR, LINE_DELTA; GFX_PLOT_CLIPPED and GFX_READ_PIXEL on the new address code. V2's GFX_PIXEL_ADDR_SETUP,
+GFX_WRITE_PIXEL, GFX_LINE, BIT_MASK_TABLE and MATH_COMPARE16 go. The same pixels and attributes (tools/linetest.py);
+a 256-pixel row 369,298 -> 60,702 T, plot() 1,366 -> 1,029 T a call. 2,973 B; the 95 B return to the HOME reserve
+(481 -> 576 B)."""

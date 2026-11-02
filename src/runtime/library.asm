@@ -651,8 +651,8 @@ LIB_POINT:
     ld   a, e
     cp   192
     jr   nc, LIB_RET0
-    ld   b, l
-    ld   c, e
+    ld   c, l
+    ld   b, e
     call GFX_READ_PIXEL
     jr   LIB_RETA
 LIB_RET0:

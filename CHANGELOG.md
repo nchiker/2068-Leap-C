@@ -15,6 +15,18 @@ or removing one is a breaking change and is announced here first.
 
 ## Unreleased
 
+- **`draw()` is about five to six times faster, `plot()` a quarter faster, with the same pixels.** The line is
+  2068-Forth 2.0's (its Display speed milestone), ported as platform delta D25: the address and mask stepped from
+  pixel to pixel, the Bresenham error in the alternate registers, the attribute written where the cell changes.
+  A 256-pixel row takes 60,702 T-states (369,298 in 1.1.0), a 192-pixel column 51,563 (283,902), the full diagonal
+  81,691 (388,184); a `plot()` call 1,029 (1,366). Off-screen ends are still moved to the edge, and `over(1)` still
+  draws by exclusive-or: every line draws the same pixels and attributes as in 1.1.0 (`make lines`,
+  `tools/linetest.py`: a model of the 1.1.0 line, checked against the 1.1.0 ROM, then against this one: 448 lines
+  on and off the screen, each in both modes, with and without `over`). HOME has 95 bytes more free (576). Suggested by
+  the Leap IDE (`LEAP_C_DRAW_SPEED.md`); owner decision, option A of its answer.
+- **The ROM images change**, so the cartridge identity, the `.sym` addresses (not the names) and the emulator
+  packs change with them. `GFX_READ_PIXEL` now takes C = x, B = y; `MATH_COMPARE16` is gone (neither is a stable
+  name). The loadable-library ABI (the jump table at `$3FD0`, `LX_PLOT`) is unchanged.
 - **The user's manual, Part 7 example 11** ("Colour lines in high resolution"): the example now waits for a key in
   mode 1 and draws a band of 56 lines, so its colours can be seen; it no longer sets `paper(0)`, which left the
   screen black after `mode(0)`. Proposed by the Leap IDE (its `LEAP_C_EXAMPLE_11.md`), with one added test line
