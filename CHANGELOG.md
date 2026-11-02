@@ -13,7 +13,14 @@ or removing one is a breaking change and is announced here first.
 `RT_ERRLINE`, `RUN_FNLINES`, `SYM_GLO`, `SYM_LOC`, `CUR_EDIT_INDEX`, `PROG_END`, `ARRAYS_END`, `BANK_EXROM_DEPTH`,
 `TOK_LINE`, `CG_PC`.
 
-## Unreleased
+## 1.2.0 (2026-11-02)
+
+Graphics, text, scrolling and the keyboard interrupt several times faster, with the same pixels, screens and glyphs
+(2068-Forth 2.0's code, ported as platform deltas D25-D29; reports `docs/milestones/M13-draw.md`,
+`docs/milestones/M14-display.md`). **New ROM images** (HOME `510023ba…`, EXROM `14ee2434…`), so the `.sym` addresses
+move (no stable name changes), and **the cartridge identity is `$F6E9`**: a cartridge needs a program compiled by
+1.2.0. The banner reads `2068 LEAP-C 1.2`. Qualified on emulators (Fuse 1.9.1, ZEsarUX 13.0); not run on a physical
+TS2068.
 
 - **`draw()` is about five to six times faster, `plot()` a quarter faster, with the same pixels.** The line is
   2068-Forth 2.0's (its Display speed milestone), ported as platform delta D25: the address and mask stepped from
@@ -34,12 +41,14 @@ or removing one is a breaking change and is announced here first.
 - **The ROM images change**, so the cartridge identity, the `.sym` addresses (not the names) and the emulator
   packs change with them. `GFX_READ_PIXEL` now takes C = x, B = y; `MATH_COMPARE16`, `GFX_SCROLL_TEXT_UP`,
   `GFX_COPY_ROW_BITMAP`, `PUNCT_CHAR_TABLE`, `ROW_TABLE` and `IO_KEY_SCAN_ROW` are gone; `FONT_TABLE` is in ASCII
-  order and `GFX_CLEAR_ROW` takes the attribute in A; `GFX_SET_ATTR` is gone (none is a stable name). The loadable-library ABI (the jump table at `$3FD0`, `LX_PLOT`) is unchanged.
+  order and `GFX_CLEAR_ROW` takes the attribute in A; `GFX_SET_ATTR` is gone (none is a stable name). The
+  loadable-library ABI (the jump table at `$3FD0`, `LX_PLOT`) is unchanged, so libraries built for 1.x still load.
+- **The banner** on the status row from power-on to the first key reads `2068 LEAP-C 1.2` (the manual and its
+  start-screen picture follow).
 - **The user's manual, Part 7 example 11** ("Colour lines in high resolution"): the example now waits for a key in
   mode 1 and draws a band of 56 lines, so its colours can be seen; it no longer sets `paper(0)`, which left the
   screen black after `mode(0)`. Proposed by the Leap IDE (its `LEAP_C_EXAMPLE_11.md`), with one added test line
-  (`// attr: 5 5 56`: after `mode(0)` the band is ink 0 on paper 7). Documentation only: the ROM images are
-  unchanged.
+  (`// attr: 5 5 56`: after `mode(0)` the band is ink 0 on paper 7).
 
 ## 1.1.0 (2026-11-01)
 

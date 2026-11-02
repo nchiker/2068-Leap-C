@@ -1,12 +1,12 @@
-# The Leap-C runtime cartridge (release 1.1.0)
+# The Leap-C runtime cartridge (release 1.2.0; new in 1.1.0)
 
 A **runtime cartridge** runs one compiled Leap-C program on a **stock Timex Sinclair 2068**: the stock HOME ROM and EXROM stay installed, and the program starts from the DOCK socket. There is no editor, no compiler, no shell and no source on the cartridge. After the program ends it shows the one-row report (`EXIT n`, `RUNTIME ERROR n MESSAGE` or `BREAK`) and a key runs the program again from a cold start.
 
-The program is compiled by the **release** Leap-C ROM (1.0.0's images, which 1.1.0 keeps byte for byte), and the cartridge's HOME keeps every release routine at its release address, so the compiled code runs unchanged. The cartridge is **qualified on emulators only** (Fuse 1.9.1 and ZEsarUX 13.0); it has not been run on a physical TS2068 or in a physical cartridge.
+The program is compiled by the **release** Leap-C ROM (1.2.0's images; a program compiled by 1.0.0 or 1.1.0 needs their own cartridge build, see the identity below), and the cartridge's HOME keeps every release routine at its release address, so the compiled code runs unchanged. The cartridge is **qualified on emulators only** (Fuse 1.9.1 and ZEsarUX 13.0); it has not been run on a physical TS2068 or in a physical cartridge.
 
 ## The files
 
-In `leapc-1.1.0-cartridge.zip`:
+In `leapc-1.2.0-cartridge.zip`:
 
 | File | What it is |
 |---|---|
@@ -80,7 +80,7 @@ The header is 27 bytes. The blocks are, per region, its code `[base, low)` and i
 
 ## The identity
 
-A program's addresses are valid only against the ROM that compiled it. The identity is the **CRC-16/CCITT-FALSE** (polynomial `$1021`, initial value `$FFFF`, no reflection, no final xor, most significant bit first) of the release HOME image (`leapc_home.bin`, 16,384 bytes) followed by the release EXROM image (`leapc_exrom.bin`, 8,192 bytes). For Leap-C 1.0.0 and 1.1.0 it is **`$E90E`**. The cartridge holds it as a constant (0 bytes of either ROM image carry it) and refuses any image with another. `python3 tools/cart_build.py --identity` prints it in the repository.
+A program's addresses are valid only against the ROM that compiled it. The identity is the **CRC-16/CCITT-FALSE** (polynomial `$1021`, initial value `$FFFF`, no reflection, no final xor, most significant bit first) of the release HOME image (`leapc_home.bin`, 16,384 bytes) followed by the release EXROM image (`leapc_exrom.bin`, 8,192 bytes). For Leap-C 1.2.0 it is **`$F6E9`** (1.0.0 and 1.1.0, which share their images: `$E90E`). The cartridge holds it as a constant (0 bytes of either ROM image carry it) and refuses any image with another. `python3 tools/cart_build.py --identity` prints it in the repository.
 
 ## How it differs from RUN
 

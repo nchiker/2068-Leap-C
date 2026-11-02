@@ -1,6 +1,6 @@
 # Leap-C user guide
 
-**Version 1.0.0.** Leap-C turns a Timex Sinclair 2068 into a C computer: you type a program in a full-screen editor, and `RUN` compiles it to Z80 machine code on the machine itself and runs it. This guide covers what you need to use it. [EMULATORS.md](EMULATORS.md) sets up an emulator; [EXAMPLES.md](EXAMPLES.md) has more programs; [spec.md](../spec.md) is the full specification; the [user's manual](USER_MANUAL.md) covers everything at length.
+**Version 1.2.0.** Leap-C turns a Timex Sinclair 2068 into a C computer: you type a program in a full-screen editor, and `RUN` compiles it to Z80 machine code on the machine itself and runs it. This guide covers what you need to use it. [EMULATORS.md](EMULATORS.md) sets up an emulator; [EXAMPLES.md](EXAMPLES.md) has more programs; [spec.md](../spec.md) is the full specification; the [user's manual](USER_MANUAL.md) covers everything at length.
 
 Every program in this guide with `// expect:` lines is a test: the build runs it on the ROMs and checks the results those lines state. The `//` lines are ordinary comments to the compiler, so you can type the programs with or without them.
 
@@ -20,7 +20,7 @@ Every program in this guide with `// expect:` lines is a test: the build runs it
 
 ## 1. The first program
 
-After the start chord the screen is white with the status row at the bottom: it shows the version, `2068 LEAP-C 1.0`, until the first key, then `LINE 1/0` ([EMULATORS.md](EMULATORS.md) §5). Type this, pressing ENTER at the end of each line (SYMBOL SHIFT + P is `"`, SYMBOL SHIFT + O is `;`, SYMBOL SHIFT + F and G are `{` and `}`, SYMBOL SHIFT + D is `\`; the full table is in §2):
+After the start chord the screen is white with the status row at the bottom: it shows the version, `2068 LEAP-C 1.2`, until the first key, then `LINE 1/0` ([EMULATORS.md](EMULATORS.md) §5). Type this, pressing ENTER at the end of each line (SYMBOL SHIFT + P is `"`, SYMBOL SHIFT + O is `;`, SYMBOL SHIFT + F and G are `{` and `}`, SYMBOL SHIFT + D is `\`; the full table is in §2):
 
 ```c
 // expect: exit 0

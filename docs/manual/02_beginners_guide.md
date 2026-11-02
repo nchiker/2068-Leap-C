@@ -12,12 +12,12 @@ Switch on the machine. A short chord plays (C, E and G, one after another, just 
 
 ```
 ...
-2068 LEAP-C 1.0
+2068 LEAP-C 1.2
 ```
 
 ![The screen after switching on](../images/editor_start.png)
 
-You are in the **editor**. It is where you write programs. The bottom row is the **status row**. Just after switching on it shows the version, `2068 LEAP-C 1.0`; as soon as you press a key it says `LINE 1/0`, meaning "the cursor is on line 1, and the program has 0 lines so far". The three little coloured squares at its right (red, green and blue) are decoration. The black block is the **cursor**: it shows where the next character you type will go. Everything above the status row, rows 0 to 22, is for your program and for what it prints.
+You are in the **editor**. It is where you write programs. The bottom row is the **status row**. Just after switching on it shows the version, `2068 LEAP-C 1.2`; as soon as you press a key it says `LINE 1/0`, meaning "the cursor is on line 1, and the program has 0 lines so far". The three little coloured squares at its right (red, green and blue) are decoration. The black block is the **cursor**: it shows where the next character you type will go. Everything above the status row, rows 0 to 22, is for your program and for what it prints.
 
 There is no "OK" prompt and no copyright message. If you see something else (a blank screen, or the TS2068's own BASIC screen) the ROMs were not set up properly; the [emulator guide](../EMULATORS.md) says what to do.
 

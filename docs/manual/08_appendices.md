@@ -12,7 +12,7 @@ The commands are described in [Part 3](03_keywords.md) and the errors in [Part 5
 
 | Message | Meaning |
 |---|---|
-| `LINE n/m` | not an error: the cursor is on line *n* of a program of *m* lines (row 23, white on black, with a red, green and blue swatch at the right). After switching on the row shows the version, `2068 LEAP-C 1.0`, until the first key; then `LINE 1/0` |
+| `LINE n/m` | not an error: the cursor is on line *n* of a program of *m* lines (row 23, white on black, with a red, green and blue swatch at the right). After switching on the row shows the version, `2068 LEAP-C 1.2`, until the first key; then `LINE 1/0` |
 | `PROGRAM FULL` | the line you just entered does not fit in the memory for the source; it was not stored and stays in the edit buffer |
 | `COMPILING` | `RUN` is compiling |
 | `SAVING name` | a tape is being written |

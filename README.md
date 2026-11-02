@@ -2,7 +2,7 @@
 
 **A C computer for the Timex Sinclair 2068.** Leap-C replaces the TS2068's ROMs with a full-screen C editor and a C compiler that runs on the machine itself: you type a program, `RUN` compiles it to native Z80 code in a moment, and it runs. No cross-compiler, no PC needed. It is built on the platform of [2068-Leap V2](https://github.com/nchiker/2068-Leap).
 
-| ▶ [**Try it in your browser**](https://nchiker.github.io/TSRun/?rom=leapc) | ⬇ [**Download 1.0**](https://github.com/nchiker/2068-Leap-C/releases) | 📖 [**User guide**](docs/USER_GUIDE.md) | 🧪 [**Beta testing**](docs/BETA_TESTING.md) |
+| ▶ [**Try it in your browser**](https://nchiker.github.io/TSRun/?rom=leapc) | ⬇ [**Download 1.2**](https://github.com/nchiker/2068-Leap-C/releases) | 📖 [**User guide**](docs/USER_GUIDE.md) | 🧪 [**Beta testing**](docs/BETA_TESTING.md) |
 |---|---|---|---|
 
 ```c
@@ -20,14 +20,14 @@ int main(void)
 - **The library:** text and colour, `printf`, the keyboard, graphics, the AY sound chip, time, strings, the heap, cassette data, built in with no `#include`. Libraries written in assembly load from tape (`LIB "shapes"`).
 - **The machine:** an original 48 KB TS2068, unexpanded. About 18 KB for a program's source and 19 KB for its compiled code; compiling takes about 13 ms a line. Programs and data are saved on cassette.
 
-## Status: release 1.0.0
+## Status: release 1.2.0
 
-Leap-C **1.0.0** is the first release, after two public betas. It is qualified on two emulators, **Fuse 1.9.1** and **ZEsarUX 13.0** (with a patch), by thousands of automated tests. It has **not yet been run on a physical TS2068**: reports from real machines are very welcome.
+Leap-C **1.2.0** is the current release (1.0.0 was the first, after two public betas; 1.1.0 added the runtime cartridge; 1.2.0 makes graphics, text and scrolling several times faster: [CHANGELOG.md](CHANGELOG.md)). It is qualified on two emulators, **Fuse 1.9.1** and **ZEsarUX 13.0** (with a patch), by thousands of automated tests. It has **not yet been run on a physical TS2068**: reports from real machines are very welcome.
 
 ## Quick start (five minutes)
 
 1. **Fastest:** open **[nchiker.github.io/TSRun/?rom=leapc](https://nchiker.github.io/TSRun/?rom=leapc)** in a web browser: the TS2068 with Leap-C, nothing to install (tapes do not load there).
-2. **Or in an emulator:** download `leapc-1.0.0-emulators.zip` from the [releases](https://github.com/nchiker/2068-Leap-C/releases) and unzip it. Install **Fuse 1.9.1** ([EMULATORS.md](docs/EMULATORS.md) §2.1: Windows has a ready-made build) and start it with Leap-C's ROMs (on Linux, as below; Windows and macOS: [EMULATORS.md](docs/EMULATORS.md) §2.2):
+2. **Or in an emulator:** download `leapc-1.2.0-emulators.zip` from the [releases](https://github.com/nchiker/2068-Leap-C/releases) and unzip it. Install **Fuse 1.9.1** ([EMULATORS.md](docs/EMULATORS.md) §2.1: Windows has a ready-made build) and start it with Leap-C's ROMs (on Linux, as below; Windows and macOS: [EMULATORS.md](docs/EMULATORS.md) §2.2):
 
    ```sh
    fuse --machine ts2068 --rom-ts2068-0 /path/to/pack/roms/leapc_home.bin --rom-ts2068-1 /path/to/pack/roms/leapc_exrom.bin --no-traps --no-auto-load

@@ -25,7 +25,7 @@ The leapc_exrom.dck cartridge is left out: ZEsarUX refuses it (it takes only DOC
 section 10) and it was never tested elsewhere. The zips are reproducible: sorted entries, fixed times and modes, so
 two clean builds give the same zips (and their ROM images are make repro's).
 
-Usage: release.py [--version 1.1.0]"""
+Usage: release.py [--version 1.2.0]"""
 import argparse
 import hashlib
 import os
@@ -167,7 +167,7 @@ def cartridge_pack():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="1.1.0")
+    ap.add_argument("--version", default="1.2.0")
     a = ap.parse_args()
     for need in ("cart/leapc_cart_home.bin", "cart/hello.dck", "cart/hello.bin"):
         if not os.path.exists(os.path.join(BUILD, need)):
