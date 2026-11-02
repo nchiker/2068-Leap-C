@@ -1,6 +1,6 @@
 # Leap-C hardware kit: the check programs on the emulators (Phase 9, tools/hwkit.py --verify)
 
-Images: HOME d2b18eaa6b3e100e80b1159aedc3a382a8c7ae552566205dab301739e8f3ef98, EXROM 02790ebe3bf851a749b8ff6810db5bf76bd39518ebda7731b47b4a5239bc4847.
+Images: HOME 510023ba68f14ef13a9c2a1820588a034f776b15ee3b455732c3e67ff4426e8b, EXROM 14ee24347eff4d0b28b9c5c3f60f39b2920180d2529967b891e53e86b787e877.
 
 Each program's WAV (tapes/) loaded through the emulator's tape signal input and run. A TS2068 should show Fuse's figures (60 Hz); ZEsarUX 13.0 emulates the TS2068 with a 50 Hz frame. The soak ran 30 emulated minutes on each (ZEsarUX: at 50 Hz, so its frame count is lower).
 
@@ -41,17 +41,17 @@ Each program's WAV (tapes/) loaded through the emulator's tape signal input and 
 
 ## H4 `cont1.c` (run)
 
-- **ZEsarUX 13.0:** LOAD ('LOADED cont1',), source identical; report ['EXIT 261']
-  - `REGION 1: 261 FRAMES (29672)`
-- **Fuse 1.9.1:** LOAD ['LOADED cont1'], source identical; report ['EXIT 313']
-  - `REGION 1: 313 FRAMES (29672)`
+- **ZEsarUX 13.0:** LOAD ('LOADED cont1',), source identical; report ['EXIT 255']
+  - `REGION 1: 255 FRAMES (29672)`
+- **Fuse 1.9.1:** LOAD ['LOADED cont1'], source identical; report ['EXIT 304']
+  - `REGION 1: 304 FRAMES (29672)`
 
 ## H5 `cont4.c` (run)
 
-- **ZEsarUX 13.0:** LOAD ('LOADED cont4',), source identical; report ['EXIT 301']
-  - `REGION 4: 301 FRAMES (29672)`
-- **Fuse 1.9.1:** LOAD ['LOADED cont4'], source identical; report ['EXIT 385']
-  - `REGION 4: 385 FRAMES (29672)`
+- **ZEsarUX 13.0:** LOAD ('LOADED cont4',), source identical; report ['EXIT 292']
+  - `REGION 4: 292 FRAMES (29672)`
+- **Fuse 1.9.1:** LOAD ['LOADED cont4'], source identical; report ['EXIT 371']
+  - `REGION 4: 371 FRAMES (29672)`
 
 ## H6 `float.c` (run)
 
@@ -76,9 +76,9 @@ Each program's WAV (tapes/) loaded through the emulator's tape signal input and 
 ## H8 `brk.c` (break)
 
 - **ZEsarUX 13.0:** LOAD ('LOADED brk',), source identical; report ['BREAK']
-  - `2010`
+  - `2626`
 - **Fuse 1.9.1:** LOAD ['LOADED brk'], source identical; report ['BREAK']
-  - `723`
+  - `909`
 
 ## H9 `tapedata.c` (tape)
 
@@ -92,13 +92,13 @@ Each program's WAV (tapes/) loaded through the emulator's tape signal input and 
 ## H10 `soak.c` (soak)
 
 - **ZEsarUX 13.0:** LOAD ('LOADED soak',), source identical; report ['EXIT 0']
-  - `LEAP-C SOAK 15766`
-  - `27005 FRAMES`
-  - `15767 ROUNDS, SOAK PASS 0`
+  - `LEAP-C SOAK 16911`
+  - `25034 FRAMES`
+  - `16912 ROUNDS, SOAK PASS 0`
 - **Fuse 1.9.1:** LOAD ['LOADED soak'], source identical; report ['EXIT 0']
-  - `LEAP-C SOAK 15300`
-  - `42465 FRAMES`
-  - `15301 ROUNDS, SOAK PASS 0`
+  - `LEAP-C SOAK 16830`
+  - `42499 FRAMES`
+  - `16831 ROUNDS, SOAK PASS 0`
 
 ## H11 `lib.c` (lib)
 
