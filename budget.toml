@@ -1240,3 +1240,26 @@ delta = -11
 reason = """With L86-L87 (platform deltas D25, D26, D28): GFX_SET_ATTR had no caller left (the print loop, the row clear
 and the pixel write each write the attribute from an address they already have; ROM coverage showed it never
 entered). 2,914 B; the 11 B return to the HOME reserve (624 -> 635 B)."""
+
+[[ledger]]
+id = "L89"
+date = "2026-11-01"
+milestone = "1.2"
+bank = "home"
+component = "platform"
+delta = 5
+reason = """Owner decision (1.2), platform delta D29: GFX_PRINT_STRING_ATTR ends a run at '\\n' as well as at 0 (HL = the
+character it stopped at, 4 B) and draws through GFX_CHAR_SETUP.on_grid / GFX_PUTCHAR.copy without the bounds checks
+(+1 B net). 2,919 B; from the HOME reserve (635 -> 630 B)."""
+
+[[ledger]]
+id = "L90"
+date = "2026-11-01"
+milestone = "1.2"
+bank = "home"
+component = "library"
+delta = 23
+reason = """Owner decision (1.2), with L89: LIB_PUTS0 (print, puts, printf's conversions) prints each run of a string up to a
+'\\n' or the end in one GFX_PRINT_STRING_ATTR call, the attribute and over mode found once a run, '\\n' through
+LIB_NEWLINE (36 B for 13). A printed character 955 -> 590 T (1.1.0: about 1,600); the screens are identical.
+1,319 B; from the HOME reserve (630 -> 607 B)."""

@@ -28,8 +28,9 @@ or removing one is a breaking change and is announced here first.
   in `docs/milestones/M14-display.md`): a scroll of program output moves the screen in unrolled `LDI` runs and
   clears the new row directly; a character is found by one subtraction in a font now in ASCII order (punctuation
   cost up to twice a letter before) and drawn unrolled; the interrupt ends an idle frame after one read of the
-  keyboard instead of scanning all eight rows (every program gains about 3%). Same screens and glyphs; HOME has
-  59 bytes more free (635).
+  keyboard instead of scanning all eight rows (every program gains about 3%). `print` and `puts` hand each run of a string
+  up to a newline to the screen in one call: about 590 T a character, against about 1,600 in 1.1.0. Same screens and glyphs; HOME has
+  31 bytes more free (607).
 - **The ROM images change**, so the cartridge identity, the `.sym` addresses (not the names) and the emulator
   packs change with them. `GFX_READ_PIXEL` now takes C = x, B = y; `MATH_COMPARE16`, `GFX_SCROLL_TEXT_UP`,
   `GFX_COPY_ROW_BITMAP`, `PUNCT_CHAR_TABLE`, `ROW_TABLE` and `IO_KEY_SCAN_ROW` are gone; `FONT_TABLE` is in ASCII

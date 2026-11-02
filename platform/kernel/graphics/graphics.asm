@@ -423,6 +423,7 @@ GFX_CHAR_SETUP:
     ccf
     ret  c
     ld   a, d
+.on_grid:                           ; (D29: A = the character, B and C known to be on the grid)
     call GFX_CHAR_TO_FONT_OFFSET    ; keeps BC
     jr   nc, .have_glyph
     ld   hl, FONT_TABLE             ; no glyph: a space
@@ -453,6 +454,7 @@ GFX_CHAR_SETUP:
 GFX_PUTCHAR:
     call GFX_CHAR_SETUP
     ret  c
+.copy:
     REPT 7                          ; the 8 scanlines, 256 bytes apart
     ld   a, (hl)
     ld   (de), a
@@ -471,6 +473,7 @@ GFX_PUTCHAR:
 GFX_PUTCHAR_OVER:
     call GFX_CHAR_SETUP
     ret  c
+.copy:
     REPT 7
     ld   a, (de)
     xor  (hl)
@@ -591,7 +594,8 @@ GFX_PRINT_STRING:
 ; OVER" section for the full writeup.
 ; In:  HL = pointer to null-terminated string, B = row, C = column,
 ;      A = attribute byte to set at every printed cell, D = OVER flag
-; Out: B/C = row/column immediately after the final character
+; Out: B/C = row/column immediately after the final character; HL = the
+;      0 or the '\n' (10) the run stopped at (Leap-C delta D29)
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_PRINT_STRING_ATTR:
@@ -602,15 +606,17 @@ GFX_PRINT_STRING_ATTR:
     ld   a, (hl)
     or   a
     ret  z
+    cp   10                          ; LEAP-C DELTA D29: a run ends at '\n' too (HL = it): the library
+    ret  z                           ; prints a string's runs in one call each (LIB_PUTS0)
     push hl
+    call GFX_CHAR_SETUP.on_grid      ; (B, C are on the grid here: no bounds checks); keeps BC
     ld   a, (PRINT_OVER_SCRATCH)
     or   a
-    ld   a, (hl)                     ; (LD keeps the flags)
     jr   nz, .over
-    call GFX_PUTCHAR                 ; (D28: keeps BC; DE = the cell + 8 scanlines)
+    call GFX_PUTCHAR.copy            ; (D28: DE = the cell + 8 scanlines)
     jr   .glyph_done
 .over:
-    call GFX_PUTCHAR_OVER
+    call GFX_PUTCHAR_OVER.copy
 .glyph_done:
     ld   a, d                        ; LEAP-C DELTA D28: the attribute from the address GFX_PUTCHAR
     rrca                             ; left (010tt000 + 8: bits 3-4 hold tt + 1), not a

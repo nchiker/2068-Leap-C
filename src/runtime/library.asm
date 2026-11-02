@@ -59,15 +59,28 @@ LIB_CLS:
 ; void print(const char *s) -- s (no new line)
 LIB_PRINT:
     call LIB_ARGS
-; LIB_PUTS0 -- print the string at HL (LIB_PUTC). Destroys: AF, BC, DE, HL
+; LIB_PUTS0 -- print the string at HL, as LIB_PUTC would one character at a time: each run of characters up to a
+; '\n' or the end in one GFX_PRINT_STRING_ATTR call (1.2: the attribute and over mode found once a run, not once a
+; character), each '\n' through LIB_NEWLINE. Destroys: AF, BC, DE, HL
 LIB_PUTS0:
     ld   a, (hl)
     or   a
     ret  z
+    cp   10
+    jr   nz, .run
     push hl
-    call LIB_PUTC
+    call LIB_NEWLINE
     pop  hl
     inc  hl
+    jr   LIB_PUTS0
+.run:
+    push hl
+    call LIB_OVATTR                    ; A = the attribute, B = over
+    ld   d, b
+    ld   bc, (LIB_COL)                 ; B = row, C = column
+    pop  hl
+    call GFX_PRINT_STRING_ATTR         ; HL = the 0 or '\n' it stopped at; B, C = the position after the run
+    ld   (LIB_COL), bc
     jr   LIB_PUTS0
 
 ; ============================================================================

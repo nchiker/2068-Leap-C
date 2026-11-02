@@ -95,3 +95,32 @@ compares the maximum with ceilings about 1.25x this build's: interrupt idle 300 
 - Leap V2 takes D27 only; its own back-port already has a faster scroll and text. Its string printing steps along a
   run of characters (about 528 T a character), where Leap-C's `print` goes through `LIB_PUTC` one character at a
   time (955 T). That is a possible later change to the library, not made here.
+
+## 7. print() by runs (D29)
+
+Owner decision after section 6: `print`, `puts` and `printf`'s conversions went through `LIB_PUTC` once a character
+(the attribute and over mode looked up, a one-character string built, `GFX_PRINT_STRING_ATTR` called), 955 T a
+character after D28. Leap V2's back-port prints a run in one pass (about 528 T).
+
+- `LIB_PUTS0` hands each run of the string up to a `'\n'` or the end to `GFX_PRINT_STRING_ATTR` in one call, with
+  the attribute and over mode found once a run; a `'\n'` goes through `LIB_NEWLINE` as before.
+- `GFX_PRINT_STRING_ATTR` (platform delta D29) stops at `'\n'` as well as 0, leaves HL there, and draws through
+  `GFX_CHAR_SETUP.on_grid` / `GFX_PUTCHAR.copy` without the bounds checks its own wrap makes unnecessary.
+
+| T-states (ZEsarUX) | 1.1.0 | after D28 | after D29 |
+|---|---:|---:|---:|
+| `print`, per character, every class (C program) | 1,467-2,933 | 955 | 590 |
+| `print("12345")` | 8,256 | 5,042 | 3,437 |
+| `printf("%d", 12345)` | 17,757 | 14,277 | 12,677 |
+| `LIB_PUTS0 "AAAAA"` (direct, mean) | 7,891 | 4,775 | 3,176 |
+| `putchar('A')` (one character: still `LIB_PUTC`) | 1,857 | 1,190 | 1,141 |
+
+Screens compared byte for byte with 1.1.0 (bitmap and attributes): newlines and blank lines in one string, a 40-
+character wrap, 30 scrolling lines then a 70-character print that wraps and scrolls at the bottom, and `over(1)` /
+`inverse(1)` printing over text with colour changes between calls: identical. Literal text in a `printf` format still
+goes a character at a time (`printf("12345")` 5,032 T): a possible later change. `make display` gains the case
+`LIB_PUTS0 "AAAAA"` (ceiling 4,000 T). HOME: +28 B (ledger L89, L90), 607 B free.
+
+Regression after D29, all passing: `make check`; `make test` (1,300 s, corpus through RUN 1,166/1,166, ROM coverage HOME
+99.9%, 442 of 442 routines entered); `make fuse` (corpus 1,016/1,016); `make test-cart` (115/115, 25/25, 6/6, 5/5);
+`make lines`; `make display` (9 cases; `LIB_PUTS0 "AAAAA"` max 3,190 T). Cartridge identity: `$3C93`.

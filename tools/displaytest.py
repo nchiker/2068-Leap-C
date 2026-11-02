@@ -28,6 +28,7 @@ from lcharness import Machine, STOP_ADDR, RET_SLOT  # noqa: E402
 
 ROOT = os.path.dirname(HERE)
 STUB, SPIN, REPS = 0xFF10, 0xFE70, 12
+STR = 0xE000                    # LIB_PUTS0's string (free RAM, as tools/helperbench.py's DATA)
 
 
 class Fail(Exception):
@@ -119,6 +120,10 @@ def build_cases(m):
         ("GFX_PUTCHAR_OVER 'A' (5,5)", 650, lambda: timed(m, "GFX_PUTCHAR_OVER", a=ord("A"), b=5, c=5)),
         # 1.1.0 max 1523; 1.2.0 892
         ("LIB_PUTC 'A' (5,5)", 1120, lambda: timed(m, "LIB_PUTC", a=ord("A"), pre=lambda: libstate(m))),
+        # print()'s path, a 5-character run (1.2.0 D29: one GFX_PRINT_STRING_ATTR call a run): 1.1.0 max 7,967;
+        # 1.2.0 before D29 4,809; with D29 3,187
+        ("LIB_PUTS0 \"AAAAA\" (5,5)", 4000, lambda: timed(m, "LIB_PUTS0", hl=STR,
+                                                          pre=lambda: (libstate(m), m.write(STR, b"AAAAA\0")))),
         # 1.1.0 max 237,433; 1.2.0 135,492
         ("GFX_SCROLL_OUTPUT_UP", 170_000, lambda: timed(m, "GFX_SCROLL_OUTPUT_UP")),
         # 1.1.0 max 33,352 (B = 23 only; it took no attribute); 1.2.0 7,659
