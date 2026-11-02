@@ -1215,3 +1215,17 @@ LINE_ATTR, LINE_DELTA; GFX_PLOT_CLIPPED and GFX_READ_PIXEL on the new address co
 GFX_WRITE_PIXEL, GFX_LINE, BIT_MASK_TABLE and MATH_COMPARE16 go. The same pixels and attributes (tools/linetest.py);
 a 256-pixel row 369,298 -> 60,702 T, plot() 1,366 -> 1,029 T a call. 2,973 B; the 95 B return to the HOME reserve
 (481 -> 576 B)."""
+
+[[ledger]]
+id = "L87"
+date = "2026-11-01"
+milestone = "1.2"
+bank = "home"
+component = "platform"
+delta = -48
+reason = """Owner decision (1.2), platform deltas D26-D28 from 2068-Forth v2.0: the scroll (GFX_SCROLL_ROWS and
+GFX_LDI_BLOCKS, 32 unrolled LDI; GFX_CLEAR_ROW writes bytes) in place of GFX_SCROLL_TEXT_UP and GFX_COPY_ROW_BITMAP;
+the interrupt's idle fast path and IO_KEY_SCAN_ALL's rotated row select (ROW_TABLE gone); text with FONT_TABLE in
+ASCII order (95 glyphs, the backtick blank; PUNCT_CHAR_TABLE's 62 B gone), unrolled GFX_PUTCHAR/_OVER and the
+attribute from the cell's address. The page-zero IO_KEY_SCAN_ROW (3 B) leaves fill. 2,925 B; the 48 B return to
+the HOME reserve (576 -> 624 B)."""

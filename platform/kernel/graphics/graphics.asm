@@ -171,102 +171,83 @@ GFX_ROW_BASE_ADDR:
     ret
 
 ; ============================================================================
-; GFX_COPY_ROW_BITMAP
-; Copies one text row's entire 8-scanline bitmap (256 bytes total) from
-; one row to another. Non-linear addressing (see ROW_BASE_TABLE's own
-; header) means this can't be a single LDIR — each of the 8 scanlines
-; lives 256 bytes apart, so it's 8 separate 32-byte block copies,
-; stepping both the source and destination base by 256 (one scanline)
-; each time. Attribute memory IS linear ($5800 + row*32 + col), so
-; GFX_SCROLL_TEXT_UP/_DOWN move it separately, in one shot, rather than
-; needing this routine's own per-scanline approach.
-; In:  (GFX_SCROLL_DST_ROW), (GFX_SCROLL_SRC_ROW) already set by the
-;      caller
-; Out: none
-; Destroys: AF, BC, DE, HL
+; LEAP-C DELTA D26: the scroll (release 1.2.0). V2's GFX_SCROLL_TEXT_UP and GFX_COPY_ROW_BITMAP
+; (each scanline of each row a separate LDIR) and GFX_SCROLL_OUTPUT_UP's extra row are replaced by
+; 2068-Forth v2.0's GFX_SCROLL_ROWS and GFX_LDI_BLOCKS (its Display speed milestone): a scanline of a
+; third holds the bytes of its 8 rows in one run, so each scanline is moved in a few long runs of
+; unrolled LDI. A scroll took about 237,000 T; the same bytes move now (see platform/UPSTREAM.md).
 ; ============================================================================
-GFX_COPY_ROW_BITMAP:
-    ld   a, (GFX_SCROLL_DST_ROW)
-    call GFX_ROW_BASE_ADDR          ; HL = dst row base
-    push hl
-    ld   a, (GFX_SCROLL_SRC_ROW)
-    call GFX_ROW_BASE_ADDR          ; HL = src row base
-    pop  de                         ; DE = dst row base
-    ld   b, 8                       ; 8 scanlines per text row
-.scanline_loop:
-    push bc
-    push hl
-    push de
-    ld   bc, 32
-    ldir
-    pop  de
-    pop  hl
-    ld   a, h                       ; advance both base addresses by
-    inc  a                          ; 256 (one scanline) — restoring
-    ld   h, a                       ; the PRE-ldir bases from the stack
-    ld   a, d                       ; above, then bumping the high byte,
-    inc  a                          ; rather than trusting whatever
-    ld   d, a                       ; ldir itself left HL/DE pointing at
-    pop  bc
-    djnz .scanline_loop
-    ret
 
 ; ============================================================================
-; GFX_SCROLL_TEXT_UP
-; Scrolls the 23-row program-listing window (rows 0-22 — row 23 is
-; always the separately-drawn status line, never touched here) up by
-; exactly one text row: row 1's content becomes row 0's, row 2's
-; becomes row 1's, ... row 22's becomes row 21's. Row 22 itself is left
-; UNTOUCHED — the caller draws whatever newly-scrolled-into-view
-; content belongs there. Moves real screen bytes (bitmap + attributes)
-; instead of re-rendering characters, so this is much cheaper than a
-; full BASIC_REDRAW_PROGRAM pass for the common "scroll by one line"
-; case — see BASIC_REDRAW_PROGRAM's own use of this.
-;
-; Row-pair copies are processed in ASCENDING destination order (0, 1,
-; 2, ...) deliberately: row 1's original content must be read (as the
-; source for dst=0) before it's overwritten (as the destination when
-; dst=1) — the classic memmove "copy forward when dst < src" rule.
+; GFX_SCROLL_OUTPUT_UP -- scroll all 24 rows up one row (bitmap and attributes) and clear the new
+; row 23 (ATTR_DEFAULT; the library repaints it in the print colours)
 ; In:  none
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
-GFX_SCROLL_TEXT_UP:
-    ld   hl, ATTR_ADDR + 32          ; row 1's attributes (linear memory
-    ld   de, ATTR_ADDR               ; — the whole 22-row block moves in
-    ld   bc, 22*32                   ; one shot, no per-row loop needed)
-    ldir
-
-    xor  a
-    ld   (GFX_SCROLL_DST_ROW), a
-.row_loop:
-    ld   a, (GFX_SCROLL_DST_ROW)
-    inc  a
-    ld   (GFX_SCROLL_SRC_ROW), a
-    call GFX_COPY_ROW_BITMAP
-    ld   a, (GFX_SCROLL_DST_ROW)
-    inc  a
-    ld   (GFX_SCROLL_DST_ROW), a
-    cp   22
-    jr   c, .row_loop
-    ret
-
-; Scroll all 24 program-output rows up, then clear the new bottom row.
-; The editor primitive above deliberately protects its status row, so reuse
-; it for rows 0-21 and finish the additional row here.
 GFX_SCROLL_OUTPUT_UP:
-    call GFX_SCROLL_TEXT_UP
-    ld   a, 22
-    ld   (GFX_SCROLL_DST_ROW), a
-    ld   a, 23
-    ld   (GFX_SCROLL_SRC_ROW), a
-    call GFX_COPY_ROW_BITMAP
-    ld   hl, ATTR_ADDR + 23*32
-    ld   de, ATTR_ADDR + 22*32
-    ld   bc, 32
-    ldir
+    ld   a, 7                       ; rows 17-23 of the last third
+    call GFX_SCROLL_ROWS
     ld   b, 23
+    ld   a, ATTR_DEFAULT
     jp   GFX_CLEAR_ROW
+
+; ============================================================================
+; GFX_SCROLL_ROWS -- rows 1 to 16 + A move up one row, bitmap and attributes
+; A scanline of a third holds its 8 rows' bytes in a run, so each scanline of the first two thirds
+; is two copies (rows 1-7 to 0-6, the next third's row 0 to row 7) and of the last third one (its
+; rows 1 to A to 0 to A - 1), in 32-byte blocks (GFX_LDI_BLOCKS).
+; In:  A = the rows moved within the last third (1-7)
+; Out: none
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+GFX_SCROLL_ROWS:
+    push af
+    add  a, 16                      ; the attributes: one block a row
+    ld   hl, ATTR_ADDR + 32
+    ld   de, ATTR_ADDR
+    call GFX_LDI_BLOCKS
+    ld   de, SCREEN_ADDR            ; scanline 0 of the first third
+.scanline:
+    ld   h, d
+    ld   l, 32                      ; HL = the same scanline of row 1
+    ld   a, d
+    cp   HIGH SCREEN_ADDR + $10
+    jr   nc, .last
+    ld   a, 7
+    call GFX_LDI_BLOCKS             ; rows 1-7 to 0-6
+    ld   a, h
+    add  a, 7
+    ld   h, a                       ; the next third's row 0
+    ld   a, 1
+    call GFX_LDI_BLOCKS             ; to row 7; DE = the next scanline (or third)
+    jr   .scanline
+.last:
+    pop  af
+    push af
+    call GFX_LDI_BLOCKS
+    ld   e, a                       ; A = 0
+    inc  d                          ; the next scanline
+    ld   a, d
+    cp   HIGH SCREEN_ADDR + $18
+    jr   c, .scanline
+    pop  af
+    ret
+    ASSERT LOW SCREEN_ADDR == 0 && LOW ATTR_ADDR == 0
+
+; ============================================================================
+; GFX_LDI_BLOCKS -- copy A blocks of 32 bytes (unrolled LDI: 16 T a byte, LDIR's 21)
+; In:  HL = source, DE = destination, A = blocks (1-255)
+; Out: HL, DE past the blocks, A = 0
+; Destroys: F, BC
+; ============================================================================
+GFX_LDI_BLOCKS:
+    REPT 32
+    ldi
+    ENDR
+    dec  a
+    jr   nz, GFX_LDI_BLOCKS
+    ret
 
 ; ============================================================================
 ; GFX_SCROLL_TEXT_DOWN
@@ -283,7 +264,8 @@ GFX_SCROLL_OUTPUT_UP:
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
-    IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (legacy builds keep it)
+    IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (legacy builds keep it; Leap-C never assembles
+                                  ; it: GFX_COPY_ROW_BITMAP, which it calls, went with delta D26)
 GFX_SCROLL_TEXT_DOWN:
     ld   hl, ATTR_ADDR + 22*32 - 1   ; last byte of rows 0-21 (source)
     ld   de, ATTR_ADDR + 23*32 - 1   ; last byte of rows 1-22 (dest) —
@@ -342,129 +324,57 @@ GFX_SET_BORDER:
     ret
 
 ; ============================================================================
-; GFX_CHAR_TO_FONT_OFFSET
-; Translates an ASCII character to an absolute pointer to its 8-byte
-; glyph bitmap. Despite the name (kept for callers/history), this no
-; longer always returns a FONT_TABLE offset — codes 128-143 (block
-; graphics) and 144-164 (UDGs) resolve to RAM instead of ROM, so the
-; FONT_TABLE base is now folded in here rather than left for the
-; caller to add, uniformly across every case (2026-08-22, added
-; alongside block-graphics/UDG support).
-; In:  A = ASCII character
-; Out: carry clear + HL = absolute pointer to the character's 8-byte
-;      glyph (FONT_TABLE+offset for ROM glyphs, BLOCK_GFX_SCRATCH for
-;      a freshly-generated block-graphics glyph, or UDG_TABLE+offset
-;      for a UDG); carry set if the character has no glyph at all
-;      (caller's choice what to do — GFX_PUTCHAR treats it as a space)
-; Destroys: AF, BC, E, HL — the punctuation-table scan uses B as its
-;      loop counter, so B is NOT preserved. This was documented wrong
-;      for a while (claimed only AF/HL) and caused a real bug in
-;      GFX_PUTCHAR, which read B (its row parameter) after this call
-;      without saving it first — fixed in GFX_PUTCHAR by protecting BC
-;      around this call, not by changing what this routine touches.
-;      E is also not preserved: it holds a scratch copy of the input
-;      character throughout (see the routine's own first instruction),
-;      not whatever the caller had there — this was also previously
-;      undocumented (found via cross-project research comparing this
-;      routine against a sibling project's own corrected copy of the
-;      same lineage, 2026-09-13). D itself is never touched.
+; LEAP-C DELTA D28: text (release 1.2.0), from 2068-Forth v2.0 (its Words and keys milestone).
+; FONT_TABLE is printable ASCII in code order, so a glyph is FONT_TABLE + (code - 32) * 8: one
+; subtraction, where V2 tested ranges and then scanned a table of 31 punctuation pairs (up to
+; 1,471 T for `$`). The cell's bitmap address is computed from the row and column, and the eight
+; scanlines are copied unrolled; GFX_PRINT_STRING_ATTR sets the attribute from the address it
+; already has instead of a bounds-checked GFX_SET_ATTR call. GFX_PUTCHAR keeps BC now.
+; ============================================================================
+
+; ============================================================================
+; GFX_CHAR_TO_FONT_OFFSET -- the glyph pointer for a character code
+; Despite the name this returns an absolute address: FONT_TABLE + (code - 32) * 8 for printable
+; ASCII, BLOCK_GFX_SCRATCH (built here) for codes 128-143, UDG_TABLE + offset for 144-164.
+; In:  A = character code
+; Out: carry clear + HL = the 8-byte glyph; carry set if the code has no glyph (0-31, 127, 165 up;
+;      GFX_PUTCHAR draws a space)
+; Destroys: AF, DE, HL (BC is kept)
 ; ============================================================================
 GFX_CHAR_TO_FONT_OFFSET:
-    ld   e, a                      ; E = input char, preserved across
-                                   ; the punctuation table scan below
-    cp   " "
-    jr   z, .is_space
-    cp   "0"
-    jr   c, .try_punct             ; below '0' and not space: might be
-                                   ; punctuation
-    cp   "9" + 1
-    jr   c, .is_digit
-    cp   "A"
-    jr   c, .try_punct              ; between '9' and 'A': might be
-                                    ; punctuation
-    cp   "Z" + 1
-    jr   c, .is_upper
-    cp   "a"
-    jr   c, .try_punct               ; between 'Z' and 'a': might be
-                                     ; punctuation
-    cp   "z" + 1
-    jr   c, .is_lower
-    ; falls through toward .try_punct for anything above 'z' too, but
-    ; codes 128-164 are intercepted first — block graphics (128-143)
-    ; and UDGs (144-164) are never in PUNCT_CHAR_TABLE
-    cp   128
-    jr   c, .try_punct
-    cp   UDG_CODE_BASE                  ; 144
-    jr   c, .is_block_graphics
-    cp   UDG_CODE_BASE + UDG_COUNT      ; 165
-    jr   c, .is_udg
-    ; 165+: unmapped, falls through to the punctuation scan same as
-    ; any other unrecognized code (.not_found -> render as space)
-
-.try_punct:
-    ; Linear scan of PUNCT_CHAR_TABLE (char, index) pairs — cleaner and
-    ; less error-prone than a long chain of individual cp/jr z checks
-    ; once the punctuation set grew past a handful of characters.
-    ld   hl, PUNCT_CHAR_TABLE
-    ld   b, PUNCT_CHAR_COUNT
-.punct_loop:
-    ld   a, (hl)
-    cp   e
-    jr   z, .punct_found
-    inc  hl
-    inc  hl                          ; each entry is 2 bytes: char, index
-    djnz .punct_loop
-    jr   .not_found
-
-.punct_found:
-    inc  hl
-    ld   a, (hl)                      ; A = this character's font index
-    jr   .to_offset
-
-.is_space:
-    ld   hl, FONT_TABLE                ; offset 0 -> now an absolute
-                                       ; pointer, same as every other
-                                       ; case below (see this routine's
-                                       ; header)
-    or   a
-    ret
-.is_digit:
-    sub  "0"
-    add  a, 1                      ; index 0 is space; digits start at 1
-    jr   .to_offset
-.is_upper:
-    sub  "A"
-    add  a, 11                      ; index 0=space, 1-10=digits, 11-36=upper
-    jr   .to_offset
-.is_lower:
-    sub  "a"
-    add  a, 37                       ; 37-62=lowercase, added alongside
-                                    ; upper — see FONT_TABLE's new tail
-.to_offset:
-    ; N*8 via three doublings. An earlier draft here tried to be clever
-    ; with an extra add (aiming for x2,x4,x5,x8) and actually computed
-    ; x10 — caught by re-deriving the arithmetic with a script rather
-    ; than trusting the inline comment. Three plain doublings is both
-    ; simpler and correct.
+    sub  " "
+    cp   "~" - " " + 1
+    jr   nc, .not_ascii
+    ld   de, FONT_TABLE
+.scale:                             ; HL = DE + A * 8 (A <= 94: A * 2 fits a byte)
+    add  a, a
     ld   l, a
     ld   h, 0
-    add  hl, hl                      ; x2
-    add  hl, hl                      ; x4
-    add  hl, hl                      ; x8
-    ld   bc, FONT_TABLE                ; fold the ROM base in here so
-    add  hl, bc                        ; every path out of this routine
-                                       ; returns an absolute pointer
-                                       ; uniformly (see header)
-    or   a
+    add  hl, hl
+    add  hl, hl
+    add  hl, de                     ; carry clear: no overflow
     ret
 
+.not_ascii:
+    add  a, " "                     ; A = the code again
+    cp   128
+    ret  c                          ; 0-31 and 127: carry set, no glyph
+    sub  UDG_CODE_BASE              ; 144
+    jr   c, .is_block_graphics      ; 128-143
+    cp   UDG_COUNT
+    ccf
+    ret  c                          ; 165 up: no glyph
+    ld   de, UDG_TABLE              ; 144-164: UDG_TABLE + (code - 144) * 8; the UDGs are RAM
+    jr   .scale
+
 .is_block_graphics:
-    ; LEAP-C DELTA D21: written by the clean-room author (docs/TAPE_CLEANROOM.md)
-    ; Build the glyph in BLOCK_GFX_SCRATCH, top half first. Each half is
-    ; four identical rows made from two bits of the code: the low bit
-    ; selects the right-hand nibble ($0F), the next bit the left ($F0).
-    ; E is shifted down two bits between halves (top = bits 1,0 of the
-    ; code, bottom = bits 3,2).
+    ; Codes 128-143 (A = code - 144: the same low nibble): the glyph is built in BLOCK_GFX_SCRATCH
+    ; from the code's low nibble (bit0 = top-right, bit1 = top-left, bit2 = bottom-right, bit3 =
+    ; bottom-left; each a solid 4x4 block). Each half is four identical rows: the low bit of its
+    ; pair selects the right nibble ($0F), the next the left ($F0); E shifts down two bits between
+    ; halves (top, then bottom). Delta D21's clean-room routine.
+    push bc
+    ld   e, a
     ld   hl, BLOCK_GFX_SCRATCH
     ld   b, 2                        ; two halves
 .bg_half:
@@ -488,159 +398,91 @@ GFX_CHAR_TO_FONT_OFFSET:
     srl  e
     srl  e                           ; next pair of quarters
     djnz .bg_half
+    pop  bc
     ld   hl, BLOCK_GFX_SCRATCH
     or   a                           ; carry clear = success
     ret
-
-.is_udg:
-    ; Codes 144-164: real hardware stores these as plain RAM, POKE-
-    ; defined (PO-T&UDG in the disassembly) — no font data lives in
-    ; ROM at all for this range. UDG_TABLE + (code-UDG_CODE_BASE)*8,
-    ; same offset math as the ROM FONT_TABLE case above.
-    ld   a, e
-    sub  UDG_CODE_BASE
-    ld   l, a
-    ld   h, 0
-    add  hl, hl                        ; x2
-    add  hl, hl                        ; x4
-    add  hl, hl                        ; x8
-    ld   bc, UDG_TABLE
-    add  hl, bc
-    or   a
-    ret
-
-.not_found:
-    scf
-    ret
+    ASSERT (UDG_CODE_BASE & $0F) == 0
 
 ; ============================================================================
-; GFX_CHAR_SETUP (internal — not in kernel_api.inc)
-; Shared address computation for GFX_PUTCHAR and GFX_PUTCHAR_BOLD —
-; written once here rather than duplicated in both, given how much
-; trouble duplicated addressing logic has already caused in this
-; project (the GFX_PUTCHAR/GFX_CHAR_TO_FONT_OFFSET row-clobbering bug).
-; Screen addressing verified numerically (see file header) —
-; ROW_BASE_TABLE gives the bitmap address of (row, col=0, scanline=0);
-; column adds 1 per column (verified), and each scanline down within a
-; character adds 256 to the address (verified).
-;
-; Bounds-checks row/col itself now — previously didn't (this exact gap
-; is what let `BASIC_PRINT_LINE_HIGHLIGHTED`'s own missing check corrupt
-; memory for any LIST line >=32 columns; that call site got its own fix
-; at the time, but this shared routine — PRINT's real runtime path, not
-; just LIST's redraw — never did, and a >=32-column PRINT string would
-; still walk column past 31 here with nothing to catch it). A caller
-; that hits this now gets carry set and simply doesn't draw that
-; character, rather than writing past the intended row's own memory
-; into whatever's adjacent — same "silently clip rather than corrupt"
-; precedent GFX_PLOT_CLIPPED already established for pixel graphics.
-; In:  A = ASCII character, B = row (0-23), C = column (0-31)
-; Out: carry clear + HL = pointer to the glyph's 8 font bytes, DE =
-;      screen address of the character cell's top-left pixel; carry
-;      set (HL/DE undefined) if row>=24 or col>=32 — caller must not
-;      draw in that case
-; Destroys: AF, BC
+; GFX_CHAR_SETUP -- a character's glyph and its cell's bitmap address (GFX_PUTCHAR, _OVER, and the
+; EXROM's GFX_PUTCHAR_BOLD)
+; In:  A = character code, B = row (0-23), C = column (0-31)
+; Out: carry set if the position is off the grid; else carry clear, HL = the glyph (a code with no
+;      glyph: the space's), DE = the cell's scanline-0 bitmap address
+; Destroys: AF, DE, HL (BC is kept)
 ; ============================================================================
 GFX_CHAR_SETUP:
-    ld   d, a                      ; stash the character — A is about
-                                   ; to be scratch for the bounds check
+    ld   d, a                       ; the character; A is scratch for the checks
     ld   a, b
     cp   24
-    jr   nc, .out_of_range
+    ccf
+    ret  c
     ld   a, c
     cp   32
-    jr   nc, .out_of_range
-    ld   a, d                      ; restore the character
-    push bc                        ; preserve row/col — GFX_CHAR_TO_
-                                   ; FONT_OFFSET's punctuation-table
-                                   ; scan uses B as its own loop counter
-                                   ; internally, which clobbered the row
-                                   ; parameter for any punctuation
-                                   ; character before this was fixed —
-                                   ; see docs/programmers_reference.md's
-                                   ; kernel/graphics "Bugs caught" entry
-    call GFX_CHAR_TO_FONT_OFFSET
-    jr   nc, .have_offset
-    ld   hl, FONT_TABLE             ; unmapped character -> render as
-                                    ; space (index 0, now an absolute
-                                    ; pointer like every other case —
-                                    ; see GFX_CHAR_TO_FONT_OFFSET's
-                                    ; header, 2026-08-22)
-.have_offset:
-    pop  bc                          ; restore row/col
-    push hl                            ; save glyph pointer
-
-    ; row_base = ROW_BASE_TABLE[B] (2 bytes per entry)
+    ccf
+    ret  c
+    ld   a, d
+    call GFX_CHAR_TO_FONT_OFFSET    ; keeps BC
+    jr   nc, .have_glyph
+    ld   hl, FONT_TABLE             ; no glyph: a space
+.have_glyph:
+    ; the cell's address: 010tt000 rrrccccc (tt = row / 8, rrr = row MOD 8, ccccc = column)
     ld   a, b
-    call GFX_ROW_BASE_ADDR
-    ex   de, hl                       ; DE = row_base
-    ld   a, c
-    add  a, e
+    and  $18
+    or   HIGH SCREEN_ADDR
+    ld   d, a
+    ld   a, b
+    rrca
+    rrca
+    rrca
+    and  $E0
+    add  a, c                       ; carry clear: rrr00000 + column < 256
     ld   e, a
-    jr   nc, .no_carry
-    inc  d
-.no_carry:                             ; DE = row_base + column
-
-    pop  hl                                ; HL = pointer to this
-                                          ; glyph's 8 bytes — already
-                                          ; absolute (GFX_CHAR_TO_FONT_
-                                          ; OFFSET folds in FONT_TABLE/
-                                          ; UDG_TABLE/BLOCK_GFX_SCRATCH
-                                          ; itself now, 2026-08-22)
-    or   a                                ; explicitly clear carry —
-                                          ; success
     ret
-
-.out_of_range:
-    scf
-    ret
+    ASSERT LOW SCREEN_ADDR == 0 && (HIGH SCREEN_ADDR & $1F) == 0
 
 ; ============================================================================
-; GFX_PUTCHAR
-; Plots one character at a given character-grid position.
-; In:  A = ASCII character, B = row (0-23), C = column (0-31)
-; Out: none
-; Destroys: AF, BC, DE, HL
+; GFX_PUTCHAR -- draw one character in the grid (bitmap only; the attribute is not touched)
+; In:  A = character code, B = row (0-23), C = column (0-31)
+; Out: carry set if the position is off the grid (nothing drawn); else carry clear and DE = the
+;      cell's top-left bitmap address + 8 scanlines (D + 8: the cell's attribute is at
+;      ATTR_ADDR + (D / 8 - 9) * 256 + E)
+; Destroys: AF, DE, HL (BC is kept)
 ; ============================================================================
 GFX_PUTCHAR:
     call GFX_CHAR_SETUP
-    ret  c                                 ; out of range — GFX_CHAR_
-                                          ; SETUP's own bounds check;
-                                          ; silently don't draw rather
-                                          ; than write past the
-                                          ; intended row's memory
-    ld   b, 8                              ; 8 scanlines
-.scanline_loop:
-    ld   a, (hl)                            ; A = this scanline's font byte
-    ex   de, hl                              ; HL = screen address, DE = font ptr
-    ld   (hl), a                              ; write font byte to screen
-    inc  h                                     ; screen address += 256 (next
-                                              ; scanline — verified this is
-                                              ; exactly +256, see file header)
-    ex   de, hl                                ; HL = font ptr, DE = screen
-                                              ; address (advanced)
-    inc  hl                                    ; advance font ptr to next byte
-    djnz .scanline_loop
+    ret  c
+    REPT 7                          ; the 8 scanlines, 256 bytes apart
+    ld   a, (hl)
+    ld   (de), a
+    inc  hl
+    inc  d
+    ENDR
+    ld   a, (hl)
+    ld   (de), a
+    inc  d
     ret
 
-; XOR-plots a glyph instead of replacing the destination bytes. Kept
-; separate so every existing editor/status/help caller retains ordinary
-; opaque text semantics; BASIC PRINT selects this only for OVER 1.
+; ============================================================================
+; GFX_PUTCHAR_OVER -- GFX_PUTCHAR by exclusive-or (over(1))
+; In, Out, Destroys: as GFX_PUTCHAR
+; ============================================================================
 GFX_PUTCHAR_OVER:
     call GFX_CHAR_SETUP
     ret  c
-    ld   b, 8
-.scanline_loop:
-    ld   a, (hl)
-    ex   de, hl
+    REPT 7
+    ld   a, (de)
     xor  (hl)
-    ld   (hl), a
-    inc  h
-    ex   de, hl
+    ld   (de), a
     inc  hl
-    djnz .scanline_loop
+    inc  d
+    ENDR
+    ld   a, (de)
+    xor  (hl)
+    ld   (de), a
+    inc  d
     ret
-
     ENDIF
     IFNDEF GFX_NO_EDITOR_TEXT            ; Leap-C (delta D12): GFX_PUTCHAR_BOLD and GFX_PRINT_STRING are
                                          ; the EXROM editor's only, so they are assembled in the EXROM
@@ -728,9 +570,9 @@ GFX_PRINT_STRING:
 ; existing callers need to change.
 ;
 ; The attribute value is stashed in PRINT_ATTR_SCRATCH (a real RAM
-; sysvar, sysvars.inc), not a register — both GFX_PUTCHAR and
-; GFX_SET_ATTR destroy AF/BC/DE/HL per their own contracts, so a bare
-; register holding the attribute would not survive either call. This
+; sysvar, sysvars.inc), not a register — GFX_PUTCHAR destroys AF/DE/HL
+; (and, before Leap-C delta D28, BC too), so a bare register holding the
+; attribute would not survive the call. This
 ; is the same "value must survive a call -> use memory, not a
 ; register" pattern this project has hit repeatedly (see
 ; MEM_LINE_FIRST/NEXT's own DE-clobbering history) — BUT NOTE: this
@@ -761,23 +603,23 @@ GFX_PRINT_STRING_ATTR:
     or   a
     ret  z
     push hl
-    push bc                  ; GFX_PUTCHAR destroys BC entirely
     ld   a, (PRINT_OVER_SCRATCH)
     or   a
-    jr   z, .opaque
-    ld   a, (hl)
-    call GFX_PUTCHAR_OVER
+    ld   a, (hl)                     ; (LD keeps the flags)
+    jr   nz, .over
+    call GFX_PUTCHAR                 ; (D28: keeps BC; DE = the cell + 8 scanlines)
     jr   .glyph_done
-.opaque:
-    ld   a, (hl)
-    call GFX_PUTCHAR
+.over:
+    call GFX_PUTCHAR_OVER
 .glyph_done:
-    pop  bc
-    push bc                  ; GFX_SET_ATTR also destroys BC — needs
-                             ; its own save/restore, same row/column
+    ld   a, d                        ; LEAP-C DELTA D28: the attribute from the address GFX_PUTCHAR
+    rrca                             ; left (010tt000 + 8: bits 3-4 hold tt + 1), not a
+    rrca                             ; bounds-checked GFX_SET_ATTR call (B and C are on the grid)
+    rrca                             ; 9 + tt
+    add  a, HIGH ATTR_ADDR - 9
+    ld   d, a                        ; DE = ATTR_ADDR + row * 32 + column
     ld   a, (PRINT_ATTR_SCRATCH)
-    call GFX_SET_ATTR
-    pop  bc
+    ld   (de), a
     pop  hl
     inc  hl
     inc  c
@@ -795,6 +637,7 @@ GFX_PRINT_STRING_ATTR:
     ld   b, 23
     ld   c, 0
     jr   .loop
+    ASSERT LOW ATTR_ADDR == 0 && HIGH ATTR_ADDR == HIGH SCREEN_ADDR + $18
 
 ; ============================================================================
 ; GFX_ATTR_SWAP (internal — not in kernel_api.inc)
@@ -1076,48 +919,40 @@ GFX_SET_MODE:
     ret
 
 ; ============================================================================
-; GFX_CLEAR_ROW
-; Clears one character row (all 32 columns) — bitmap AND attribute —
-; back to blank/default, without touching any other row. Built for the
-; screen-flicker fix: redrawing the whole screen on every keystroke
-; (GFX_CLS + full re-render) is the main source of visible flicker;
-; clearing just the one row that actually changed is the first piece
-; needed to avoid that.
-;
-; Reuses GFX_PUTCHAR (a space character, for the bitmap) and
-; GFX_SET_ATTR (for the attribute), rather than reimplementing the
-; Spectrum-family interleaved screen addressing from scratch — both
-; are already proven, tested primitives, and a character row isn't
-; contiguous in bitmap memory (it's 8 scanlines spread across the
-; standard third-of-screen interleaving), so hand-rolling this
-; addressing again here would just be duplicating logic that already
-; exists and already works.
-;
-; Both GFX_PUTCHAR and GFX_SET_ATTR destroy B/C (row/column) per their
-; own documented contracts, so each is wrapped in its own push/pop —
-; this project's most recurring mistake is assuming a register
-; survives a call without checking its "Destroys:" line first.
-; In:  B = row (0-23)
+; GFX_CLEAR_ROW -- clear one text row (bitmap and attributes) to blank cells of attribute A
+; LEAP-C DELTA D26: the bytes 32 spaces would leave (the space glyph is 8 zero bytes) written
+; directly, as Leap V2's own later GFX_CLEAR_ROW and 2068-Forth v2.0's; V2's drew 32 spaces and set 32
+; attributes through GFX_PUTCHAR and GFX_SET_ATTR (about 33,000 T).
+; In:  B = row (0-23), A = the attribute
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_CLEAR_ROW:
+    push af
     ld   c, 0
-.loop:
-    push bc
-    ld   a, " "
-    call GFX_PUTCHAR
-    pop  bc
-
-    push bc
-    ld   a, ATTR_DEFAULT
-    call GFX_SET_ATTR
-    pop  bc
-
-    inc  c
-    ld   a, c
-    cp   GFX_COLS
-    jr   c, .loop
+    call GFX_CELL_ATTR_ADDR         ; HL = the row's first attribute (BC kept)
+    pop  af
+    ld   c, GFX_COLS
+.attr:
+    ld   (hl), a
+    inc  l                          ; (a row's 32 attributes never cross a page)
+    dec  c
+    jr   nz, .attr
+    ld   a, b
+    call GFX_ROW_BASE_ADDR          ; HL = scanline 0, column 0
+    ld   e, l
+    xor  a
+    ld   c, 8
+.scan:
+    ld   b, GFX_COLS
+.byte:
+    ld   (hl), a
+    inc  l
+    djnz .byte
+    ld   l, e                       ; column 0,
+    inc  h                          ; the next scanline
+    dec  c
+    jr   nz, .scan
     ret
 
 ; LEAP-C DELTA D8: GFX_CLEAR_ROW_TEXT (the status bar's bitmap-only row clear) removed: the
@@ -1425,48 +1260,7 @@ LINE_DELTA:
 ; ---- screen-row base addresses, computed and verified numerically
 ; (see file header) rather than derived by hand from the bit-shuffle
 ; formula ----
-; ---- punctuation character -> font index lookup, used by
-; GFX_CHAR_TO_FONT_OFFSET's table scan. Only the double-quote character
-; needs single-quote delimiters here (to avoid self-conflict); every
-; other character, including the apostrophe, safely uses double-quote
-; delimiters instead — mirrors the convention already proven working
-; for the standalone quote check this replaced. ----
-PUNCT_CHAR_TABLE:
-    ; LEAP-C DELTA D8: the entries in the order of their frequency in C source (the scan is linear:
-    ; the editor draws every character of a line it redraws), each with its V2 font index; then
-    ; the eight characters C needs that V2 has no glyph for (spec.md 6.2), indices 86-93
-    DB   ";", 80
-    DB   "(", 71
-    DB   ")", 72
-    DB   ",", 76
-    DB   "=", 77
-    DB   "_", 73
-    DB   "*", 82
-    DB   "{", 88
-    DB   "}", 89
-    DB   '"', 63
-    DB   "+", 78
-    DB   "-", 79
-    DB   ".", 75
-    DB   "<", 83
-    DB   ">", 84
-    DB   "[", 86
-    DB   "]", 87
-    DB   "&", 69
-    DB   "/", 81
-    DB   "'", 70
-    DB   "!", 64
-    DB   "%", 68
-    DB   "|", 90
-    DB   ":", 74
-    DB   "#", 66
-    DB   "?", 85
-    DB   "^", 92
-    DB   "~", 91
-    DB   $5C, 93
-    DB   "@", 65
-    DB   "$", 67
-PUNCT_CHAR_COUNT EQU 31
+; (PUNCT_CHAR_TABLE, V2's punctuation -> font index scan, went with Leap-C delta D28.)
 
 ; Block-graphics (128-143) and UDG (144-164) character-code ranges —
 ; see GFX_CHAR_TO_FONT_OFFSET's .is_block_graphics/.is_udg. UDG_COUNT
@@ -1481,12 +1275,49 @@ ROW_BASE_TABLE:
     DW   $4800, $4820, $4840, $4860, $4880, $48A0, $48C0, $48E0
     DW   $5000, $5020, $5040, $5060, $5080, $50A0, $50C0, $50E0
 
-; ---- font: space, 0-9, A-Z (37 glyphs, 8 bytes each). See file header
-; re: confidence level — designed and visually reviewed, not from a
-; recalled ROM dump, needs YOUR visual confirmation once assembled. ----
+; ---- font: printable ASCII, codes 32-126 in code order (95 glyphs, 8 bytes each): the glyph of a
+; code is FONT_TABLE + (code - 32) * 8 (Leap-C delta D28, as 2068-Forth v2.0's; V2's order was
+; space, 0-9, A-Z, a-z, then punctuation reached through PUNCT_CHAR_TABLE). The glyphs are V2's with
+; Leap-C deltas D8 (C's [ ] { } | ~ ^ \, in the letters' columns $80-$08 except '\', bit 0 clear
+; for GFX_PUTCHAR_BOLD), D13 and D24. ----
 FONT_TABLE:
     ; ' '
     DB   $00, $00, $00, $00, $00, $00, $00, $00
+    ; '!'
+    DB   $20, $20, $20, $20, $20, $00, $20, $00
+    ; '"'
+    DB   $50, $50, $00, $00, $00, $00, $00, $00
+    ; '#'
+    DB   $50, $50, $F8, $50, $F8, $50, $50, $00
+    ; '$'
+    DB   $20, $78, $A0, $70, $28, $F0, $20, $00
+    ; '%'
+    DB   $88, $10, $20, $20, $40, $88, $00, $00
+    ; '&'
+    DB   $60, $90, $60, $68, $90, $98, $68, $00
+    ; '''
+    DB   $20, $20, $00, $00, $00, $00, $00, $00
+    ; '('
+    DB   $10, $20, $40, $40, $40, $20, $10, $00
+    ; ')'
+    DB   $40, $20, $10, $10, $10, $20, $40, $00
+    ; '*' — vertical spine + diagonal rays converging at center,
+    ; six-pointed asterisk. Same review discipline (needed once B=*
+    ; was added for basic/'s multiplication operator)
+    DB   $00, $10, $54, $38, $54, $10, $00, $00
+    ; '+'
+    DB   $00, $20, $20, $F8, $20, $20, $00, $00
+    ; ','
+    DB   $00, $00, $00, $00, $00, $20, $20, $40
+    ; '-'
+    DB   $00, $00, $00, $F8, $00, $00, $00, $00
+    ; '.'
+    DB   $00, $00, $00, $00, $00, $00, $20, $00
+    ; '/' — diagonal stroke, lower-left to upper-right. Designed and
+    ; visually reviewed as ASCII art before committing (see this
+    ; project's established discipline for glyphs — needed once V=/
+    ; was added for basic/'s division operator)
+    DB   $00, $04, $08, $10, $20, $40, $00, $00
     ; '0'
     DB   $70, $88, $98, $A8, $C8, $88, $70, $00
     ; '1'  (Leap-C delta D13: a flag and a full base, unlike 'l')
@@ -1507,6 +1338,41 @@ FONT_TABLE:
     DB   $70, $88, $88, $70, $88, $88, $70, $00
     ; '9'
     DB   $70, $88, $88, $78, $08, $10, $60, $00
+    ; ':'
+    DB   $00, $20, $00, $00, $20, $00, $00, $00
+    ; ';'
+    DB   $00, $20, $00, $00, $20, $20, $40, $00
+    ; '<' — simple angle-bracket chevron, apex pointing left, single-
+    ; pixel diagonal strokes converging on the left edge (column 0)
+    ; and opening back out to column 3 top/bottom — stays within the
+    ; same column range ($80-$08) every letter/digit glyph already
+    ; uses, unlike '/' which intentionally reaches further right.
+    ; Needed once basic/'s new IF condition relational operators
+    ; (kernel/io's SYMBOL SHIFT+R) made '<' a real, typeable character
+    ; rather than only usable via LOAD/hand-edited program text.
+    ; Visually reviewed as ASCII art before committing, same discipline
+    ; as every other glyph here.
+    DB   $10, $20, $40, $80, $40, $20, $10, $00
+    ; '='
+    DB   $00, $00, $F8, $00, $F8, $00, $00, $00
+    ; '>' — exact horizontal mirror of '<' within the same column
+    ; range, apex pointing right toward column 4 instead of column 0.
+    ; Needed alongside '<' for the same reason (kernel/io's SYMBOL
+    ; SHIFT+T).
+    DB   $40, $20, $10, $08, $10, $20, $40, $00
+    ; '?' — top hook reuses '2''s exact top-curve shape (rows 0-2:
+    ; arc, then right-hand downstroke), tapering to a single point at
+    ; row 4 instead of '2''s full-width bottom bar, then a blank row
+    ; and a centered dot — same gap-then-dot closing shape already
+    ; established by '!' elsewhere in this table. Designed and
+    ; visually reviewed as ASCII art before committing, same
+    ; discipline as every other glyph here — not transcribed from any
+    ; real ROM's font. Needed once kernel/io's SYMBOL SHIFT+C mapping
+    ; was added (see that table's header) — mapping and glyph always
+    ; ship together per this project's established rule.
+    DB   $70, $88, $08, $10, $20, $00, $20, $00
+    ; '@'
+    DB   $70, $88, $B0, $B0, $80, $88, $70, $00
     ; 'A'
     DB   $20, $50, $88, $88, $F8, $88, $88, $00
     ; 'B'
@@ -1559,8 +1425,17 @@ FONT_TABLE:
     DB   $88, $50, $20, $20, $20, $20, $20, $00
     ; 'Z'
     DB   $F8, $08, $10, $20, $40, $80, $F8, $00
-    ; ---- lowercase a-z appended below, same design/review discipline
-    ; as the uppercase set above ----
+    ; '[' and ']': brackets as tall as the letters
+    DB   $70, $40, $40, $40, $40, $40, $70, $00
+    ; '\': the mirror of '/'
+    DB   $00, $40, $20, $10, $08, $04, $00, $00
+    DB   $70, $10, $10, $10, $10, $10, $70, $00
+    ; '^': a caret at the top of the cell
+    DB   $20, $50, $88, $00, $00, $00, $00, $00
+    ; '_'
+    DB   $00, $00, $00, $00, $00, $00, $F8, $00
+    ; '`'  (Leap-C delta D28: no glyph, as before: the backtick prints as a space)
+    DB   $00, $00, $00, $00, $00, $00, $00, $00
     ; 'a'
     DB   $00, $00, $70, $08, $78, $88, $78, $00
     ; 'b'
@@ -1613,103 +1488,13 @@ FONT_TABLE:
     DB   $00, $00, $88, $88, $88, $78, $08, $70
     ; 'z'
     DB   $00, $00, $F8, $10, $20, $40, $F8, $00
-    ; ---- punctuation, added as needed rather than up front — '"' was
-    ; needed the moment PRINT "..." string literals became typeable,
-    ; see kernel/io's SYMBOL SHIFT+P addition ----
-    ; '"'
-    DB   $50, $50, $00, $00, $00, $00, $00, $00
-    ; ---- more punctuation: the confirmed-confidence subset of
-    ; SYMBOL SHIFT's table (see kernel/io.asm's header — the real
-    ; table is more complex than this, some keys give BASIC keyword
-    ; tokens rather than symbols, some differ between plain SYMBOL
-    ; SHIFT and a separate "extended mode"; only what's independently
-    ; confirmed is implemented) ----
-    ; '!'
-    DB   $20, $20, $20, $20, $20, $00, $20, $00
-    ; '@'
-    DB   $70, $88, $B0, $B0, $80, $88, $70, $00
-    ; '#'
-    DB   $50, $50, $F8, $50, $F8, $50, $50, $00
-    ; '$'
-    DB   $20, $78, $A0, $70, $28, $F0, $20, $00
-    ; '%'
-    DB   $88, $10, $20, $20, $40, $88, $00, $00
-    ; '&'
-    DB   $60, $90, $60, $68, $90, $98, $68, $00
-    ; '''
-    DB   $20, $20, $00, $00, $00, $00, $00, $00
-    ; '('
-    DB   $10, $20, $40, $40, $40, $20, $10, $00
-    ; ')'
-    DB   $40, $20, $10, $10, $10, $20, $40, $00
-    ; '_'
-    DB   $00, $00, $00, $00, $00, $00, $F8, $00
-    ; ':'
-    DB   $00, $20, $00, $00, $20, $00, $00, $00
-    ; '.'
-    DB   $00, $00, $00, $00, $00, $00, $20, $00
-    ; ','
-    DB   $00, $00, $00, $00, $00, $20, $20, $40
-    ; '='
-    DB   $00, $00, $F8, $00, $F8, $00, $00, $00
-    ; '+'
-    DB   $00, $20, $20, $F8, $20, $20, $00, $00
-    ; '-'
-    DB   $00, $00, $00, $F8, $00, $00, $00, $00
-    ; ';'
-    DB   $00, $20, $00, $00, $20, $20, $40, $00
-    ; '/' — diagonal stroke, lower-left to upper-right. Designed and
-    ; visually reviewed as ASCII art before committing (see this
-    ; project's established discipline for glyphs — needed once V=/
-    ; was added for basic/'s division operator)
-    DB   $00, $04, $08, $10, $20, $40, $00, $00
-    ; '*' — vertical spine + diagonal rays converging at center,
-    ; six-pointed asterisk. Same review discipline (needed once B=*
-    ; was added for basic/'s multiplication operator)
-    DB   $00, $10, $54, $38, $54, $10, $00, $00
-    ; '<' — simple angle-bracket chevron, apex pointing left, single-
-    ; pixel diagonal strokes converging on the left edge (column 0)
-    ; and opening back out to column 3 top/bottom — stays within the
-    ; same column range ($80-$08) every letter/digit glyph already
-    ; uses, unlike '/' which intentionally reaches further right.
-    ; Needed once basic/'s new IF condition relational operators
-    ; (kernel/io's SYMBOL SHIFT+R) made '<' a real, typeable character
-    ; rather than only usable via LOAD/hand-edited program text.
-    ; Visually reviewed as ASCII art before committing, same discipline
-    ; as every other glyph here.
-    DB   $10, $20, $40, $80, $40, $20, $10, $00
-    ; '>' — exact horizontal mirror of '<' within the same column
-    ; range, apex pointing right toward column 4 instead of column 0.
-    ; Needed alongside '<' for the same reason (kernel/io's SYMBOL
-    ; SHIFT+T).
-    DB   $40, $20, $10, $08, $10, $20, $40, $00
-    ; '?' — top hook reuses '2''s exact top-curve shape (rows 0-2:
-    ; arc, then right-hand downstroke), tapering to a single point at
-    ; row 4 instead of '2''s full-width bottom bar, then a blank row
-    ; and a centered dot — same gap-then-dot closing shape already
-    ; established by '!' elsewhere in this table. Designed and
-    ; visually reviewed as ASCII art before committing, same
-    ; discipline as every other glyph here — not transcribed from any
-    ; real ROM's font. Needed once kernel/io's SYMBOL SHIFT+C mapping
-    ; was added (see that table's header) — mapping and glyph always
-    ; ship together per this project's established rule.
-    DB   $70, $88, $08, $10, $20, $00, $20, $00
-    ; LEAP-C DELTA D8: C's [ ] { } | ~ ^ \ (spec.md 6.2), in the letters' columns ($80-$08) like
-    ; every glyph above except '/', whose mirror '\' is; bit 0 stays clear for GFX_PUTCHAR_BOLD.
-    ; '[' and ']': brackets as tall as the letters
-    DB   $70, $40, $40, $40, $40, $40, $70, $00
-    DB   $70, $10, $10, $10, $10, $10, $70, $00
     ; '{' and '}': braces with a centre point, each the other's mirror
     DB   $18, $20, $20, $40, $20, $20, $18, $00
-    DB   $C0, $20, $20, $10, $20, $20, $C0, $00
     ; '|': a solid bar (the gap of '!' tells them apart)
     DB   $20, $20, $20, $20, $20, $20, $20, $00
+    DB   $C0, $20, $20, $10, $20, $20, $C0, $00
     ; '~': a centred wave
     DB   $00, $00, $40, $A8, $10, $00, $00, $00
-    ; '^': a caret at the top of the cell
-    DB   $20, $50, $88, $00, $00, $00, $00, $00
-    ; '\': the mirror of '/'
-    DB   $00, $40, $20, $10, $08, $04, $00, $00
 
 ; ============================================================================
 ; Sprites — GFX_SPRITE_CAPTURE / GFX_SPRITE_DRAW (2026-08-19)

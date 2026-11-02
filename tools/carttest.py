@@ -71,7 +71,7 @@ EXPECTED_DIFFS = [
     ("B:expected-heap", "rows", "no source on the cartridge: RT_RUN's heap starts at the empty line store's end, so malloc() "
      "returns lower addresses than under RUN, where the program's source lies below the heap"),
     ("B:expected-peek0", "rows", "PEEK of $0000-$0004 reads the cartridge's LROS header (0, 1, CART_ENTRY, chunk byte $BC), "
-     "not the release's di / jp COLD_START / IO_KEY_SCAN_ROW"),
+     "not the release's di / jp COLD_START"),
 ]
 UDG_NOTE = ("UDGs start blank at every run (the cold start clears them); under RUN they persist between runs")
 # not a difference the shell run can show (it restores a fresh snapshot per case): under RUN a UDG a program defined stays
@@ -464,7 +464,9 @@ def _heap(cart, ref):
 
 
 def _peek(cart, ref):
-    return None if (cart, ref) == ("0 1 188", "243 195 219") else "PEEK 0/1/4: cartridge %r, RUN %r" % (cart, ref)
+    # the release: di ($F3), jp ($C3), and at $0004 page zero's fill (0; 1.1's IO_KEY_SCAN_ROW, $DB = 219, went with
+    # platform delta D27)
+    return None if (cart, ref) == ("0 1 188", "243 195 0") else "PEEK 0/1/4: cartridge %r, RUN %r" % (cart, ref)
 
 
 def check_expected(judge):

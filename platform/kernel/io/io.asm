@@ -136,24 +136,15 @@ IO_KEY_SCAN_ROW:
 ; Out: IO_SCAN_TABLE filled; HL = IO_SCAN_TABLE (start of the table)
 ; Destroys: AF, BC, HL
 ; ============================================================================
-IO_KEY_SCAN_ALL:
-    ld   hl, IO_SCAN_TABLE
-    ld   b, KEY_ROW_COUNT
-    ld   c, 0                    ; C = index into ROW_TABLE
-.scan_loop:
-    push bc
-    push hl
-    ld   hl, ROW_TABLE
-    ld   b, 0
-    add  hl, bc                   ; HL -> ROW_TABLE[C]
-    ld   a, (hl)                  ; A = this row's select byte
-    pop  hl
-    call IO_KEY_SCAN_ROW
+IO_KEY_SCAN_ALL:                      ; LEAP-C DELTA D27 (2068-Forth v2.0's): IN A,(C) with B the row
+    ld   hl, IO_SCAN_TABLE             ; select rotated left ($FE, $FD ... $7F), no ROW_TABLE and no
+    ld   bc, $FE << 8 | PORT_ULA       ; IO_KEY_SCAN_ROW call per row
+.row:
+    in   a, (c)
     ld   (hl), a
     inc  hl
-    pop  bc
-    inc  c
-    djnz .scan_loop
+    rlc  b
+    jr   c, .row                       ; $7F rotates to $FE with no carry: the 8th row was the last
     ld   hl, IO_SCAN_TABLE
     ret
 
@@ -519,11 +510,10 @@ IO_READ_KEY_NONBLOCK:
 ; recovered.
 
 ; ---- row select bytes, in the order IO_SCAN_TABLE stores them ----
-ROW_TABLE:
-    DB   $FE, $FD, $FB, $F7, $EF, $DF, $BF, $7F
+; LEAP-C DELTA D27: ROW_TABLE removed (IO_KEY_SCAN_ALL rotates the row select itself).
 
 ; ---- key -> ASCII translation table, 40 entries (8 rows x 5 bits) ----
-; Index = row*5 + bit, using ROW_TABLE's row order above. 0 = unmapped
+; Index = row*5 + bit, rows in IO_SCAN_TABLE order ($FE first). 0 = unmapped
 ; (SHIFT keys, and anything not yet handled — see file header).
 ;
 ; Letters are LOWERCASE here — this is the unshifted default. Uppercase

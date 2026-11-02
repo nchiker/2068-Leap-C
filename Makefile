@@ -47,12 +47,14 @@
 #                       (ports 11780-11799); CARTTEST_ARGS=--fuse adds Fuse 1.9.1 with its stock ROMs
 #   make lines          1.2: draw()'s pixels and attributes against a model of the 1.1.0 line (tools/linetest.py,
 #                       on and off the screen, both modes, over), then its T-states against ceilings
+#   make display        1.2: the display routines' T-states against ceilings (tools/displaytest.py): the keyboard
+#                       interrupt idle and with a key held, GFX_PUTCHAR, LIB_PUTC, the scroll, GFX_CLEAR_ROW
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
 #   make v2ref          the V2 reference ROM (tag v2.0.1-emu.1) in build/v2ref/, built from the frozen
 #                       repository through `git archive` (the cross-version tape tests)
 # Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
 .PHONY: all build prod testimg libs check budget inventory test test-fast canary capacity repro audit v2ref clean \
-	fuse timing poweron kit qualify release tapetol provenance manual cart cart-demo test-cart lines
+	fuse timing poweron kit qualify release tapetol provenance manual cart cart-demo test-cart lines display
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -109,6 +111,9 @@ endif
 
 cart-demo: cart
 	python3 tools/c2cart.py examples/cart_hello.c -o build/cart/hello.dck --bin build/cart/hello.bin
+
+display: build
+	python3 tools/displaytest.py
 
 lines: build
 	python3 tools/linetest.py

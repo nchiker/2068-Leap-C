@@ -24,6 +24,7 @@ sha256sum build/leapc_home.bin build/leapc_exrom.bin build/leapc_zesarux.bin bui
 step final_test   sh -c "python3 tools/run_tests.py --port $P --coverage build/coverage.json && python3 tools/romcov.py build/coverage.json"
 step fuse         make fuse
 step timing       python3 tools/timingcmp.py --port $P
+step display      python3 tools/displaytest.py --port $P
 step lines        sh -c "python3 tools/linetest.py --port $P && python3 tools/linetest.py --time --port $P"
 step ram_warm     python3 tools/run_tests.py --port $P --ram warm --suite boot,decl,exec,shell,e2e --json build/ram_warm.json
 step ram_random7  python3 tools/run_tests.py --port $P --ram random:7 --suite boot,decl,exec,shell,e2e --json build/ram_random7.json

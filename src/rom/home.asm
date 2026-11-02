@@ -29,11 +29,8 @@ COMP_PAGE0_BEGIN:
     ELSE
     di
     jp   COLD_START
-; IO_KEY_SCAN_ROW (kernel/io/io.asm; V2 production also places it in page-zero padding)
-; In: A = row select byte. Out: A = the row's key bits. Destroys: AF
-IO_KEY_SCAN_ROW:
-    in   a, (PORT_ULA)
-    ret
+; (1.2: IO_KEY_SCAN_ROW, here until then, went with platform delta D27: the key scan reads the
+; rows itself.)
     ENDIF
 ; RST $08-$30: the runtime helper vectors (spec.md 2.3, 5.3). Bodies that fit their 8-byte slot sit
 ; at the vector (no `jp`); the others start there and continue in src/runtime/helpers.asm.
@@ -45,11 +42,6 @@ RST_LDI:
     ld   h, (hl)
     ld   l, a
     ret
-    IFDEF LEAPC_CART
-IO_KEY_SCAN_ROW:                        ; (the cartridge: moved from $0004, the LROS header's chunk byte)
-    in   a, (PORT_ULA)
-    ret
-    ENDIF
 ; RST $10 STI -- the word at DE = HL. Out: HL kept, DE = address + 1. Destroys: -
     ORG $0010
 RST_STI:

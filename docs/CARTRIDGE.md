@@ -51,7 +51,7 @@ A program that needs the keyboard, the clock or the tape works as it does under 
 | 6 | `$C000-$DFFF` | the release EXROM | while `BANK_EXROM_DEPTH` > 0 (`$43`); otherwise RAM (image region 1) |
 | 7 | `$E000-$FFFF` | absent | never |
 
-Port `$FF` bit 7 stays 0 (DOCK) from the cold start on; the stock ROMs are never selected again. `$F4` is written only with `$03`, `$33`, `$37` and `$43`. Cartridge-specific code is in HOME's free space: 252 bytes at `$3DEF-$3EEB` (229 bytes of the space are left). The release's 1,908 labels keep their addresses; only `IO_KEY_SCAN_ROW` moved (`$0004` to `$000D`) because the LROS header, which the stock ROM reads (`$00`, `$01`, the entry address, chunk byte `$BC`), takes `$0000-$0004`. A program that `PEEK`s `$0000-$0007` therefore reads the header.
+Port `$FF` bit 7 stays 0 (DOCK) from the cold start on; the stock ROMs are never selected again. `$F4` is written only with `$03`, `$33`, `$37` and `$43`. Cartridge-specific code is in HOME's free space: 252 bytes at `$3D60-$3E5C` in 1.2 (372 bytes of the space are left; 1.1: `$3DEF-$3EEB`, 229). The release's labels keep their addresses. The LROS header, which the stock ROM reads (`$00`, `$01`, the entry address, chunk byte `$BC`), takes `$0000-$0004`; in 1.1 that moved `IO_KEY_SCAN_ROW` from `$0004` to `$000D`, and since 1.2 (platform delta D27) neither build has that routine, so no label moves. A program that `PEEK`s `$0000-$0007` therefore reads the header.
 
 At the hand-off the stock ROM jumps to `CART_ENTRY` with interrupts on, IM 1, SP `$61FE`, `$F4` = `$43`, `$FF` = `$00`. `CART_ENTRY` disables interrupts, sets its own stack, quiets the AY and runs the release cold start, which ends in the cartridge's loader instead of the shell.
 
