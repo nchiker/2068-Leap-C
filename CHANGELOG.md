@@ -13,6 +13,14 @@ or removing one is a breaking change and is announced here first.
 `RT_ERRLINE`, `RUN_FNLINES`, `SYM_GLO`, `SYM_LOC`, `CUR_EDIT_INDEX`, `PROG_END`, `ARRAYS_END`, `BANK_EXROM_DEPTH`,
 `TOK_LINE`, `CG_PC`.
 
+## Unreleased
+
+- **The user's manual, Part 7 example 11** ("Colour lines in high resolution"): the example now waits for a key in
+  mode 1 and draws a band of 56 lines, so its colours can be seen; it no longer sets `paper(0)`, which left the
+  screen black after `mode(0)`. Proposed by the Leap IDE (its `LEAP_C_EXAMPLE_11.md`), with one added test line
+  (`// attr: 5 5 56`: after `mode(0)` the band is ink 0 on paper 7). Documentation only: the ROM images are
+  unchanged.
+
 ## 1.1.0 (2026-11-01)
 
 Adds the runtime cartridge. **The ROM images are byte-identical to 1.0.0's** (HOME `d2b18eaa…`, EXROM `02790ebe…`; the
