@@ -614,7 +614,7 @@ GFX_PRINT_STRING_ATTR:
 .glyph_done:
     ld   a, d                        ; LEAP-C DELTA D28: the attribute from the address GFX_PUTCHAR
     rrca                             ; left (010tt000 + 8: bits 3-4 hold tt + 1), not a
-    rrca                             ; bounds-checked GFX_SET_ATTR call (B and C are on the grid)
+    rrca                             ; bounds-checked GFX_SET_ATTR call, now gone (B and C are on the grid)
     rrca                             ; 9 + tt
     add  a, HIGH ATTR_ADDR - 9
     ld   d, a                        ; DE = ATTR_ADDR + row * 32 + column
@@ -777,58 +777,8 @@ GFX_INVERT_ATTR_STATIC:
     ret
     ENDIF
 
-; ============================================================================
-; GFX_SET_ATTR
-; Sets the attribute byte at one character cell to a specific value
-; outright — unlike GFX_INVERT_ATTR/GFX_INVERT_ATTR_STATIC, which swap
-; ink/paper relative to whatever's already there, this replaces it.
-; Built for red-highlighted error lines (basic/'s
-; BASIC_REDRAW_PROGRAM), but deliberately general — any caller that
-; needs a specific, known color at a specific cell can use this rather
-; than reasoning about what to swap from.
-;
-; Duplicates the same small address-computation sequence
-; GFX_ATTR_SWAP already has (row*32+col+ATTR_ADDR), rather than
-; refactoring that already-working routine to share it — the
-; computation is short enough (5 shifts, two adds) that the
-; duplication is cheap, and this project's established preference is
-; to leave working, tested code alone rather than touch it for a
-; small amount of shared logic.
-; In:  A = new attribute byte, B = row (0-23), C = column (0-31)
-; Out: none
-; Destroys: AF, BC, DE, HL
-;
-; Bounds-checks row/col itself now — same gap GFX_CHAR_SETUP had and
-; got fixed for (see that routine's own comment): nothing stopped a
-; caller from passing an out-of-range column here, and unlike the
-; bitmap write, there was no separate fix covering this path. Found
-; via a real, reproducible case: GFX_PRINT_STRING_ATTR calls this
-; unconditionally for every character of a string, including ones
-; GFX_PUTCHAR correctly skips once GFX_CHAR_SETUP's own bounds check
-; kicks in past column 31 — so a too-long PRINT string's attribute-
-; painting kept walking past column 31 even after the bitmap fix
-; landed, and since attribute memory is a flat row*32+col array,
-; walking col past 31 spills into the NEXT row's attribute bytes,
-; silently recoloring cells that belong to a completely different
-; line. Verified in Python before writing this fix: a 31-character
-; string starting at column 20 lands its overflow at row+1, columns
-; 0-18 — a real, traceable corruption, not a hypothetical one.
-; Silently does nothing on out-of-range, matching this project's now-
-; consistent "clip rather than corrupt" answer to this exact class of
-; bug (GFX_PLOT_CLIPPED, GFX_CHAR_SETUP) — no callers currently check
-; a return status from this routine, so a silent no-op needs no
-; changes anywhere else, unlike GFX_CHAR_SETUP's carry-flag fix.
-; ============================================================================
-GFX_SET_ATTR:
-    push af
-    call GFX_CELL_ATTR_ADDR
-    jr   c, .discard_attr
-    pop  af
-    ld   (hl), a
-    ret
-.discard_attr:
-    pop  af
-    ret
+; LEAP-C DELTA D28: GFX_SET_ATTR removed: its callers (V2's GFX_PRINT_STRING_ATTR, GFX_CLEAR_ROW and
+; GFX_WRITE_PIXEL) now write the attribute from an address they already have.
 
 ; ============================================================================
 ; GFX_SET_MODE

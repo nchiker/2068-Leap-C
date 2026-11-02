@@ -29,11 +29,11 @@ or removing one is a breaking change and is announced here first.
   clears the new row directly; a character is found by one subtraction in a font now in ASCII order (punctuation
   cost up to twice a letter before) and drawn unrolled; the interrupt ends an idle frame after one read of the
   keyboard instead of scanning all eight rows (every program gains about 3%). Same screens and glyphs; HOME has
-  48 bytes more free (624).
+  59 bytes more free (635).
 - **The ROM images change**, so the cartridge identity, the `.sym` addresses (not the names) and the emulator
   packs change with them. `GFX_READ_PIXEL` now takes C = x, B = y; `MATH_COMPARE16`, `GFX_SCROLL_TEXT_UP`,
   `GFX_COPY_ROW_BITMAP`, `PUNCT_CHAR_TABLE`, `ROW_TABLE` and `IO_KEY_SCAN_ROW` are gone; `FONT_TABLE` is in ASCII
-  order and `GFX_CLEAR_ROW` takes the attribute in A (none is a stable name). The loadable-library ABI (the jump table at `$3FD0`, `LX_PLOT`) is unchanged.
+  order and `GFX_CLEAR_ROW` takes the attribute in A; `GFX_SET_ATTR` is gone (none is a stable name). The loadable-library ABI (the jump table at `$3FD0`, `LX_PLOT`) is unchanged.
 - **The user's manual, Part 7 example 11** ("Colour lines in high resolution"): the example now waits for a key in
   mode 1 and draws a band of 56 lines, so its colours can be seen; it no longer sets `paper(0)`, which left the
   screen black after `mode(0)`. Proposed by the Leap IDE (its `LEAP_C_EXAMPLE_11.md`), with one added test line

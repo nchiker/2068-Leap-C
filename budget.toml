@@ -1229,3 +1229,14 @@ the interrupt's idle fast path and IO_KEY_SCAN_ALL's rotated row select (ROW_TAB
 ASCII order (95 glyphs, the backtick blank; PUNCT_CHAR_TABLE's 62 B gone), unrolled GFX_PUTCHAR/_OVER and the
 attribute from the cell's address. The page-zero IO_KEY_SCAN_ROW (3 B) leaves fill. 2,925 B; the 48 B return to
 the HOME reserve (576 -> 624 B)."""
+
+[[ledger]]
+id = "L88"
+date = "2026-11-01"
+milestone = "1.2"
+bank = "home"
+component = "platform"
+delta = -11
+reason = """With L86-L87 (platform deltas D25, D26, D28): GFX_SET_ATTR had no caller left (the print loop, the row clear
+and the pixel write each write the attribute from an address they already have; ROM coverage showed it never
+entered). 2,914 B; the 11 B return to the HOME reserve (624 -> 635 B)."""

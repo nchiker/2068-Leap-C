@@ -70,7 +70,7 @@ All on this branch, 2026-11-01; every one passed:
 
 | Run | Result |
 |---|---|
-| `make check` | passes (budget, platform deltas, test image, RAM layout and its 8 negative controls, 271 doc examples, provenance, `cart_check`: 1,892 release labels at their addresses, identity `$201F`) |
+| `make check` | passes (budget, platform deltas, test image, RAM layout and its 8 negative controls, 271 doc examples, provenance, `cart_check`: 1,892 release labels at their addresses, identity `$201F`; `$161E` after section 6's removal) |
 | `make test` (1,614 s, 7 emulators) | PASS, 0 failures; the corpus through RUN 1,166/1,166; ROM coverage HOME 99.8% (442 of 443 routines: `GFX_SET_ATTR` has no caller left, see section 6) |
 | `make fuse` (Fuse 1.9.1) | PASS: typed 39/39, corpus 1,016/1,016, keyboard, BREAK, frames, save, wav, lib |
 | `make test-cart` | PASS: the 115-program RUN comparison 115/115, behaviour 25/25, port audit 6/6, hand-off 5/5 |
@@ -89,8 +89,9 @@ compares the maximum with ceilings about 1.25x this build's: interrupt idle 300 
 
 ## 6. Left
 
-- `GFX_SET_ATTR` (11 B) has no caller: the old print loop, row clear and pixel write all used it. It is removed in
-  the commit after this one.
+- `GFX_SET_ATTR` (11 B) had no caller left: the old print loop, row clear and pixel write all used it. It is removed
+  in the commit after this one (ledger L88; HOME 635 B free). After it, the same six targets pass again (`make test`
+  1,260 s; ROM coverage HOME 99.9%, 442 of 442 routines entered) and the cartridge identity is `$161E`.
 - Leap V2 takes D27 only; its own back-port already has a faster scroll and text. Its string printing steps along a
   run of characters (about 528 T a character), where Leap-C's `print` goes through `LIB_PUTC` one character at a
   time (955 T). That is a possible later change to the library, not made here.
