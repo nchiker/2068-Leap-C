@@ -30,19 +30,27 @@
 #                       checksums, the hardware check programs and examples as .tap/.tzx/.wav (tools/hwkit.py)
 #   make capacity       the measured capacity table (build/capacity.json, docs/milestones/M4.md)
 #   make repro          two clean builds must give identical image hashes
-#   make release        Phase 11: the release assets in build/release (tools/release.py): the emulator pack and the
-#                       hardware kit as zips, with SHA256SUMS
+#   make release        Phase 11: the release assets in build/release (tools/release.py): the emulator pack, the
+#                       hardware kit and (1.1.0) the cartridge as zips, with SHA256SUMS; needs make cart-demo
 #   make tapetol        Phase 11 (M11-tape): the tape receiver's tolerance envelope on Fuse (tools/tapetol.py), the
 #                       beta.1 images (build/beta1, tools/beta1ref.sh: the tag through `git archive`) against the
 #                       current ones: every case beta.1 accepts must still be accepted
 #   make provenance     Phase 11 (M11-tape): the images compared with the stock ROMs ($LEAPC_STOCK_ROMS; also in
 #                       make check when they are there): no common run of 12 bytes or more unless recorded
+#   make cart           Phase 12 (M12-cart): the runtime cartridge's HOME (build/cart/leapc_cart_home.bin, -DLEAPC_CART),
+#                       tools/cart_check.py (against the release) and cartpack's self-test; PROG=x.c [LIB=name] also packs
+#                       build/cart/x.dck and x.bin (tools/c2cart.py: needs ZEsarUX)
+#   make cart-demo      Release 1.1.0: make cart, then the demo cartridge build/cart/hello.dck and hello.bin from
+#                       examples/cart_hello.c (tools/c2cart.py: needs ZEsarUX); make release depends on it
+#   make test-cart      Phase 12 (M12-cart): the runtime cartridge on a stock TS2068 (tools/carttest.py): a corpus slice
+#                       against RUN, the behaviour cases, NO PROGRAM, the port audit and the hand-off, on ZEsarUX
+#                       (ports 11780-11799); CARTTEST_ARGS=--fuse adds Fuse 1.9.1 with its stock ROMs
 #   make audit          z80-skills pattern scan of src/ (hints for the manual audit, not a gate)
 #   make v2ref          the V2 reference ROM (tag v2.0.1-emu.1) in build/v2ref/, built from the frozen
 #                       repository through `git archive` (the cross-version tape tests)
 # Host tool: tools/c2tape.py FILE.c OUT.tap|OUT.tzx makes a program tape that LOAD reads.
 .PHONY: all build prod testimg libs check budget inventory test test-fast canary capacity repro audit v2ref clean \
-	fuse timing poweron kit qualify release tapetol provenance manual
+	fuse timing poweron kit qualify release tapetol provenance manual cart cart-demo test-cart
 
 ASM := tools/sjasm_strict.sh
 SKILLS ?= $(HOME)/z80-skills/skills
@@ -78,7 +86,7 @@ libs:
 			build/libs/$$n.tzx build/libs/$$n.wav || exit 1; done
 	cd build/libs && sha256sum *.bin *.tap *.tzx *.wav > SHA256SUMS
 
-check: build
+check: build cart
 	python3 tools/budget.py --check --json build/budget.json
 	python3 tools/check_platform.py
 	python3 tools/check_test_image.py
@@ -86,6 +94,22 @@ check: build
 	python3 tools/check_ram_layout.py --negative
 	python3 tools/docexamples.py --check
 	python3 tools/provenance.py; r=$$?; [ $$r -eq 0 ] || [ $$r -eq 2 ]
+
+cart: prod
+	mkdir -p build/cart
+	python3 tools/cart_build.py
+	$(ASM) -DLEAPC_CART --sym=build/cart/leapc_cart_home.sym --lst=build/cart/leapc_cart_home.lst src/rom/home.asm
+	python3 tools/cart_check.py
+	python3 tools/cartpack.py --selftest
+ifneq ($(PROG),)
+	python3 tools/c2cart.py $(PROG) $(if $(LIB),--lib $(LIB)) -o build/cart/$(basename $(notdir $(PROG))).dck --bin build/cart/$(basename $(notdir $(PROG))).bin
+endif
+
+cart-demo: cart
+	python3 tools/c2cart.py examples/cart_hello.c -o build/cart/hello.dck --bin build/cart/hello.bin
+
+test-cart: cart
+	python3 tools/carttest.py $(CARTTEST_ARGS)
 
 budget: prod
 	python3 tools/budget.py
@@ -125,7 +149,7 @@ manual:
 	python3 tools/build_manual_docx.py
 	python3 tools/build_manual_doc.py
 
-release: kit
+release: kit cart-demo
 	python3 tools/release.py
 
 capacity: build

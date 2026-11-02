@@ -1,6 +1,6 @@
-# Milestone 12 — The runtime cartridge (`make cart`): plan for the owner's approval
+# Milestone 12 — The runtime cartridge (`make cart`): plan and report
 
-**Status: plan, 2026-11-01. Nothing is built until the owner approves it.** Promised to the Leap IDE in
+**Status: done 2026-11-01 (plan approved by the owner the same day).** Released as 1.1.0. Sections 1-9 are the plan as approved, corrected where the build differs (marked *as built*); section 10 is the report. Promised to the Leap IDE in
 `~/Projects/Leap-IDE/docs/requests/LEAP_C_ANSWERS.md` Q5. The nearest models: 2068-Forth `82af031` ("make cart runs
 Forth and a SAVE-LIB program from the DOCK of a stock TS2068") and Leap V2.1's cartridge as the IDE built it
 (`~/Projects/Leap-IDE/cartridge-build/Docs/CARTRIDGE_STATUS.md`, `docs/LEAP_CARTRIDGE_BUILD.md`).
@@ -43,9 +43,9 @@ and the cartridge build only adds one 16 KB image.
 
 | Where | Release | Cartridge | Size |
 |---|---|---|---|
-| `$0000-$0004` | `di` / `jp COLD_START` / `IO_KEY_SCAN_ROW` at `$0004` | the LROS header: `F3` (byte 0, unused), `$01` (LROS), `CART_ENTRY` (LE16), chunk spec `$BC` (chunks 0, 1, 6 DOCK; low-active) | same |
+| `$0000-$0004` | `di` / `jp COLD_START` / `IO_KEY_SCAN_ROW` at `$0004` | the LROS header: `$00` (byte 0, unused; as built, as 2068-Forth and V2), `$01` (LROS), `CART_ENTRY` (LE16), chunk spec `$BC` (chunks 0, 1, 6 DOCK; low-active) | same |
 | `IO_KEY_SCAN_ROW` | `$0004` (`in a,($FE)` / `ret`, 3 B) | moved to the page-zero gap `$000D-$000F` (free in the release); its one caller (`IO_KEY_SCAN_ALL`'s `call`) changes operand | same; one label moves (allowed by name in the check: nothing compiled calls it) |
-| `BANK_PAGE_EXROM_IN` | depth 0→1: `$FF` shadow bit 7 set, `$F4 = $40` | depth 0→1: `$F4 = $43`; port `$FF` and its shadow untouched. The bytes saved hold `BANK_CART_HOME` (`ld a,$03` / `out ($F4),a` / `ei` / `ret`) | same (`DS` pads to the release size) |
+| `BANK_PAGE_EXROM_IN` (*as built: `src/cart/cart_bank.asm` in place of `kernel/bank/bank.asm`*) | depth 0→1: `$FF` shadow bit 7 set, `$F4 = $40` | depth 0→1: `$F4 = $43`; port `$FF` and its shadow untouched. The bytes saved hold `BANK_CART_HOME` (`ld a,$03` / `out ($F4),a` / `ei` / `ret`) | same (`DS` pads to the release size) |
 | `BANK_PAGE_EXROM_OUT` | depth 1→0: `xor a` / `out ($F4),a` | depth 1→0: `jr z, BANK_CART_HOME` in place of the release's `jr nz, .still_nested` / `xor a` / `out ($F4),a` (2 B for 5, padded; Forth's arrangement) | same |
 | `COLD_START`'s last instruction | `jp LEAPC_EXROM_SHELL` | `jp CART_RUN` | same |
 | HOME free space (`$3DEF-$3FCF`, 481 B) | `$FF` | `CART_ENTRY`, `CART_RUN`, the copy, the checks, the report, `NO PROGRAM` | an estimated 220-260 B |
@@ -78,14 +78,15 @@ At DOCK `$8000` (continuing at DOCK `$4000` past 16 KB). Little-endian words.
 |---|---|---|
 | 0 | 4 | `"LCPG"` |
 | 4 | 1 | format, `1` |
-| 5 | 2 | identity: CRC-16/CCITT (poly `$1021`, init `$FFFF`) of the compiling release's HOME then EXROM (V2's scheme) |
+| 5 | 2 | identity: CRC-16/CCITT-FALSE (poly `$1021`, init `$FFFF`) of the compiling release's HOME then EXROM (V2's scheme) |
 | 7 | 2 | `RUN_MAIN` (main's address; the entry) |
 | 9 | 1 | `RUN_VOID` |
-| 10 | 2 | `RUN_FNLINES` (kept so `RT_ERRLINE` is as under `RUN`, for tests; the report shows no line) |
-| 12 | 16 | `IMG_LIM` (the compiler's region limits; `mode(1)` reads region 4's to refuse hi-res when the image uses `$6000-$77FF`) |
-| 28 | 1 | `LIB_LOADED` (`$F4` when a library is carried in region 3, else 0) |
-| 29 | … | blocks `[address:2][length:2][bytes]`, ended by a length of 0: per region its code `[base, low)` and its static data `[high, end)`, and `$F400-$F7FF` when a library is loaded |
-| end | 2 | CRC-16/CCITT of every byte before it |
+| 10 | 16 | `IMG_LIM` (the compiler's region limits; `mode(1)` reads region 4's to refuse hi-res when the image uses `$6000-$77FF`) |
+| 26 | 1 | `LIB_LOADED` (`$F4` when a library is carried in region 3, else 0) |
+| 27 | … | blocks `[length:2][address:2][bytes]` (1 to 8192 bytes, inside one region), ended by a length of 0: per region its code `[base, low)` and its static data `[high, end)`, a library's whole region 3, and region 4 up to its last non-zero byte for `#pragma hires` |
+| end | 2 | CRC-16/CCITT-FALSE of every byte before it, **high byte first** (the CRC over the whole image is then 0) |
+
+*As built:* there is **no `RUN_FNLINES` field** (the plan had one at offset 10), so the header is 27 bytes and `LIB_LOADED` is at 26. `RUN_FNLINES` stays 0 (the cold start's value), so `RT_ERRLINE` is 0 and the shell's `SH_RUN.compiled` never looks for a source line; that is how the cartridge reuses the shell's report code unchanged (the cartridge calls `SH_RUN.compiled` itself). The block order is also `[length][address]`, not the plan's `[address, length]`.
 
 Largest: the four regions hold 19,840 B, so an image is at most about 19.9 KB: chunks 4-5 and part of chunk 2. A
 program the IDE's checker compiled with the release ROM is valid for this cartridge exactly when the identity
@@ -105,9 +106,10 @@ constant).
   regions of §5, and packs the image, the `.dck` (one block, bank 0, chunks 0, 1, 2 if used, 4, 5, 6) and the flat
   `.bin` (the eight chunks in order, `$FF` in absent ones). The packing is a separate function with no emulator in
   it (`tools/cartpack.py`), the reference for the IDE's JavaScript one.
-- **`make cart`** builds `build/cart/leapc_cart_home.bin`, runs `cart_check.py`, and builds
-  `build/cart/leapc_cart_demo.dck` (an example program, so a stock-ROM emulator can try it at once).
-  `make cart PROG=x.c [LIB=shapes]` builds one program's `.dck` and `.bin`. `make repro` covers the cartridge.
+- **`make cart`** builds `build/cart/leapc_cart_home.bin`, runs `cart_check.py` and the packer's self-test (no
+  emulator, so `make check` can depend on it). `make cart PROG=x.c [LIB=shapes]` builds one program's `.dck` and `.bin`.
+  *As built:* the demo is a separate target, `make cart-demo` (`examples/cart_hello.c` to `build/cart/hello.dck` and
+  `hello.bin`; it needs ZEsarUX; `make release` depends on it). `make repro` covers the cartridge HOME.
 
 ## 7. Tests
 
@@ -146,3 +148,46 @@ file.
    proposed.)
 4. **Images over 16 KB** use DOCK chunk 2 (agreed). If the owner prefers a simpler first version, the packer could
    refuse images over 16 KB and chunk 2 could come later; the plan as written includes it.
+
+## 10. Report
+
+### As built
+
+**The HOME changes** (all under `IFDEF LEAPC_CART`; `src/rom/home.asm`, `src/cart/cart.asm`, `src/cart/cart_bank.asm`):
+
+| Where | Cartridge |
+|---|---|
+| `$0000-$0004` | the LROS header: `00`, `01`, `CART_ENTRY`, chunk byte `$BC` |
+| `IO_KEY_SCAN_ROW` | `$000D` (was `$0004`); the only label that moved |
+| `BANK_PAGE_EXROM_IN/OUT` | **`src/cart/cart_bank.asm` assembled in place of `kernel/bank/bank.asm`** under the flag, with the release routines' sizes and label offsets (`DS` pads with `nop`, never `$FF`). Depth 0 to 1 writes `$F4` = `$43` (`CART_HSR_EXROM`) and leaves port `$FF` alone; depth 1 to 0 jumps to `BANK_CART_HOME = BANK_PAGE_EXROM_IN.home` (`$F4` = `$03`) |
+| `COLD_START` | ends in `jp CART_RUN` |
+| HOME free space | `CART_ENTRY`, `CART_RUN`, `CART_LOAD` and its helpers, the signature and `NO PROGRAM`: **252 bytes at `$3DEF-$3EEB`, 229 bytes of the space left** (the plan estimated 220-260) |
+
+`CART_IDENTITY` and the EXROM addresses come from `build/cart/cart_exrom.inc` (`tools/cart_build.py`). The loader makes two passes over the image (lengths and CRC, then the copy), with interrupts off, mapping chunks 4-5 and 2 only there.
+
+### Decisions as taken (section 9)
+
+1. **Release vehicle:** 1.1.0, an added asset (`leapc-1.1.0-cartridge.zip`); the ROM images, and so the identity, are 1.0.0's.
+2. **No image or a bad one:** `NO PROGRAM` on row 23, then a key retries.
+3. **After the program:** the one-row report, then a key restarts from a cold start (the image is copied afresh).
+4. **Images over 16 KB** are supported (DOCK chunk 2); the largest tested is 17,008 bytes.
+
+### Results
+
+The identity is **`$E90E`**. `tools/cart_check.py`: 1,908 release labels at their release addresses (only `IO_KEY_SCAN_ROW` moved); the EXROM is the release's. `tools/carttest.py --fuse`, 160 of 160, about 2.5 minutes:
+
+- **A, equivalence (ZEsarUX, stock `ts2068.rom`):** 115 programs (66 `tests/lib`, 49 `tests/doc`); rows 0-22 (text, bitmap, attributes) and the row-23 report identical to `RUN` on the release ROM, bar the expected differences.
+- **B, behaviour (25):** exit values; runtime errors 1, 4, 6 and 3; BREAK; restart from cold re-copies the image (a static counter is the same each run); float; `beep`/`sound`; `mode(1)` with and without `#pragma hires` and refused; libraries (shapes, testlib); a 17,008-byte image continuing into chunk 2; `NO PROGRAM` for no image, wrong identity, wrong CRC, truncated blocks, wrong format and a damaged chunk-2 byte; key retries.
+- **C, port audit (6):** `$F4` only `$03`, `$33`, `$37`, `$43`; `$FF` only `$00` or `$02` (hi-res); bit 7 never set.
+- **D, hand-off (5):** at `CART_ENTRY`: IM 1, interrupts on, SP `$61FE`, `$F4` `$43`, `$FF` `$00`; the IM 1 handler run before `di` returns and the program runs, also with BREAK held.
+- **E, Fuse 1.9.1 with its stock ROMs and the `.dck` (9 programs):** screens identical to ZEsarUX's.
+
+**Expected differences:** `malloc`'s addresses (the heap starts at an empty store's end: `$7802` against `$7868` for one program); `PEEK($0000-$0007)` reads the LROS header (0 1 ... 188); UDGs are blank at every start.
+
+**Regression rerun for 1.1.0:** `make repro` reproducible OK (the four 1.0.0 hashes, and `leapc_cart_home.bin` `034e294d…` in both builds, identity $E90E); `make check` pass (with `tools/cart_check.py`); the fast suite pass, 0 failures; `make test-cart CARTTEST_ARGS=--fuse` 160/160 from a cold start; `make fuse` pass (corpus 1,017/1,017). Two test-tool defects found and fixed on the way: parallel Fuse workers built the Fuse shim to one path at once (now an atomic rename), and the `frames` check read Fuse's frame count and `FRAMES` with two shim commands, which Fuse could run frames between at a host load average of 15 (now one batch, answered between two frames).
+
+**Not done:** a physical TS2068, a physical cartridge or PicoROM; TSRun.
+
+### The known hazard
+
+An interrupt exactly between the stock ROM's jump and `CART_ENTRY`'s `di`, with BREAK held **and** a non-zero byte left in stock RAM at `RUNNING` (`$5EB6`), would make Leap-C's interrupt handler take BREAK and unwind to a run stack of 0. It was forced in a test; it was not seen otherwise, because `RUNNING` reads 0 after the stock boot. Not fixed: the first instruction of the entry cannot run earlier.

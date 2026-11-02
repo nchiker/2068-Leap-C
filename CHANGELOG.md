@@ -13,6 +13,34 @@ or removing one is a breaking change and is announced here first.
 `RT_ERRLINE`, `RUN_FNLINES`, `SYM_GLO`, `SYM_LOC`, `CUR_EDIT_INDEX`, `PROG_END`, `ARRAYS_END`, `BANK_EXROM_DEPTH`,
 `TOK_LINE`, `CG_PC`.
 
+## 1.1.0 (2026-11-01)
+
+Adds the runtime cartridge. **The ROM images are byte-identical to 1.0.0's** (HOME `d2b18eaa…`, EXROM `02790ebe…`; the
+banner stays `2068 LEAP-C 1.0`), so every host name and address of 1.0.0 holds. Qualified on emulators (Fuse 1.9.1,
+ZEsarUX 13.0); not run on a physical TS2068.
+
+**Added**
+- **The runtime cartridge** (docs/CARTRIDGE.md, docs/milestones/M12-cart.md): one compiled program runs from the DOCK of a
+  stock TS2068 (stock ROMs installed), as a `.dck` for emulators or a flat 64 KB `.bin` for a physical cartridge. It
+  carries its own HOME (`leapc_cart_home.bin`, built with `-DLEAPC_CART`) and the release EXROM unchanged; after the
+  program it shows the one-row report and a key runs it again from a cold start. `NO PROGRAM` for no image or one the
+  cartridge refuses.
+- **The identity `$E90E`**: the CRC-16/CCITT-FALSE of the release HOME then EXROM. A program image carries it and the
+  cartridge refuses any other; a program must be compiled by the release ROM it is cartridged for (1.0.0 and 1.1.0
+  share the images, so share the identity).
+- **A new asset**, `leapc-1.1.0-cartridge.zip`: the cartridge HOME and EXROM, a demo cartridge (`demo/hello.dck`,
+  `hello.bin`), `tools/cartpack.py`, `CARTRIDGE.md` and `SHA256SUMS`. The other assets are 1.0.0's, renamed.
+- **`make cart`** (the cartridge HOME, checked against the release; emulator-free, part of `make check`),
+  `make cart PROG=x.c [LIB=name]` (packs one program's `.dck` and `.bin`), `make cart-demo` (the demo; needs ZEsarUX;
+  `make release` depends on it) and `make test-cart` (`CARTTEST_ARGS=--fuse` adds Fuse).
+
+**For hosts:** the cartridge keeps the address of every release label (1,908 of them); only `IO_KEY_SCAN_ROW` moved
+(`$0004` to `$000D`) on the cartridge. The cartridge's own labels (`CART_*`) are not host-stable names.
+
+**Tools and tests (no change to the ROMs):** `tools/cart_build.py`, `cart_check.py`, `cartpack.py`, `c2cart.py` and
+`carttest.py` (160 cases: the cartridge against `RUN` on 115 programs, behaviour, a port audit, the hand-off, Fuse);
+`make repro` also covers the cartridge HOME; `tools/fusedrive.py` can start Fuse with a `.dck` on its stock ROMs.
+
 ## 1.0.0 (2026-11-01)
 
 The first release, after two public betas. Qualified on emulators (Fuse 1.9.1, ZEsarUX 13.0 with a patch); not yet

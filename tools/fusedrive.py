@@ -72,7 +72,10 @@ def build_shim(build):
     if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(SHIM_SRC):
         os.makedirs(os.path.dirname(out), exist_ok=True)
         cflags = subprocess.run(["sdl2-config", "--cflags"], capture_output=True, text=True).stdout.split()
-        subprocess.run(["gcc", "-shared", "-fPIC", "-O2", "-Wall"] + cflags + ["-o", out, SHIM_SRC, "-ldl"], check=True)
+        tmp = "%s.%d.tmp" % (out, os.getpid())     # (parallel workers: each compiles its own file, then an
+        subprocess.run(["gcc", "-shared", "-fPIC", "-O2", "-Wall"] + cflags + ["-o", tmp, SHIM_SRC, "-ldl"],
+                       check=True)                  # atomic rename, so no Fuse ever loads a half-written shim)
+        os.replace(tmp, out)
     return out
 
 
@@ -127,7 +130,12 @@ class _Glyphs:
 class Fuse:
     """One headless Fuse running the Leap-C images in `build`, its files in `wdir`."""
 
-    def __init__(self, build, wdir, speed=20000, extra=None):
+    def __init__(self, build, wdir, speed=20000, extra=None, dock=None):
+        """dock: a Timex Dock cartridge (.dck) to run on Fuse's own stock TS2068 ROMs (tc2068-0/-1.rom), not the
+        build's images: the runtime cartridge's test (tools/carttest.py). The boot's key-wait handshake does not
+        exist then (the stock ROM is not Leap-C): start() returns at once and the caller polls the screen;
+        `build` still gives the symbols and the glyph tables."""
+        self.dock = os.path.abspath(dock) if dock else None
         self.build = os.path.abspath(build)
         self.wdir = os.path.abspath(wdir)
         self.speed = speed
@@ -153,10 +161,12 @@ class Fuse:
         self.nbp = 2
         env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy", LD_PRELOAD=build_shim(self.build),
                    LEAPC_FUSE_SOCK="@" + self.sock_path[1:], LEAPC_FUSE_SYMS=fuse_syms(), HOME=home, XDG_CONFIG_HOME=home)
-        args = [FUSE, "--machine", "ts2068", "--rom-ts2068-0", os.path.join(self.build, "leapc_home.bin"),
-                "--rom-ts2068-1", os.path.join(self.build, "leapc_exrom.bin"), "--no-sound", "--speed", str(self.speed),
-                "--no-auto-load", "--no-traps", "--no-confirm-actions", "--no-autosave-settings",
-                "--debugger-command", dbg] + self.extra
+        roms = [] if self.dock else ["--rom-ts2068-0", os.path.join(self.build, "leapc_home.bin"),
+                                      "--rom-ts2068-1", os.path.join(self.build, "leapc_exrom.bin")]
+        args = [FUSE, "--machine", "ts2068"] + roms + ["--no-sound", "--speed", str(self.speed),
+                "--no-auto-load", "--no-traps", "--no-confirm-actions", "--no-autosave-settings"]
+        args += [] if self.dock else ["--debugger-command", dbg]
+        args += self.extra + ([self.dock] if self.dock else [])
         self.out = open(self.out_path, "w")
         self.proc = subprocess.Popen(args, env=env, stdout=self.out, stderr=subprocess.STDOUT, cwd=self.wdir)
         t0 = time.time()
@@ -172,6 +182,9 @@ class Fuse:
                     raise RuntimeError("Fuse did not start: %s" % open(self.out_path).read()[-500:])
                 time.sleep(0.05)
         self.f = self.sock.makefile("rw")
+        if self.dock:                               # (stock ROM: no breakpoints, no handshake)
+            self.boot = dict(frames=0, tstates=0, total=0)
+            return self
         try:
             self.wait(lambda: self.prints(0xB0070), timeout, "the boot's first key wait")
         except Exception:
@@ -183,7 +196,7 @@ class Fuse:
 
     def stop(self):
         try:
-            if self.sock:
+            if self.sock and getattr(self, "f", None):     # (a start that never connected has no stream)
                 self.f.write("quit\n")
                 self.f.flush()
         except OSError:
@@ -206,6 +219,19 @@ class Fuse:
         if not r.startswith("ok"):
             raise RuntimeError("fuseshim: %r -> %r" % (line, r))
         return r[3:]
+
+    def batch(self, lines):
+        """Several commands in one write: the shim runs every command already in its socket in the same gap
+        between two frames (service()), so their replies describe one moment. Returns the replies' values."""
+        self.f.write("".join(l + "\n" for l in lines))
+        self.f.flush()
+        out = []
+        for l in lines:
+            r = self.f.readline().strip()
+            if not r.startswith("ok"):
+                raise RuntimeError("fuseshim: %r -> %r" % (l, r))
+            out.append(r[3:])
+        return out
 
     def ping(self):
         a, b = self.cmd("ping").split()

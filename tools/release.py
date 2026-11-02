@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The release assets (Phase 11, the public beta): two zips in build/release/, built from build/ (make build, make kit).
+"""The release assets (Phase 11, the public beta; 1.1.0 adds the cartridge): three zips in build/release/, built from build/
+(make build, make kit, make cart-demo).
 
   leapc-VERSION-emulators.zip      the emulator pack: the ROM images (roms/: leapc_zesarux.bin for ZEsarUX,
                                    leapc_home.bin and leapc_exrom.bin for Fuse and TSRun), their symbol files (symbols/: the
@@ -12,15 +13,19 @@
                                    manual in Word (docs/: MANUAL's .docx and .doc, make manual)
   leapc-VERSION-hardware-kit.zip   build/kit (EPROM images with Intel HEX, the tapes as .tap/.tzx/.wav, the checklist,
                                    the emulators' results, CHECKSUMS.txt), LICENSE and NOTICE
+  leapc-VERSION-cartridge.zip      the runtime cartridge (1.1.0; docs/CARTRIDGE.md, docs/milestones/M12-cart.md): roms/
+                                   (leapc_cart_home.bin, the cartridge's HOME, and leapc_exrom.bin, the release EXROM it
+                                   carries), demo/ (hello.dck and hello.bin, built from examples/cart_hello.c),
+                                   tools/cartpack.py with tools/cart_build.py (which it imports), CARTRIDGE.md, LICENSE, NOTICE and SHA256SUMS (every file)
   2068_Leap-C_Users_Manual.docx    the user's manual, Word edition (docs/manual/, make manual), and its Word 97
   2068_Leap-C_Users_Manual.doc     edition: also published on their own
-  SHA256SUMS                       the two zips and the two manuals
+  SHA256SUMS                       the three zips and the two manuals
 
 The leapc_exrom.dck cartridge is left out: ZEsarUX refuses it (it takes only DOCK-bank cartridges; docs/EMULATORS.md
 section 10) and it was never tested elsewhere. The zips are reproducible: sorted entries, fixed times and modes, so
 two clean builds give the same zips (and their ROM images are make repro's).
 
-Usage: release.py [--version 1.0.0]"""
+Usage: release.py [--version 1.1.0]"""
 import argparse
 import hashlib
 import os
@@ -141,10 +146,32 @@ def kit_pack():
     return files
 
 
+def cartridge_pack():
+    """The runtime cartridge's zip: the files build/cart/ (make cart, make cart-demo) and build/ give."""
+    cart = os.path.join(BUILD, "cart")
+    srcs = {"roms/leapc_cart_home.bin": os.path.join(cart, "leapc_cart_home.bin"),
+            "roms/leapc_exrom.bin": os.path.join(BUILD, "leapc_exrom.bin"),
+            "demo/hello.dck": os.path.join(cart, "hello.dck"),
+            "demo/hello.bin": os.path.join(cart, "hello.bin"),
+            "tools/cartpack.py": os.path.join(HERE, "cartpack.py"),
+            "tools/cart_build.py": os.path.join(HERE, "cart_build.py"),     # (cartpack imports its crc16)
+            "CARTRIDGE.md": os.path.join(ROOT, "docs", "CARTRIDGE.md"),
+            "LICENSE": os.path.join(ROOT, "LICENSE"), "NOTICE": os.path.join(ROOT, "NOTICE")}
+    for name, p in srcs.items():
+        if not os.path.exists(p):
+            sys.exit("release: %s is missing (run `make cart` and `make cart-demo`)" % os.path.relpath(p, ROOT))
+    files = {n: open(p, "rb").read() for n, p in srcs.items()}
+    files["SHA256SUMS"] = "".join("%s  %s\n" % (sha(files[n]), n) for n in sorted(files)).encode()
+    return files
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="1.0.0")
+    ap.add_argument("--version", default="1.1.0")
     a = ap.parse_args()
+    for need in ("cart/leapc_cart_home.bin", "cart/hello.dck", "cart/hello.bin"):
+        if not os.path.exists(os.path.join(BUILD, need)):
+            sys.exit("release: build/%s is missing (run `make cart` and `make cart-demo`)" % need)
     for need in ("leapc_home.bin", "libs/shapes.tzx", "kit/CHECKSUMS.txt"):
         if not os.path.exists(os.path.join(BUILD, need)):
             sys.exit("release: build/%s is missing (make build and make kit first)" % need)
@@ -154,7 +181,7 @@ def main():
     shutil.rmtree(OUT, ignore_errors=True)
     os.makedirs(OUT)
     names = []
-    for kind, files in (("emulators", emulator_pack(a.version)), ("hardware-kit", kit_pack())):
+    for kind, files in (("emulators", emulator_pack(a.version)), ("hardware-kit", kit_pack()), ("cartridge", cartridge_pack())):
         top = "leapc-%s-%s" % (a.version, kind)
         write_zip(os.path.join(OUT, top + ".zip"), top, files)
         names.append(top + ".zip")

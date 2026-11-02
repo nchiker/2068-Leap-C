@@ -22,6 +22,11 @@
 ; ---------------------------------------------------------------- page zero (spec.md 2.3)
     ORG $0000
 COMP_PAGE0_BEGIN:
+    IFDEF LEAPC_CART                    ; the cartridge (src/cart/cart.asm): the LROS header the stock ROM
+    DB   0, 1                           ; reads from the DOCK (byte 0 unused, type 1: LROS), the entry, the
+    DW   CART_ENTRY                     ; chunks it uses (0 = DOCK); nothing jumps to $0000 in Leap-C
+    DB   CART_CHUNK_SPEC
+    ELSE
     di
     jp   COLD_START
 ; IO_KEY_SCAN_ROW (kernel/io/io.asm; V2 production also places it in page-zero padding)
@@ -29,6 +34,7 @@ COMP_PAGE0_BEGIN:
 IO_KEY_SCAN_ROW:
     in   a, (PORT_ULA)
     ret
+    ENDIF
 ; RST $08-$30: the runtime helper vectors (spec.md 2.3, 5.3). Bodies that fit their 8-byte slot sit
 ; at the vector (no `jp`); the others start there and continue in src/runtime/helpers.asm.
 ; RST $08 LDI -- HL = the word at HL. Destroys: A
@@ -39,6 +45,11 @@ RST_LDI:
     ld   h, (hl)
     ld   l, a
     ret
+    IFDEF LEAPC_CART
+IO_KEY_SCAN_ROW:                        ; (the cartridge: moved from $0004, the LROS header's chunk byte)
+    in   a, (PORT_ULA)
+    ret
+    ENDIF
 ; RST $10 STI -- the word at DE = HL. Out: HL kept, DE = address + 1. Destroys: -
     ORG $0010
 RST_STI:
@@ -104,7 +115,11 @@ COLD_START:
     im   1
     ei
     call BANK_PAGE_EXROM_IN
+    IFDEF LEAPC_CART
+    jp   CART_RUN                      ; the cartridge: the program image instead of the shell
+    ELSE
     jp   LEAPC_EXROM_SHELL
+    ENDIF
 ; ============================================================================
 ; RT_ERR_STACK -- ENTER: stack overflow, runtime error 1, in the function being entered
 ; RT_ERROR -- end the running program (spec.md 5.7, 5.9; src/runtime/rtexit.asm): unwind to RT_RUN
@@ -146,6 +161,9 @@ COMP_PLATFORM_BEGIN:
     INCLUDE "kernel/math/math.asm"
     INCLUDE "kernel/interrupt/interrupt.asm"
     INCLUDE "rom/v2_ay_beep.asm"
+    IFDEF LEAPC_CART
+    INCLUDE "src/cart/cart_bank.asm"           ; the cartridge's paging, same sizes and labels
+    ENDIF
     INCLUDE "kernel/bank/bank.asm"             ; (after the beep: AY_BEEP_TABLE then stays within a
                                                ; 256-byte page, so AY_BEEP_PERIOD has its short form)
 COMP_PLATFORM_END:
@@ -285,6 +303,11 @@ COMP_TAPE_BEGIN:
 COMP_TAPE_END:
 
 LEAPC_HOME_CODE_END:
+    IFDEF LEAPC_CART
+COMP_CART_BEGIN:
+    INCLUDE "src/cart/cart.asm"
+COMP_CART_END:
+    ENDIF
     IFDEF LEAPC_TEST
 COMP_TEST_BEGIN:
     INCLUDE "src/test/test_hooks.asm"
@@ -307,7 +330,11 @@ COMP_SLOTS_END:
     IFDEF LEAPC_TEST
     SAVEBIN "build/test/leapc_home.bin", $0000, LEAPC_HOME_END
     ELSE
+    IFDEF LEAPC_CART
+    SAVEBIN "build/cart/leapc_cart_home.bin", $0000, LEAPC_HOME_END
+    ELSE
     IFNDEF LEAPC_NEGCTL
     SAVEBIN "build/leapc_home.bin", $0000, LEAPC_HOME_END
+    ENDIF
     ENDIF
     ENDIF

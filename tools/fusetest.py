@@ -258,6 +258,15 @@ FRAMES_PROGRAMS = [
 ]
 
 
+def frames_pair(f):
+    """Fuse's frame count and the ROM's FRAMES at one moment: both commands in one write (Fuse.batch), so the shim
+    answers them in the same gap between two frames. (Two separate commands let Fuse run frames between them under
+    host load: up to 3 apart at load average 15, 2026-11-01.)"""
+    peek, ping = f.batch(["peek %d 2" % f.S["FRAMES"], "ping"])
+    b = bytes.fromhex(peek)
+    return int(ping.split()[0]), b[0] | b[1] << 8
+
+
 @case("frames")
 def c_frames(out):
     f = new_fuse("frames")
@@ -268,13 +277,12 @@ def c_frames(out):
             f.to_append_line()
             f.chords([chord(c) for c in "run"] + [[0x100]], settle=False)
             f.wait_frames(120)
-            e0, f0 = f.ping()[0], f.w16(f.S["FRAMES"])
+            e0, f0 = frames_pair(f)
             f.wait_frames(6000, timeout=300)
-            e1, f1 = f.ping()[0], f.w16(f.S["FRAMES"])
+            e1, f1 = frames_pair(f)
             info[name] = dict(frames=e1 - e0, counted=(f1 - f0) & 0xFFFF)
-            # ping and peek are two shim commands: under load Fuse can run a frame between them, so each end of
-            # the span may be read one frame apart (seen 2026-11-01: +1 in one loop, -1 in the other); a lost
-            # interrupt would show as a steady shortfall, many frames over 6,000
+            # frames_pair reads each end consistently; one frame of tolerance stays for the frame boundary itself.
+            # A lost interrupt would show as a steady shortfall, many frames over 6,000
             if abs(info[name]["counted"] - info[name]["frames"]) > 1:
                 fails.append("%s: FRAMES counted %d of %d frames" % (name, info[name]["counted"], info[name]["frames"]))
             for _ in range(20):
